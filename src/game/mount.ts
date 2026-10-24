@@ -104,6 +104,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       saveGame(state);
       push();
     },
+    assignSource(index, claim) {
+      const v = state.vehicles[index];
+      if (!v || (index !== state.active && !v.operator)) return;
+      v.workClaim = claim != null && ownsClaim(state, claim) ? claim : null;
+      v.status = claim == null ? "Assigned to any leased source" : `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
+      saveGame(state);
+      push();
+    },
     drive(index) {
       setActive(state, index);
       world.snap();
