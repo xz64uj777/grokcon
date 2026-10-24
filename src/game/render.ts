@@ -217,7 +217,7 @@ export function createWorld(host: HTMLElement): World {
       bucket.position.set(0, 0.55, -1.35);
       box(bucket, 1.4, 0.42, 0.48, 0, 0.15, 0, steel);
       // Short cutting edge and individual teeth, rather than a smooth toy-like bucket.
-      box(bucket, 1.44, 0.1, 0.12, 0, -0.06, -0.28, darkSteel);
+      box(bucket, 1.44, 0.1, 0.12, 0, -0.06, -0.28, paintDark);
       for (let i = 0; i < 5; i++) {
         const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.075, 0.24, 5)), steel);
         tooth.rotation.x = -Math.PI / 2;
