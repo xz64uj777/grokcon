@@ -326,12 +326,20 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
   let steer = clamp(diff / 0.42, -1, 1);
   let throttle = 1;
-  // Turn first when badly misaligned. Driving forward while steering hard
-  // makes crew machines orbit their target in repeated figure-eights.
-  if (Math.abs(diff) > 0.95) throttle = 0;
-  else if (Math.abs(diff) > 0.55) throttle = 0.42;
-  if (d < arrive + 8) throttle = Math.min(throttle, 0.6);
+  // Crew skid-steers must finish rotating before moving toward the target.
+  // With residual momentum, steering in place only on throttle=0 still makes
+  // the machine arc past the target and loop back around it.
   let brake = 0;
+  if (Math.abs(diff) > 0.8) {
+    throttle = 0;
+    brake = 1;
+  } else if (Math.abs(diff) > 0.45) {
+    throttle = 0.38;
+  }
+  if (d < arrive + 5) {
+    throttle = 0;
+    brake = 1;
+  }
   if (d < arrive) {
     throttle = 0;
     brake = 1;
