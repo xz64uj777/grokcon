@@ -25,6 +25,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   let injected: Set<string> | null = null;
   let steerOverride: number | null = null;
   const stick = { steer: 0, throttle: 0 };
+  const cameraPointers = new Map<number, { x: number; y: number }>();
+  let pinchDistance = 0;
   let actionBtn = false;
 
   const world = createWorld(host);
@@ -142,6 +144,33 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     };
   }
 
+  function onCameraPointerDown(e: PointerEvent) {
+    if (!running || !(e.target instanceof HTMLCanvasElement)) return;
+    cameraPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (cameraPointers.size === 2) {
+      const pts = [...cameraPointers.values()];
+      pinchDistance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    }
+  }
+  function onCameraPointerMove(e: PointerEvent) {
+    const prev = cameraPointers.get(e.pointerId);
+    if (!prev || !(e.target instanceof HTMLCanvasElement)) return;
+    const next = { x: e.clientX, y: e.clientY };
+    cameraPointers.set(e.pointerId, next);
+    if (cameraPointers.size >= 2) {
+      const pts = [...cameraPointers.values()];
+      const distance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      if (pinchDistance > 0 && distance > 0) world.zoom(distance / pinchDistance);
+      pinchDistance = distance;
+    } else {
+      world.cameraDrag(next.x - prev.x);
+    }
+  }
+  function onCameraPointerEnd(e: PointerEvent) {
+    cameraPointers.delete(e.pointerId);
+    if (cameraPointers.size < 2) pinchDistance = 0;
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (e.code === "Space" || e.code.startsWith("Arrow") || e.code === "Tab") e.preventDefault();
@@ -171,6 +200,10 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     } else if (!state.muted) audio.setMuted(false);
   }
 
+  host.addEventListener("pointerdown", onCameraPointerDown, { passive: false });
+  host.addEventListener("pointermove", onCameraPointerMove, { passive: false });
+  host.addEventListener("pointerup", onCameraPointerEnd);
+  host.addEventListener("pointercancel", onCameraPointerEnd);
   window.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
@@ -312,6 +345,10 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     dead = true;
     cancelAnimationFrame(raf);
     if (running) saveGame(state);
+    host.removeEventListener("pointerdown", onCameraPointerDown);
+    host.removeEventListener("pointermove", onCameraPointerMove);
+    host.removeEventListener("pointerup", onCameraPointerEnd);
+    host.removeEventListener("pointercancel", onCameraPointerEnd);
     window.removeEventListener("keydown", onKeyDown, true);
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
