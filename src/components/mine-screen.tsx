@@ -236,7 +236,7 @@ export function MineScreen() {
                 ))}
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-2">
-                {panel === "crew" && <p className="border-b border-border py-3 text-sm leading-relaxed text-muted">Operators work machines you are not currently driving. Hire an operator for each machine you want running as part of the crew; switch seats to let that operator take over.</p>}
+                {panel === "crew" && <p className="border-b border-border py-3 text-sm leading-relaxed text-muted">Hire an operator for each machine you want running. Set Work source to Any leased source or choose a specific leased claim, such as Copper Bench.</p>}
 
                 {panel === "machines" &&
                   hud.machines.map((m) => (
@@ -286,6 +286,20 @@ export function MineScreen() {
                         <p className="text-sm text-muted">{c.cargo}</p>
                       </div>
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
+                      <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
+                        Work source
+                        <select
+                          className="h-11 border border-border bg-surface px-3 text-fg"
+                          value={c.workClaim == null ? "any" : String(c.workClaim)}
+                          disabled={!c.operator && !c.active}
+                          onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : Number(e.target.value))}
+                        >
+                          <option value="any">Any leased source</option>
+                          {hud.grounds.filter((g) => g.owned).map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      </label>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

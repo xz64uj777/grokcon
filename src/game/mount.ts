@@ -1,5 +1,5 @@
 import { createAudio } from "@/game/audio";
-import { BOUNDS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
+import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
 import { loadGame, saveGame } from "@/game/save";
 import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, setActive, step, toggleCrew } from "@/game/sim";
@@ -102,6 +102,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     crew(index) {
       toggleCrew(state, index);
+      saveGame(state);
+      push();
+    },
+    assignSource(index, claim) {
+      const v = state.vehicles[index];
+      if (!v || (index !== state.active && !v.operator)) return;
+      v.workClaim = claim != null && state.claims.includes(claim) ? claim : null;
+      v.status = claim == null ? "Assigned to any leased source" : `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
       saveGame(state);
       push();
     },
