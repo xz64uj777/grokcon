@@ -49,6 +49,9 @@ jobs:
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts
 
+      - name: Create GitHub Pages entry point
+        run: node -e "require('node:fs').copyFileSync('dist-static/static.html', 'dist-static/index.html')"
+
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
