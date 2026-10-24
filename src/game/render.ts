@@ -588,6 +588,23 @@ export function createWorld(host: HTMLElement): World {
         dustLife[idx] = 0.6;
       }
     }
+
+    // Give active digging and scooping visible ground-contact feedback without
+    // changing the mining simulation or adding work to the save data.
+    state.vehicles.forEach((v, vehicleIndex) => {
+      const def = DEFS[v.defId];
+      if (!v.busy || (def.dig <= 0 && def.scoop <= 0)) return;
+      const fx = -Math.sin(v.yaw);
+      const fz = -Math.cos(v.yaw);
+      for (let i = 0; i < 3; i++) {
+        const idx = (Math.floor(clock.t * 48) + vehicleIndex * 11 + i * 7) % dustCount;
+        if (dustLife[idx] > 0) continue;
+        dustPos[idx * 3] = v.x + fx * 2.1 + (Math.random() - 0.5) * 1.8;
+        dustPos[idx * 3 + 1] = 0.22 + Math.random() * 0.18;
+        dustPos[idx * 3 + 2] = v.z + fz * 2.1 + (Math.random() - 0.5) * 1.8;
+        dustLife[idx] = 0.42 + Math.random() * 0.2;
+      }
+    });
     for (let i = 0; i < dustCount; i++) {
       if (dustLife[i] <= 0) {
         dustPos[i * 3 + 1] = -10;
