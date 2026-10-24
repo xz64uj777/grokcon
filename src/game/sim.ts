@@ -342,11 +342,9 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
     steer = 0;
     return { throttle, steer, action: true, brake };
   }
-  if (v.unstick > 0) {
-    steer = v.bias;
-    throttle = 0.85;
-    brake = 0;
-  }
+  // Keep steering aligned to the current target during recovery. The old
+  // random fixed-steer override ignored the target and repeatedly sent crew
+  // vehicles into circles when the stuck timer retriggered.
   return { throttle, steer, action: false, brake };
 }
 
