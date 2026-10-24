@@ -551,7 +551,7 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
     // vein when that claim has no loose pile. Player controls keep their
     // existing pile-only behavior.
     const face = !pile && v.operator && v.workClaim != null
-      ? closestDeposit(state, v.x, v.z, "vein", 1.5)
+      ? bestVein(state, v, null)
       : null;
     const source = pile && pile.tons > 0.05 ? pile : face && face.tons > 0.05 && face.claim === v.workClaim ? face : null;
     if (source) {
