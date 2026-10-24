@@ -645,6 +645,9 @@ export function createWorld(host: HTMLElement): World {
       shake = Math.min(0.6, shake + n);
     },
     snap() {
+      orbitOffset = 0;
+      camZoom = 1;
+      camIdx = 1;
       snapNext = true;
     },
     cycleCam() {
