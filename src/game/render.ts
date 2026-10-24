@@ -307,8 +307,6 @@ export function createWorld(host: HTMLElement): World {
     gold: oreMat(ORES.gold.color),
   };
   const lockedMat = std(0x4a463f, { roughness: 1, flatShading: true });
-  const rockTint = [0xffffff, 0xd7d0c3, 0xaaa49a, 0x817b72];
-
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
     const mat = oreMaterials[d.ore];
@@ -684,11 +682,11 @@ function buildCrusherDressing(
   // crushing chamber, safety rails and a raised discharge conveyor.
   const root = new THREE.Group();
   root.position.set(42, 0, 28);
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x252523, roughness: 0.98 });
-  const darkSteel = new THREE.MeshStandardMaterial({ color: 0x383b3b, roughness: 0.78, metalness: 0.25 });
+  const rubber = track(new THREE.MeshStandardMaterial({ color: 0x252523, roughness: 0.98 }));
+  const darkSteel = track(new THREE.MeshStandardMaterial({ color: 0x383b3b, roughness: 0.78, metalness: 0.25 }));
   const yellow = orange;
-  const belt = new THREE.MeshStandardMaterial({ color: 0x252729, roughness: 0.92 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x526b70, roughness: 0.32, metalness: 0.15 });
+  const belt = track(new THREE.MeshStandardMaterial({ color: 0x252729, roughness: 0.92 }));
+  const glass = track(new THREE.MeshStandardMaterial({ color: 0x526b70, roughness: 0.32, metalness: 0.15 }));
   const addCyl = (radiusTop: number, radiusBottom: number, height: number, x: number, y: number, z: number, mat: THREE.Material, segments = 10) => {
     const mesh = new THREE.Mesh(track(new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments)), mat);
     mesh.position.set(x, y, z);
