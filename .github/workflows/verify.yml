@@ -1,4 +1,4 @@
-name: Verify Ridge Ore
+name: Verify and publish Ridge Ore
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.ref }}
+  group: ridge-ore-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,5 +46,26 @@ jobs:
           src/lib/auth/sign-in-gate.test.ts
           src/lib/preview-path-prefix.test.ts
 
-      - name: Build production client/server bundle
-        run: npm run build:dev
+      - name: Build standalone mobile browser game
+        run: npx vite build --config vite.static.config.ts
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-static
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
