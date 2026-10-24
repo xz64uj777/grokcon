@@ -258,6 +258,11 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number) {
     if (pad.kind === "sluice" && !state.sluice) continue;
     const unit = unitPrice(ore, pad.kind, state.sluice);
     const d = distTo(x, z, pad.x, pad.z);
+    // When the sluice is purchased, route copper/gold there first: it is the
+    // intended recovery plant, not a distance-scored fallback to the crusher.
+    if (pad.kind === "sluice" && state.sluice && (ore === "copper" || ore === "gold")) {
+      return pad;
+    }
     const s = unit - d * 0.55;
     if (s > score) {
       score = s;
@@ -321,8 +326,10 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
   let steer = clamp(diff / 0.42, -1, 1);
   let throttle = 1;
-  if (Math.abs(diff) > 1.15) throttle = 0.28;
-  else if (Math.abs(diff) > 0.65) throttle = 0.55;
+  // Turn first when badly misaligned. Driving forward while steering hard
+  // makes crew machines orbit their target in repeated figure-eights.
+  if (Math.abs(diff) > 0.95) throttle = 0;
+  else if (Math.abs(diff) > 0.55) throttle = 0.42;
   if (d < arrive + 8) throttle = Math.min(throttle, 0.6);
   let brake = 0;
   if (d < arrive) {
