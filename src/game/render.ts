@@ -375,7 +375,8 @@ export function createWorld(host: HTMLElement): World {
   scene.add(gatePost);
 
   buildSluice(scene, track, box, steel, std);
-  buildCrusherDressing(scene, track, box, steel, orange);
+  const crusherAnimators: ((time: number) => void)[] = [];
+  buildCrusherDressing(scene, track, box, steel, orange, crusherAnimators);
   buildRidges(scene, track, std);
   buildTrees(scene, track, std);
   buildFence(scene, track, std);
@@ -464,6 +465,7 @@ export function createWorld(host: HTMLElement): World {
 
   function sync(state: GameState, dt: number, follow: boolean) {
     clock.t += dt;
+    for (const animate of crusherAnimators) animate(clock.t);
     if (bound !== state) bound = state;
     ensure(state);
     for (const v of state.vehicles) {
@@ -677,6 +679,7 @@ function buildCrusherDressing(
   box: (parent: THREE.Object3D, w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, shadow?: boolean) => THREE.Mesh,
   steel: THREE.Material,
   orange: THREE.Material,
+  animators: ((time: number) => void)[],
 ) {
   // Compact tracked mobile jaw crusher: undercarriage, engine bay, feed hopper,
   // crushing chamber, safety rails and a raised discharge conveyor.
@@ -726,6 +729,27 @@ function buildCrusherDressing(
   box(root, 1.42, 1.25, 0.12, 0.2, 1.92, -0.9, darkSteel);
   box(root, 0.16, 1.0, 0.18, -0.45, 1.9, -0.98, steel);
   box(root, 0.16, 1.0, 0.18, 0.85, 1.9, -0.98, steel);
+  // Exposed drive flywheel makes the crusher read as working plant, not a static prop.
+  const flywheel = new THREE.Mesh(track(new THREE.CylinderGeometry(0.56, 0.56, 0.16, 20)), darkSteel);
+  flywheel.rotation.z = Math.PI / 2;
+  flywheel.position.set(1.36, 1.95, -0.1);
+  flywheel.castShadow = true;
+  root.add(flywheel);
+  const flywheelHub = new THREE.Mesh(track(new THREE.CylinderGeometry(0.16, 0.16, 0.2, 12)), steel);
+  flywheelHub.rotation.z = Math.PI / 2;
+  flywheelHub.position.copy(flywheel.position);
+  root.add(flywheelHub);
+  // Amber beacon pulses slowly while the flywheel turns.
+  const beaconMat = new THREE.MeshStandardMaterial({ color: 0xffa21a, emissive: 0xff7a00, emissiveIntensity: 0.4, roughness: 0.35 });
+  track(beaconMat);
+  const beacon = new THREE.Mesh(track(new THREE.CylinderGeometry(0.15, 0.18, 0.22, 10)), beaconMat);
+  beacon.position.set(-1.02, 2.52, 1.25);
+  root.add(beacon);
+  animators.push((time) => {
+    flywheel.rotation.x = time * 5.5;
+    flywheelHub.rotation.x = flywheel.rotation.x;
+    beaconMat.emissiveIntensity = 0.25 + (Math.sin(time * 3.2) + 1) * 0.48;
+  });
   // Angled discharge conveyor with belt and side guards.
   const conveyor = new THREE.Group();
   conveyor.position.set(0.25, 1.35, -0.7);
