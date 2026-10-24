@@ -292,9 +292,13 @@ export function createWorld(host: HTMLElement): World {
     return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid };
   }
 
-  const rockGeo = track(new THREE.DodecahedronGeometry(1, 0));
+  const rockGeometries = [
+    track(new THREE.DodecahedronGeometry(1, 0)),
+    track(new THREE.IcosahedronGeometry(1, 0)),
+    track(new THREE.TetrahedronGeometry(1, 0)),
+  ];
   function oreMat(ore: number) {
-    return std(ore, { roughness: 0.9, flatShading: true });
+    return std(ore, { roughness: 0.96, flatShading: true });
   }
   const oreMaterials: Record<string, THREE.MeshStandardMaterial> = {
     dirt: oreMat(ORES.dirt.color),
@@ -303,19 +307,37 @@ export function createWorld(host: HTMLElement): World {
     gold: oreMat(ORES.gold.color),
   };
   const lockedMat = std(0x4a463f, { roughness: 1, flatShading: true });
+  const rockTint = [0xffffff, 0xd7d0c3, 0xaaa49a, 0x817b72];
 
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
     const mat = oreMaterials[d.ore];
-    const n = d.kind === "vein" ? 4 : 3;
-    for (let i = 0; i < n; i++) {
-      const mesh = new THREE.Mesh(rockGeo, mat);
-      const a = (i / n) * Math.PI * 2;
-      mesh.position.set(Math.cos(a) * 1.1, 0.7 + (i % 2) * 0.3, Math.sin(a) * 1.1);
-      mesh.scale.setScalar(0.7 + (i % 3) * 0.15);
+    // Many small, irregular fragments read as broken ore/gravel rather than
+    // a few oversized boulders. The vein still has a rough exposed-rock core.
+    const count = d.kind === "vein" ? 30 : 22;
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
+      const angle = i * 2.399963229728653;
+      const ring = 0.22 + Math.sqrt((i + 0.5) / count) * (d.kind === "vein" ? 2.05 : 1.8);
+      const size = d.kind === "vein"
+        ? 0.18 + ((i * 7) % 9) * 0.035
+        : 0.12 + ((i * 5) % 7) * 0.028;
+      mesh.position.set(Math.cos(angle) * ring, size * 0.62, Math.sin(angle) * ring);
+      mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
+      mesh.scale.set(size * (0.8 + (i % 3) * 0.18), size * (0.65 + (i % 4) * 0.12), size * (0.75 + (i % 5) * 0.1));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
+    }
+    if (d.kind === "vein") {
+      // A low, fractured outcrop beneath the loose fragments.
+      const core = new THREE.Mesh(rockGeometries[0], mat);
+      core.position.set(0, 0.24, 0);
+      core.scale.set(1.25, 0.42, 1.05);
+      core.rotation.set(0.18, 0.4, -0.12);
+      core.castShadow = true;
+      core.receiveShadow = true;
+      group.add(core);
     }
     group.position.set(d.x, 0, d.z);
     scene.add(group);
@@ -489,8 +511,11 @@ export function createWorld(host: HTMLElement): World {
       if (!view) continue;
       const owned = state.claims.includes(d.claim);
       view.group.position.set(d.x, 0, d.z);
-      const s = (d.kind === "vein" ? 0.8 : 0.4) + Math.sqrt(Math.max(d.tons, 0)) * 0.16;
-      view.group.scale.setScalar(Math.min(3.6, s));
+      const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
+      // Keep each fragment realistically sized; depletion reduces the pile's
+      // footprint instead of scaling individual stones up into giant boulders.
+      const s = (d.kind === "vein" ? 0.72 : 0.58) + fullness * (d.kind === "vein" ? 0.42 : 0.38);
+      view.group.scale.setScalar(s);
       view.group.visible = d.tons > 0.15 || d.regen > 0;
       for (const child of view.group.children) {
         const mesh = child as THREE.Mesh;
@@ -655,12 +680,82 @@ function buildCrusherDressing(
   steel: THREE.Material,
   orange: THREE.Material,
 ) {
-  const chute = new THREE.Mesh(track(new THREE.BoxGeometry(10, 0.35, 1.3)), steel);
-  chute.position.set(42, 3.4, 27);
-  chute.rotation.z = 0.28;
-  chute.castShadow = true;
-  scene.add(chute);
-  box(scene, 2.2, 2.4, 2.2, 48, 2.2, 30, orange);
+  // Compact tracked mobile jaw crusher: undercarriage, engine bay, feed hopper,
+  // crushing chamber, safety rails and a raised discharge conveyor.
+  const root = new THREE.Group();
+  root.position.set(42, 0, 28);
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x252523, roughness: 0.98 });
+  const darkSteel = new THREE.MeshStandardMaterial({ color: 0x383b3b, roughness: 0.78, metalness: 0.25 });
+  const yellow = orange;
+  const belt = new THREE.MeshStandardMaterial({ color: 0x252729, roughness: 0.92 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x526b70, roughness: 0.32, metalness: 0.15 });
+  const addCyl = (radiusTop: number, radiusBottom: number, height: number, x: number, y: number, z: number, mat: THREE.Material, segments = 10) => {
+    const mesh = new THREE.Mesh(track(new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments)), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    root.add(mesh);
+    return mesh;
+  };
+
+  // Twin crawler tracks with visible rollers.
+  for (const x of [-1.55, 1.55]) {
+    box(root, 0.62, 0.62, 5.2, x, 0.48, 0.25, rubber);
+    box(root, 0.67, 0.12, 4.35, x, 0.78, 0.25, darkSteel);
+    for (let i = 0; i < 5; i++) {
+      const roller = addCyl(0.22, 0.22, 0.16, x, 0.43, -1.55 + i * 0.9, steel, 10);
+      roller.rotation.z = Math.PI / 2;
+    }
+  }
+  box(root, 3.5, 0.38, 4.7, 0, 1.02, 0.2, darkSteel);
+  box(root, 2.25, 0.82, 1.8, 0.2, 1.62, 1.12, yellow);
+  box(root, 1.85, 0.48, 1.45, 0.2, 2.18, 1.12, darkSteel);
+  box(root, 1.42, 0.34, 0.08, 0.2, 2.18, 0.36, glass, false);
+  // Engine cover and service details.
+  box(root, 1.55, 1.1, 1.45, -1.02, 1.8, 1.25, yellow);
+  box(root, 1.18, 0.12, 1.1, -1.02, 2.38, 1.25, darkSteel);
+  for (let i = 0; i < 4; i++) box(root, 0.06, 0.5, 0.72, -1.64 + i * 0.22, 1.78, 1.25, darkSteel, false);
+  // Feed hopper: broad rim, sloped sides and deep dark throat.
+  box(root, 2.45, 0.18, 2.1, 0.2, 2.88, -1.25, steel);
+  box(root, 2.05, 0.16, 1.72, 0.2, 2.7, -1.25, darkSteel);
+  const hopperSideA = box(root, 0.16, 0.78, 1.9, -0.93, 2.48, -1.25, yellow);
+  hopperSideA.rotation.z = -0.22;
+  const hopperSideB = box(root, 0.16, 0.78, 1.9, 1.33, 2.48, -1.25, yellow);
+  hopperSideB.rotation.z = 0.22;
+  box(root, 2.2, 0.68, 0.16, 0.2, 2.43, -2.18, yellow);
+  // Jaw chamber and guarded side panels.
+  box(root, 2.05, 1.7, 1.45, 0.2, 1.95, -0.12, yellow);
+  box(root, 1.42, 1.25, 0.12, 0.2, 1.92, -0.9, darkSteel);
+  box(root, 0.16, 1.0, 0.18, -0.45, 1.9, -0.98, steel);
+  box(root, 0.16, 1.0, 0.18, 0.85, 1.9, -0.98, steel);
+  // Angled discharge conveyor with belt and side guards.
+  const conveyor = new THREE.Group();
+  conveyor.position.set(0.25, 1.35, -0.7);
+  conveyor.rotation.x = -0.34;
+  box(conveyor, 1.35, 0.18, 5.6, 0, 0.7, -2.25, darkSteel);
+  box(conveyor, 1.04, 0.06, 5.25, 0, 0.82, -2.25, belt, false);
+  box(conveyor, 0.1, 0.28, 5.3, -0.62, 0.84, -2.25, yellow);
+  box(conveyor, 0.1, 0.28, 5.3, 0.62, 0.84, -2.25, yellow);
+  root.add(conveyor);
+  // Hydraulic support, access ladder and operator/service platform.
+  const supportA = box(root, 0.13, 1.4, 0.13, -0.5, 1.1, -2.5, steel);
+  supportA.rotation.x = -0.28;
+  const supportB = box(root, 0.13, 1.4, 0.13, 0.75, 1.1, -2.5, steel);
+  supportB.rotation.x = -0.28;
+  box(root, 1.7, 0.1, 0.75, 0.2, 2.15, 0.95, steel);
+  box(root, 0.08, 0.55, 0.08, -0.6, 2.45, 0.95, steel);
+  box(root, 0.08, 0.55, 0.08, 1.0, 2.45, 0.95, steel);
+  box(root, 1.55, 0.08, 0.08, 0.2, 2.7, 0.95, steel, false);
+  // A short feed chute and discharge pile anchor the machine to the site.
+  const feed = box(root, 1.5, 0.16, 1.25, 0.2, 1.25, -1.5, steel);
+  feed.rotation.x = -0.18;
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+  scene.add(root);
 }
 
 function buildRidges(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {
