@@ -758,6 +758,17 @@ function buildCrusherDressing(
   box(conveyor, 1.04, 0.06, 5.25, 0, 0.82, -2.25, belt, false);
   box(conveyor, 0.1, 0.28, 5.3, -0.62, 0.84, -2.25, yellow);
   box(conveyor, 0.1, 0.28, 5.3, 0.62, 0.84, -2.25, yellow);
+  // Raised belt cleats travel down the conveyor so the discharge looks active.
+  const beltCleats: THREE.Mesh[] = [];
+  for (let i = 0; i < 8; i++) {
+    const cleat = box(conveyor, 0.92, 0.045, 0.07, 0, 0.87, -4.65 + i * 0.68, steel, false);
+    beltCleats.push(cleat);
+  }
+  animators.push((time) => {
+    for (let i = 0; i < beltCleats.length; i++) {
+      beltCleats[i].position.z = -4.65 + ((i * 0.68 + time * 0.85) % 5.1);
+    }
+  });
   root.add(conveyor);
   // Hydraulic support, access ladder and operator/service platform.
   const supportA = box(root, 0.13, 1.4, 0.13, -0.5, 1.1, -2.5, steel);
