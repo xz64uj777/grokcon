@@ -37,7 +37,6 @@ export type World = {
   orbit: (dt: number) => void;
   kick: (n: number) => void;
   snap: () => void;
-  resetCamera: () => void;
   cycleCam: () => void;
   cameraDrag: (deltaX: number) => void;
   zoom: (factor: number) => void;
