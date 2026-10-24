@@ -571,7 +571,7 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
   if (
     allowStockpile &&
     (def.dig > 0 || def.scoop > 0) &&
-    v.cargo > 0.35 &&
+    v.cargo > 0.04 &&
     v.cargoOre &&
     Math.abs(v.speed) < 1.1
   ) {
@@ -582,7 +582,8 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
       const drop = Math.min(v.cargo, Math.max(st.scoop, st.dig, 3) * dt);
       addPile(state, v.cargoOre, drop, v.x + fx * (st.radius + 2.6), v.z + fz * (st.radius + 2.6));
       v.cargo -= drop;
-      if (v.cargo <= 0.05) {
+      if (v.cargo <= 0.08) {
+        // Clear tiny floating-point leftovers so the machine can be fully emptied.
         v.cargo = 0;
         v.cargoOre = null;
       }
