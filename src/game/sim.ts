@@ -131,6 +131,7 @@ function makeVehicle(id: VehicleId, slot: number): VehicleState {
     upgrades: { engine: 0, body: 0, hydro: 0 },
     hired: false,
     operator: false,
+    workClaim: null,
     status: "Parked",
     stuck: 0,
     unstick: 0,
@@ -272,6 +273,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
   for (const d of state.deposits) {
     if (d.kind !== "vein" || d.tons < 1) continue;
     if (!ownsClaim(state, d.claim)) continue;
+    if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (ore && d.ore !== ore) continue;
     const unit = ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z) + 10;
@@ -290,6 +292,7 @@ function bestPile(state: GameState, v: VehicleState) {
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.tons < 0.4) continue;
     if (!ownsClaim(state, d.claim)) continue;
+    if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     const unit = ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z) + 8;
@@ -952,6 +955,7 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
       active: index === state.active,
       hired: veh.hired,
       operator: veh.operator,
+      workClaim: veh.workClaim ?? null,
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
       affordableHire: veh.hired || state.cash >= HIRE_COST,
       upgrades: kinds.map((k) => {
