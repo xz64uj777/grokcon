@@ -63,6 +63,7 @@ function sanitize(raw: unknown): GameState | null {
         stuck: 0,
         unstick: 0,
         bias: 1,
+        workClaim: typeof v.workClaim === "number" ? Math.round(num(v.workClaim, 0, 0, 99)) : null,
         busy: false,
       });
     }
