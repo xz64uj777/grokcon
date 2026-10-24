@@ -216,6 +216,14 @@ export function createWorld(host: HTMLElement): World {
       bucket = new THREE.Group();
       bucket.position.set(0, 0.55, -1.35);
       box(bucket, 1.4, 0.42, 0.48, 0, 0.15, 0, steel);
+      // Short cutting edge and individual teeth, rather than a smooth toy-like bucket.
+      box(bucket, 1.44, 0.1, 0.12, 0, -0.06, -0.28, darkSteel);
+      for (let i = 0; i < 5; i++) {
+        const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.075, 0.24, 5)), steel);
+        tooth.rotation.x = -Math.PI / 2;
+        tooth.position.set(-0.56 + i * 0.28, -0.08, -0.39);
+        bucket.add(tooth);
+      }
       root.add(bucket);
       load = box(bucket, 1.1, 0.22, 0.28, 0, 0.28, 0.05, std(ORES.iron.color), false);
       box(root, 0.28, 0.32, 1.5, -0.72, 0.4, 0, cabMat);
@@ -242,6 +250,14 @@ export function createWorld(host: HTMLElement): World {
       bucket = new THREE.Group();
       bucket.position.set(0, 0.7, -2.15);
       box(bucket, 2.05, 0.7, 0.7, 0, 0.25, 0, steel);
+      // Wide loader cutting lip with five distinct replaceable-looking teeth.
+      box(bucket, 2.08, 0.12, 0.16, 0, -0.08, -0.38, paintDark);
+      for (let i = 0; i < 7; i++) {
+        const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.09, 0.28, 5)), steel);
+        tooth.rotation.x = -Math.PI / 2;
+        tooth.position.set(-0.82 + i * 0.273, -0.11, -0.49);
+        bucket.add(tooth);
+      }
       root.add(bucket);
       load = box(bucket, 1.7, 0.35, 0.45, 0, 0.55, 0.05, std(ORES.iron.color), false);
     } else if (id === "excavator") {
@@ -262,6 +278,12 @@ export function createWorld(host: HTMLElement): World {
       bucket = new THREE.Group();
       bucket.position.set(0, -0.45, -1.05);
       box(bucket, 0.85, 0.45, 0.5, 0, -0.05, 0, steel);
+      for (let i = 0; i < 4; i++) {
+        const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.06, 0.18, 5)), steel);
+        tooth.rotation.x = -Math.PI / 2;
+        tooth.position.set(-0.3 + i * 0.2, -0.2, -0.3);
+        bucket.add(tooth);
+      }
       load = box(bucket, 0.65, 0.22, 0.32, 0, 0.12, 0.02, std(ORES.iron.color), false);
       stick.add(bucket);
       boom.add(stick);
