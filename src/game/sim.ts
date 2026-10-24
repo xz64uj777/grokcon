@@ -424,7 +424,16 @@ function aiControl(state: GameState, index: number): Control {
       arrive = pile.radius * 0.7;
       label = `Scooping ${ORES[pile.ore].name}`;
     } else if (has) haulTarget();
-    else label = "Looking for a pile";
+    else if (v.operator && v.workClaim != null) {
+      // A crew-assigned loader can work the selected face directly when no
+      // loose pile exists yet; otherwise it would wait forever at an empty bench.
+      const face = bestVein(state, v, null);
+      if (face) {
+        target = face;
+        arrive = face.radius * 0.7;
+        label = `Working ${ORES[face.ore].name} face`;
+      } else label = "No material at assigned source";
+    } else label = "Looking for a pile";
   }
 
   if ((def.id === "excavator" || def.id === "loader") && has && !full) {
@@ -538,17 +547,24 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
 
   if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
     const pile = closestDeposit(state, v.x, v.z, "pile", 0);
-    if (pile && pile.tons > 0.05) {
-      if (!ownsClaim(state, pile.claim)) return null;
-      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== pile.ore) {
+    // Only crew explicitly assigned to a claim may scoop directly from its
+    // vein when that claim has no loose pile. Player controls keep their
+    // existing pile-only behavior.
+    const face = !pile && v.operator && v.workClaim != null
+      ? bestVein(state, v, null)
+      : null;
+    const source = pile && pile.tons > 0.05 ? pile : face && face.tons > 0.05 && face.claim === v.workClaim ? face : null;
+    if (source) {
+      if (!ownsClaim(state, source.claim)) return null;
+      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== source.ore) {
         if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
         return null;
       }
-      const take = Math.min(pile.tons, st.capacity - v.cargo, st.scoop * dt);
+      const take = Math.min(source.tons, st.capacity - v.cargo, st.scoop * dt);
       if (take > 0) {
-        pile.tons -= take;
+        source.tons -= take;
         v.cargo += take;
-        v.cargoOre = pile.ore;
+        v.cargoOre = source.ore;
         v.busy = true;
         if (player) state.tutorial.loaded = true;
       }
