@@ -39,6 +39,7 @@ export type VehicleState = {
   upgrades: Record<UpgradeKind, number>;
   hired: boolean;
   operator: boolean;
+  workClaim: number | null;
   status: string;
   stuck: number;
   unstick: number;
@@ -101,6 +102,7 @@ export type CrewCard = {
   active: boolean;
   hired: boolean;
   operator: boolean;
+  workClaim: number | null;
   hireLabel: string;
   affordableHire: boolean;
   upgrades: UpgradeCard[];
@@ -149,6 +151,7 @@ export type GameApi = {
   buyGround: (id: number) => void;
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
+  assignSource: (index: number, claim: number | null) => void;
   drive: (index: number) => void;
   setStick: (steer: number, throttle: number) => void;
   setAction: (down: boolean) => void;
