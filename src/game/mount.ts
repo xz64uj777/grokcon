@@ -27,6 +27,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   const stick = { steer: 0, throttle: 0 };
   const cameraPointers = new Map<number, { x: number; y: number }>();
   let pinchDistance = 0;
+  let lastCameraTap = { time: 0, x: 0, y: 0 };
   let actionBtn = false;
 
   const world = createWorld(host);
@@ -146,6 +147,15 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function onCameraPointerDown(e: PointerEvent) {
     if (!running || !(e.target instanceof HTMLCanvasElement)) return;
+    const now = performance.now();
+    const tapGap = now - lastCameraTap.time;
+    const tapDistance = Math.hypot(e.clientX - lastCameraTap.x, e.clientY - lastCameraTap.y);
+    if (cameraPointers.size === 0 && tapGap > 0 && tapGap < 320 && tapDistance < 28) {
+      world.snap();
+      lastCameraTap = { time: 0, x: 0, y: 0 };
+    } else if (cameraPointers.size === 0) {
+      lastCameraTap = { time: now, x: e.clientX, y: e.clientY };
+    }
     cameraPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (cameraPointers.size === 2) {
       const pts = [...cameraPointers.values()];
