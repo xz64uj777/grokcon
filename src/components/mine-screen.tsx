@@ -141,6 +141,14 @@ export function MineScreen() {
               </button>
               <button
                 type="button"
+                className="pointer-events-auto inline-flex h-11 items-center justify-center border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg"
+                aria-label="Change camera view"
+                onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyC", bubbles: true }))}
+              >
+                View
+              </button>
+              <button
+                type="button"
                 className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center border border-border bg-surface text-fg"
                 aria-label={hud.muted ? "Unmute" : "Mute"}
                 onClick={() => apiRef.current?.toggleMute()}
@@ -165,7 +173,7 @@ export function MineScreen() {
               <p className="mt-2 text-sm leading-relaxed text-muted">{hud.hint}</p>
               {hud.log[0] && <p className="mt-1 text-sm text-cash">{hud.log[0]}</p>}
             </div>
-            <p className="key-hint mt-2 text-sm text-muted">Space works the tool · V next machine · C camera · Tab office</p>
+            <p className="key-hint mt-2 text-sm text-muted">Space works the tool · V next machine · View changes camera · drag to orbit · pinch to zoom · Tab office</p>
           </footer>
           <div className="touch-ui pointer-events-none absolute inset-x-0 bottom-0 z-10 items-end justify-between p-4 pb-6">
             <Joystick onChange={(steer, throttle) => apiRef.current?.setStick(steer, throttle)} />
@@ -228,6 +236,8 @@ export function MineScreen() {
                 ))}
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-2">
+                {panel === "crew" && <p className="border-b border-border py-3 text-sm leading-relaxed text-muted">Operators work machines you are not currently driving. Hire an operator for each machine you want running as part of the crew; switch seats to let that operator take over.</p>}
+
                 {panel === "machines" &&
                   hud.machines.map((m) => (
                     <article key={m.id} className="border-b border-border py-4">
