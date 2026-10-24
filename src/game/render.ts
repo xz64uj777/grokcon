@@ -869,6 +869,8 @@ function buildCrusherDressing(
       object.receiveShadow = true;
     }
   });
+  // Scale the crusher to read as a major processing plant beside the player vehicles.
+  root.scale.setScalar(1.65);
   scene.add(root);
 }
 

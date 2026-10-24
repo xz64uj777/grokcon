@@ -40,7 +40,7 @@ export const BLOCKS: Block[] = [
 ];
 
 export const PADS = [
-  { id: "crusher", name: "Crusher", x: 32, z: 30, r: 12, kind: "crusher" as const },
+  { id: "crusher", name: "Crusher", x: 32, z: 30, r: 15, kind: "crusher" as const },
   { id: "reclaim", name: "Reclaim", x: 44, z: 46, r: 8, kind: "reclaim" as const },
   { id: "sluice", name: "Sluice", x: -80, z: 36, r: 8, kind: "sluice" as const },
 ];
