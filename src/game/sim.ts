@@ -576,9 +576,8 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
     Math.abs(v.speed) < 1.1
   ) {
     const nearVein = closestDeposit(state, v.x, v.z, "vein", extra);
-    const nearPile = closestDeposit(state, v.x, v.z, "pile", 0);
     const nearTruck = nearestHauler(state, v, 9, false);
-    if (!nearVein && !nearPile && !pad && !nearTruck) {
+    if (!nearVein && !pad && !nearTruck) {
       const drop = Math.min(v.cargo, Math.max(st.scoop, st.dig, 3) * dt);
       addPile(state, v.cargoOre, drop, v.x + fx * (st.radius + 2.6), v.z + fz * (st.radius + 2.6));
       v.cargo -= drop;
