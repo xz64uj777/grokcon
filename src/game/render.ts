@@ -38,6 +38,8 @@ export type World = {
   kick: (n: number) => void;
   snap: () => void;
   cycleCam: () => void;
+  cameraDrag: (deltaX: number) => void;
+  zoom: (factor: number) => void;
   project: (x: number, y: number, z: number, w: number, h: number) => { x: number; y: number } | null;
   resize: () => void;
   dispose: () => void;
@@ -46,6 +48,7 @@ export type World = {
 export function createWorld(host: HTMLElement): World {
   const canvas = document.createElement("canvas");
   canvas.className = "absolute inset-0 h-full w-full";
+  canvas.style.touchAction = "none";
   host.appendChild(canvas);
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -439,6 +442,8 @@ export function createWorld(host: HTMLElement): World {
   scene.add(dust);
 
   let camIdx = 1;
+  let camZoom = 1;
+  let orbitOffset = 0;
   let orbitAng = 0.4;
   let shake = 0;
   let snapNext = false;
@@ -490,9 +495,10 @@ export function createWorld(host: HTMLElement): World {
     }
     const v = state.vehicles[state.active];
     if (!v) return;
-    const dist = CAMS[camIdx];
-    const fx = -Math.sin(v.yaw);
-    const fz = -Math.cos(v.yaw);
+    const dist = CAMS[camIdx] * camZoom;
+    const yaw = v.yaw + orbitOffset;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
     _desired.set(v.x - fx * dist, 2.2 + dist * 0.42, v.z - fz * dist);
     if (snapNext) {
       camera.position.copy(_desired);
@@ -643,6 +649,13 @@ export function createWorld(host: HTMLElement): World {
     },
     cycleCam() {
       camIdx = (camIdx + 1) % CAMS.length;
+    },
+    cameraDrag(deltaX: number) {
+      orbitOffset = Math.max(-Math.PI * 0.82, Math.min(Math.PI * 0.82, orbitOffset - deltaX * 0.008));
+    },
+    zoom(factor: number) {
+      if (!Number.isFinite(factor) || factor <= 0) return;
+      camZoom = Math.max(0.5, Math.min(2.1, camZoom / factor));
     },
     project(x, y, z, w, h) {
       _proj.set(x, y, z).project(camera);
