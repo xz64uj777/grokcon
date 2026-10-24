@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --color-bg: #141210;
+  --color-surface: #1e1b16;
+  --color-surface-2: #2a261f;
+  --color-fg: #f4efe6;
+  --color-muted: #a39888;
+  --color-primary: #e26a2c;
+  --color-primary-fg: #1a100a;
+  --color-cash: #e6b325;
+  --color-border: #3f382f;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+  body {
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--font-sans);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+.game-shell {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-shell input {
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: manipulation;
+}
+
+.touch-ui {
+  display: none;
+}
+
+.key-hint {
+  display: block;
+}
+
+@media (pointer: coarse), (max-width: 820px) {
+  .touch-ui {
+    display: flex;
+  }
+  .key-hint {
+    display: none;
+  }
+  .hud-foot {
+    bottom: 12rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-shell * {
+    transition: none !important;
+  }
+}

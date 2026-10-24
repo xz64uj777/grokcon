@@ -1,0 +1,1004 @@
+import {
+  BASE_DEPOSITS,
+  BOUNDS,
+  BLOCKS,
+  CLAIMS,
+  DEFS,
+  GATE,
+  HIRE_COST,
+  CREW_KEEP,
+  ORES,
+  PADS,
+  SLUICE,
+  SPAWNS,
+  START_CASH,
+  VEHICLE_ORDER,
+  formatMoney,
+  inPit,
+  tierInfo,
+  upgradeCost,
+} from "@/game/catalog";
+import type {
+  Deposit,
+  GameState,
+  HudModel,
+  Input,
+  OreId,
+  PadKind,
+  UpgradeKind,
+  VehicleId,
+  VehicleState,
+} from "@/game/types";
+
+export type Control = {
+  throttle: number;
+  steer: number;
+  action: boolean;
+  brake: number;
+};
+
+export type StepFX = {
+  dig: boolean;
+  sales: { x: number; z: number; text: string; player: boolean }[];
+};
+
+const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
+const saleAcc = new WeakMap<VehicleState, number>();
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function hypot(x: number, z: number) {
+  return Math.hypot(x, z);
+}
+
+export function vehicleStats(v: VehicleState) {
+  const d = DEFS[v.defId];
+  const eng = 1 + v.upgrades.engine * 0.18;
+  const body = 1 + v.upgrades.body * 0.28;
+  const hydro = 1 + v.upgrades.hydro * 0.3;
+  const capacity = d.capacity === 0 ? 0 : d.capacity * body;
+  const push = d.push * hydro * (d.capacity === 0 ? body : 1);
+  return {
+    maxSpeed: d.maxSpeed * eng,
+    accel: d.accel * eng,
+    turn: d.turn,
+    capacity,
+    dig: d.dig * hydro,
+    scoop: d.scoop * hydro,
+    push,
+    radius: d.radius,
+  };
+}
+
+export function unitPrice(ore: OreId, pad: PadKind, sluice: boolean) {
+  const o = ORES[ore];
+  if (pad === "reclaim") return ore === "dirt" ? o.reclaim : Math.round(o.crusher * 0.4);
+  if (pad === "sluice") {
+    if (!sluice) return 0;
+    if (ore === "gold") return o.sluice;
+    if (ore === "copper") return o.sluice;
+    return o.crusher;
+  }
+  return o.crusher;
+}
+
+function ownsClaim(state: GameState, claim: number) {
+  return state.claims.includes(claim);
+}
+
+function owns(state: GameState, id: VehicleId) {
+  return state.vehicles.some((v) => v.defId === id);
+}
+
+function log(state: GameState, msg: string) {
+  state.log.unshift(msg);
+  if (state.log.length > 5) state.log.length = 5;
+}
+
+export function freshGame(company: string): GameState {
+  const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
+  return {
+    version: 1,
+    company: name,
+    cash: START_CASH,
+    lifetime: 0,
+    seconds: 0,
+    claims: [1],
+    sluice: false,
+    muted: false,
+    vehicles: [makeVehicle("pickup", 0)],
+    active: 0,
+    deposits: BASE_DEPOSITS.map((d) => ({ ...d })),
+    pileSeq: 1,
+    tutorial: { loaded: false, dumped: false, bought: false },
+    log: ["The claim truck is fueled. The iron pile is south of the gate."],
+  };
+}
+
+function makeVehicle(id: VehicleId, slot: number): VehicleState {
+  const spawn = SPAWNS[slot] ?? { x: SPAWNS[0].x + slot, z: SPAWNS[0].z };
+  return {
+    uid: `${id}-${slot}-${Math.floor(Math.random() * 9999)}`,
+    defId: id,
+    x: spawn.x,
+    z: spawn.z,
+    yaw: 0,
+    speed: 0,
+    cargoOre: null,
+    cargo: 0,
+    upgrades: { engine: 0, body: 0, hydro: 0 },
+    hired: false,
+    operator: false,
+    status: "Parked",
+    stuck: 0,
+    unstick: 0,
+    bias: 1,
+    busy: false,
+  };
+}
+
+function distTo(x: number, z: number, tx: number, tz: number) {
+  return hypot(tx - x, tz - z);
+}
+
+function nearestPad(state: GameState, x: number, z: number) {
+  let best: (typeof PADS)[number] | null = null;
+  let bestD = Infinity;
+  for (const pad of PADS) {
+    if (pad.kind === "sluice" && !state.sluice) continue;
+    const d = distTo(x, z, pad.x, pad.z);
+    if (d < bestD) {
+      bestD = d;
+      best = pad;
+    }
+  }
+  return best && bestD <= best.r ? best : null;
+}
+
+function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
+  let best: VehicleState | null = null;
+  let bestD = maxDist;
+  for (const o of state.vehicles) {
+    if (o === v) continue;
+    if (!DEFS[o.defId].receives) continue;
+    if (operatedOnly && !o.operator && state.vehicles[state.active] !== o) continue;
+    const room = vehicleStats(o).capacity - o.cargo;
+    if (room < 0.4) continue;
+    if (o.cargo > 0.15 && o.cargoOre && v.cargoOre && o.cargoOre !== v.cargoOre) continue;
+    const d = distTo(v.x, v.z, o.x, o.z);
+    if (d <= bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+function closestDeposit(
+  state: GameState,
+  x: number,
+  z: number,
+  kind: "vein" | "pile" | "any",
+  extra = 0,
+) {
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (kind !== "any" && d.kind !== kind) continue;
+    if (d.tons < 0.08 && d.regen <= 0) continue;
+    const dist = distTo(x, z, d.x, d.z);
+    const zone = d.radius + extra;
+    if (dist <= zone && dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number) {
+  if (tons <= 0) return;
+  let best: Deposit | null = null;
+  let bestD = 5.5;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.ore !== ore) continue;
+    const dist = distTo(x, z, d.x, d.z);
+    if (dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  if (!best) {
+    const loose = state.deposits.filter((d) => d.kind === "pile" && d.regen <= 0);
+    if (loose.length >= 16) {
+      let near = loose[0];
+      let nd = Infinity;
+      for (const d of loose) {
+        if (d.ore !== ore) continue;
+        const dist = distTo(x, z, d.x, d.z);
+        if (dist < nd) {
+          nd = dist;
+          near = d;
+        }
+      }
+      if (near.ore === ore) best = near;
+    }
+  }
+  if (best) {
+    const t = best.tons + tons;
+    best.x = (best.x * best.tons + x * tons) / t;
+    best.z = (best.z * best.tons + z * tons) / t;
+    best.tons = t;
+    best.max = Math.max(best.max, t);
+    return;
+  }
+  state.pileSeq += 1;
+  state.deposits.push({
+    id: `pile-${state.pileSeq}`,
+    kind: "pile",
+    ore,
+    tons,
+    max: tons,
+    x,
+    z,
+    regen: 0,
+    claim: 1,
+    radius: 6,
+    sign: ORES[ore].name.toUpperCase(),
+  });
+}
+
+function bestPad(state: GameState, ore: OreId, x: number, z: number) {
+  let best: (typeof PADS)[number] | null = null;
+  let score = -Infinity;
+  for (const pad of PADS) {
+    if (pad.kind === "sluice" && !state.sluice) continue;
+    const unit = unitPrice(ore, pad.kind, state.sluice);
+    const d = distTo(x, z, pad.x, pad.z);
+    const s = unit - d * 0.55;
+    if (s > score) {
+      score = s;
+      best = pad;
+    }
+  }
+  return best;
+}
+
+function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
+  let best: Deposit | null = null;
+  let score = -1;
+  for (const d of state.deposits) {
+    if (d.kind !== "vein" || d.tons < 1) continue;
+    if (!ownsClaim(state, d.claim)) continue;
+    if (ore && d.ore !== ore) continue;
+    const unit = ORES[d.ore].crusher;
+    const d0 = distTo(v.x, v.z, d.x, d.z) + 10;
+    const s = (unit * Math.min(d.tons, 50)) / d0;
+    if (s > score) {
+      score = s;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function bestPile(state: GameState, v: VehicleState) {
+  let best: Deposit | null = null;
+  let score = -1;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.tons < 0.4) continue;
+    if (!ownsClaim(state, d.claim)) continue;
+    if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
+    const unit = ORES[d.ore].crusher;
+    const d0 = distTo(v.x, v.z, d.x, d.z) + 8;
+    const s = (unit * Math.min(d.tons, 30)) / d0;
+    if (s > score) {
+      score = s;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function routeTo(v: VehicleState, tx: number, tz: number) {
+  if (inPit(v.x, v.z) !== inPit(tx, tz)) {
+    if (distTo(v.x, v.z, GATE.x, GATE.z) > 9) return GATE;
+  }
+  return { x: tx, z: tz };
+}
+
+function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control {
+  const routed = routeTo(v, tx, tz);
+  const dx = routed.x - v.x;
+  const dz = routed.z - v.z;
+  const d = Math.hypot(dx, dz) || 0.0001;
+  const desired = Math.atan2(-dx, -dz);
+  const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
+  let steer = clamp(diff / 0.42, -1, 1);
+  let throttle = 1;
+  if (Math.abs(diff) > 1.15) throttle = 0.28;
+  else if (Math.abs(diff) > 0.65) throttle = 0.55;
+  if (d < arrive + 8) throttle = Math.min(throttle, 0.6);
+  let brake = 0;
+  if (d < arrive) {
+    throttle = 0;
+    brake = 1;
+    if (Math.abs(diff) > 0.4) {
+      steer = clamp(diff / 0.35, -1, 1);
+      return { throttle, steer, action: false, brake };
+    }
+    steer = 0;
+    return { throttle, steer, action: true, brake };
+  }
+  if (v.unstick > 0) {
+    steer = v.bias;
+    throttle = 0.85;
+    brake = 0;
+  }
+  return { throttle, steer, action: false, brake };
+}
+
+function aiControl(state: GameState, index: number): Control {
+  const v = state.vehicles[index];
+  const def = DEFS[v.defId];
+  const st = vehicleStats(v);
+  const cap = st.capacity;
+  const full = cap > 0 && v.cargo >= cap * 0.9;
+  const has = v.cargo > 0.25;
+  let target: { x: number; z: number } | null = null;
+  let arrive = 6;
+  let label = "Looking for work";
+
+  const haulTarget = () => {
+    if (!v.cargoOre) return;
+    const loaderLike = def.id === "loader" || def.id === "excavator";
+    if (loaderLike) {
+      const truck = nearestHauler(state, v, 70, true);
+      if (truck) {
+        target = truck;
+        arrive = 7.5;
+        label = `Loading ${DEFS[truck.defId].name}`;
+        return;
+      }
+    }
+    const pad = bestPad(state, v.cargoOre, v.x, v.z);
+    if (pad) {
+      target = pad;
+      arrive = Math.max(5, pad.r * 0.62);
+      label = `Hauling to ${pad.name}`;
+    }
+  };
+
+  if (def.push > 0) {
+    const vein = bestVein(state, v, null);
+    if (vein) {
+      target = vein;
+      arrive = vein.radius * 0.72;
+      label = `Stripping ${ORES[vein.ore].name}`;
+    } else label = "No face in reach";
+  } else if (def.receives) {
+    const diggerNear = state.vehicles.some(
+      (o, i) =>
+        i !== index &&
+        (o.operator || i === state.active) &&
+        (DEFS[o.defId].dig > 0 || DEFS[o.defId].scoop > 0) &&
+        distTo(v.x, v.z, o.x, o.z) < 18,
+    );
+    const bedFull = cap > 0 && v.cargo >= cap * 0.82;
+    const leftWithALoad = v.cargo >= 4 && !diggerNear;
+    if (bedFull || leftWithALoad) haulTarget();
+    else {
+      const digger = state.vehicles.find(
+        (o, i) => i !== index && (o.operator || i === state.active) && (DEFS[o.defId].dig > 0 || DEFS[o.defId].id === "loader"),
+      );
+      if (digger) {
+        target = { x: digger.x + 7, z: digger.z + 5 };
+        arrive = 8;
+        label = "Waiting on a load";
+      } else {
+        const iron = state.deposits.find((d) => d.id === "iron");
+        target = iron ? { x: iron.x + 9, z: iron.z + 7 } : { x: GATE.x, z: 2 };
+        arrive = 8;
+        label = "Waiting on a loader";
+      }
+    }
+  } else if (has && full) {
+    haulTarget();
+  } else if (def.dig > 0) {
+    const vein = bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null);
+    if (!full && vein) {
+      target = vein;
+      arrive = vein.radius * 0.7;
+      label = `Digging ${ORES[vein.ore].name}`;
+    } else if (has) haulTarget();
+    else label = "No face in reach";
+  } else if (def.scoop > 0) {
+    const pile = !full ? bestPile(state, v) : null;
+    if (pile) {
+      target = pile;
+      arrive = pile.radius * 0.7;
+      label = `Scooping ${ORES[pile.ore].name}`;
+    } else if (has) haulTarget();
+    else label = "Looking for a pile";
+  }
+
+  if ((def.id === "excavator" || def.id === "loader") && has && !full) {
+    const truck = nearestHauler(state, v, 18, true);
+    if (truck && v.cargo > Math.min(1.4, cap * 0.4)) {
+      target = truck;
+      arrive = 7.5;
+      label = `Loading ${DEFS[truck.defId].name}`;
+    }
+  }
+
+  v.status = label;
+  if (!target) return { ...ZERO };
+  return seek(v, target.x, target.z, arrive);
+}
+
+function materialInFront(state: GameState, v: VehicleState, reach: number) {
+  const fx = -Math.sin(v.yaw);
+  const fz = -Math.cos(v.yaw);
+  let vein: Deposit | null = null;
+  let pile: Deposit | null = null;
+  let veinD = Infinity;
+  let pileD = Infinity;
+  for (const d of state.deposits) {
+    if (d.tons < 0.2) continue;
+    const dx = d.x - v.x;
+    const dz = d.z - v.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > reach || dist < 0.05) continue;
+    const dot = (dx / dist) * fx + (dz / dist) * fz;
+    if (dot < 0.25) continue;
+    if (d.kind === "vein" && dist < veinD) {
+      vein = d;
+      veinD = dist;
+    } else if (d.kind === "pile" && dist < pileD) {
+      pile = d;
+      pileD = dist;
+    }
+  }
+  return vein ?? pile;
+}
+
+function performAction(state: GameState, index: number, dt: number, allowStockpile: boolean): StepFX["sales"][number] | null {
+  const v = state.vehicles[index];
+  const def = DEFS[v.defId];
+  const st = vehicleStats(v);
+  const fx = -Math.sin(v.yaw);
+  const fz = -Math.cos(v.yaw);
+  const player = index === state.active;
+
+  const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
+  if (v.cargo > 0.04 && v.cargoOre && pad) {
+    const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
+    const gross = v.cargo * unit;
+    const net = gross * (player ? 1 : CREW_KEEP);
+    const oreName = ORES[v.cargoOre].name;
+    state.cash += net;
+    state.lifetime += net;
+    v.cargo = 0;
+    v.cargoOre = null;
+    saleAcc.set(v, 0);
+    v.busy = true;
+    if (player) state.tutorial.dumped = true;
+    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName}`, player };
+  }
+
+  const extra = def.id === "excavator" ? 2.2 : 0;
+  if ((def.dig > 0 || def.scoop > 0) && v.cargo > 0.05 && v.cargoOre && !def.receives) {
+    const truck = nearestHauler(state, v, 9 + extra, false);
+    if (truck) {
+      const room = vehicleStats(truck).capacity - truck.cargo;
+      if (room > 0.05 && (!truck.cargoOre || truck.cargo < 0.05 || truck.cargoOre === v.cargoOre)) {
+        const rate = Math.max(st.dig, st.scoop, 2.5) * 2 * dt;
+        const move = Math.min(v.cargo, room, Math.max(rate, 0.4 * dt));
+        if (truck.cargo < 0.05) truck.cargoOre = v.cargoOre;
+        truck.cargo += move;
+        v.cargo -= move;
+        if (v.cargo <= 0.05) {
+          v.cargo = 0;
+          v.cargoOre = null;
+        }
+        v.busy = true;
+        truck.busy = true;
+        return null;
+      }
+    }
+  }
+
+  if (def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
+    const vein = closestDeposit(state, v.x, v.z, "vein", extra);
+    if (vein) {
+      if (!ownsClaim(state, vein.claim)) {
+        if (player) v.status = "Unleased ground";
+        return null;
+      }
+      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== vein.ore) {
+        if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
+        return null;
+      }
+      const take = Math.min(vein.tons, st.capacity - v.cargo, st.dig * dt);
+      if (take > 0) {
+        vein.tons -= take;
+        v.cargo += take;
+        v.cargoOre = vein.ore;
+        v.busy = true;
+        if (player) state.tutorial.loaded = true;
+      }
+      return null;
+    }
+  }
+
+  if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
+    const pile = closestDeposit(state, v.x, v.z, "pile", 0);
+    if (pile && pile.tons > 0.05) {
+      if (!ownsClaim(state, pile.claim)) return null;
+      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== pile.ore) {
+        if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
+        return null;
+      }
+      const take = Math.min(pile.tons, st.capacity - v.cargo, st.scoop * dt);
+      if (take > 0) {
+        pile.tons -= take;
+        v.cargo += take;
+        v.cargoOre = pile.ore;
+        v.busy = true;
+        if (player) state.tutorial.loaded = true;
+      }
+      return null;
+    }
+  }
+
+  if (def.push > 0) {
+    const src = materialInFront(state, v, def.range);
+    if (src && ownsClaim(state, src.claim)) {
+      const take = Math.min(src.tons, st.push * dt);
+      if (take > 0) {
+        src.tons -= take;
+        if (src.kind === "vein") addPile(state, src.ore, take, src.x + 7, src.z + 6);
+        else addPile(state, src.ore, take, v.x + fx * (st.radius + 3.4), v.z + fz * (st.radius + 3.4));
+        v.busy = true;
+        if (player) state.tutorial.loaded = true;
+      }
+      return null;
+    }
+  }
+
+  if (
+    allowStockpile &&
+    (def.dig > 0 || def.scoop > 0) &&
+    v.cargo > 0.35 &&
+    v.cargoOre &&
+    Math.abs(v.speed) < 1.1
+  ) {
+    const nearVein = closestDeposit(state, v.x, v.z, "vein", extra);
+    const nearPile = closestDeposit(state, v.x, v.z, "pile", 0);
+    const nearTruck = nearestHauler(state, v, 9, false);
+    if (!nearVein && !nearPile && !pad && !nearTruck) {
+      const drop = Math.min(v.cargo, Math.max(st.scoop, st.dig, 3) * dt);
+      addPile(state, v.cargoOre, drop, v.x + fx * (st.radius + 2.6), v.z + fz * (st.radius + 2.6));
+      v.cargo -= drop;
+      if (v.cargo <= 0.05) {
+        v.cargo = 0;
+        v.cargoOre = null;
+      }
+      v.busy = true;
+    }
+  }
+  return null;
+}
+
+function integrate(v: VehicleState, c: Control, dt: number) {
+  const st = vehicleStats(v);
+  const drive = clamp(c.throttle, -1, 1);
+  const steer = clamp(c.steer, -1, 1);
+  const target = drive >= 0 ? drive * st.maxSpeed : drive * st.maxSpeed * 0.45;
+  const opposing = Math.sign(target) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.25;
+  const accel = st.accel * (opposing || c.brake > 0.5 ? 1.75 : 1);
+  if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
+  else v.speed = Math.max(target, v.speed - accel * dt);
+  if (Math.abs(v.speed) < 0.05 && Math.abs(drive) < 0.05) v.speed = 0;
+  const reverse = v.speed >= -0.2 ? 1 : -1;
+  const factor = Math.min(1, Math.abs(v.speed) / 3.5);
+  v.yaw += steer * st.turn * Math.max(0.42, factor) * reverse * dt;
+  const fx = -Math.sin(v.yaw);
+  const fz = -Math.cos(v.yaw);
+  v.x += fx * v.speed * dt;
+  v.z += fz * v.speed * dt;
+}
+
+function resolveCircle(v: VehicleState, radius: number) {
+  for (const b of BLOCKS) {
+    const hx = b.sx / 2;
+    const hz = b.sz / 2;
+    const minX = b.x - hx;
+    const maxX = b.x + hx;
+    const minZ = b.z - hz;
+    const maxZ = b.z + hz;
+    const cx = clamp(v.x, minX, maxX);
+    const cz = clamp(v.z, minZ, maxZ);
+    let dx = v.x - cx;
+    let dz = v.z - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= radius * radius) continue;
+    if (d2 < 1e-8) {
+      const pl = v.x - minX;
+      const pr = maxX - v.x;
+      const pd = v.z - minZ;
+      const pu = maxZ - v.z;
+      const m = Math.min(pl, pr, pd, pu);
+      if (m === pl) v.x = minX - radius;
+      else if (m === pr) v.x = maxX + radius;
+      else if (m === pd) v.z = minZ - radius;
+      else v.z = maxZ + radius;
+      v.speed *= 0.35;
+      continue;
+    }
+    const d = Math.sqrt(d2);
+    const push = (radius - d) / d;
+    v.x += dx * push;
+    v.z += dz * push;
+    v.speed *= 0.82;
+  }
+  const padR = radius + 0.4;
+  if (v.x < BOUNDS.minX + padR) {
+    v.x = BOUNDS.minX + padR;
+    v.speed *= 0.4;
+  } else if (v.x > BOUNDS.maxX - padR) {
+    v.x = BOUNDS.maxX - padR;
+    v.speed *= 0.4;
+  }
+  if (v.z < BOUNDS.minZ + padR) {
+    v.z = BOUNDS.minZ + padR;
+    v.speed *= 0.4;
+  } else if (v.z > BOUNDS.maxZ - padR) {
+    v.z = BOUNDS.maxZ - padR;
+    v.speed *= 0.4;
+  }
+}
+
+function resolveVehicles(state: GameState) {
+  const list = state.vehicles;
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i];
+      const b = list[j];
+      const ra = vehicleStats(a).radius;
+      const rb = vehicleStats(b).radius;
+      let dx = b.x - a.x;
+      let dz = b.z - a.z;
+      let d = Math.hypot(dx, dz);
+      const min = ra + rb * 0.92;
+      if (d >= min) continue;
+      if (d < 1e-4) {
+        dx = 1;
+        dz = 0;
+        d = 1;
+      }
+      const push = (min - d) / 2;
+      const nx = dx / d;
+      const nz = dz / d;
+      a.x -= nx * push;
+      a.z -= nz * push;
+      b.x += nx * push;
+      b.z += nz * push;
+    }
+  }
+}
+
+function regen(state: GameState, dt: number) {
+  for (let i = state.deposits.length - 1; i >= 0; i--) {
+    const d = state.deposits[i];
+    if (d.regen > 0 && d.tons < d.max) d.tons = Math.min(d.max, d.tons + d.regen * dt);
+    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.12) state.deposits.splice(i, 1);
+  }
+}
+
+export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
+  regen(state, dt);
+  const controls: Control[] = [];
+  for (let i = 0; i < state.vehicles.length; i++) {
+    const v = state.vehicles[i];
+    v.busy = false;
+    let c: Control;
+    if (i === state.active) {
+      c = playerEnabled
+        ? {
+            throttle: input.throttle,
+            steer: input.steer,
+            action: input.action,
+            brake: Math.abs(input.throttle) < 0.05 ? 0.4 : 0,
+          }
+        : { ...ZERO };
+    } else if (v.operator) {
+      c = aiControl(state, i);
+    } else {
+      c = { ...ZERO };
+      v.status = "Parked";
+    }
+    controls.push(c);
+    integrate(v, c, dt);
+  }
+  for (let n = 0; n < 2; n++) {
+    for (const v of state.vehicles) resolveCircle(v, vehicleStats(v).radius);
+    resolveVehicles(state);
+  }
+  const sales: StepFX["sales"] = [];
+  let dig = false;
+  for (let i = 0; i < state.vehicles.length; i++) {
+    const v = state.vehicles[i];
+    if (v.operator && i !== state.active) {
+      const c = controls[i];
+      if (c.throttle > 0.45 && Math.abs(v.speed) < 0.45) v.stuck += dt;
+      else v.stuck = 0;
+      if (v.stuck > 1.25) {
+        v.stuck = 0;
+        v.unstick = 0.85;
+        v.bias = Math.random() < 0.5 ? 1 : -1;
+      }
+    }
+    if (v.unstick > 0) v.unstick = Math.max(0, v.unstick - dt);
+    if (!controls[i].action) {
+      const pending = saleAcc.get(v) ?? 0;
+      if (pending > 0.5) {
+        sales.push({
+          x: v.x,
+          z: v.z,
+          text: `+${formatMoney(pending)}`,
+          player: i === state.active,
+        });
+      }
+      saleAcc.delete(v);
+      continue;
+    }
+    if (i === state.active) v.status = "";
+    const before = v.cargo;
+    const sale = performAction(state, i, dt, i === state.active);
+    if (sale) sales.push(sale);
+    if (i === state.active && v.busy && v.cargo >= before - 1e-6 && !sale) dig = true;
+  }
+  const player = state.vehicles[state.active];
+  if (player && !player.status) {
+    player.status = player.busy ? "Working" : "In your seat";
+  }
+  state.seconds += dt;
+  return { dig, sales };
+}
+
+function spend(state: GameState, cost: number, msg: string) {
+  if (state.cash < cost) {
+    log(state, "Not enough cash.");
+    return false;
+  }
+  state.cash -= cost;
+  state.tutorial.bought = true;
+  log(state, msg);
+  return true;
+}
+
+export function buyVehicle(state: GameState, id: VehicleId) {
+  if (owns(state, id)) return "Already on the yard.";
+  const def = DEFS[id];
+  if (!spend(state, def.price, `${def.name} is on the yard.`)) return "Not enough cash.";
+  state.vehicles.push(makeVehicle(id, state.vehicles.length));
+  return "";
+}
+
+export function buySluicePlant(state: GameState) {
+  if (state.sluice) return "Sluice is already running.";
+  if (!spend(state, SLUICE.price, "Sluice plant is washing on the west road.")) return "Not enough cash.";
+  state.sluice = true;
+  return "";
+}
+
+export function buyClaim(state: GameState, id: number) {
+  if (ownsClaim(state, id)) return "Already leased.";
+  const claim = CLAIMS.find((c) => c.id === id);
+  if (!claim) return "No such ground.";
+  if (!spend(state, claim.price, `${claim.name} is leased.`)) return "Not enough cash.";
+  state.claims.push(id);
+  return "";
+}
+
+export function buyUpgrade(state: GameState, index: number, kind: UpgradeKind) {
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  const cost = upgradeCost(v.defId, kind, v.upgrades[kind]);
+  if (cost == null) return "Already maxed.";
+  const label = kind === "engine" ? "Engine" : kind === "hydro" ? "Hydraulics" : DEFS[v.defId].bodyLabel;
+  if (!spend(state, cost, `${DEFS[v.defId].name} ${label.toLowerCase()} fitted.`)) return "Not enough cash.";
+  v.upgrades[kind] += 1;
+  return "";
+}
+
+export function toggleCrew(state: GameState, index: number) {
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  const name = DEFS[v.defId].name;
+  if (!v.hired) {
+    if (state.cash < HIRE_COST) {
+      log(state, "Not enough cash to hire.");
+      return "Not enough cash.";
+    }
+    state.cash -= HIRE_COST;
+    v.hired = true;
+    v.operator = true;
+    state.tutorial.bought = true;
+    log(state, `Operator hired for the ${name}. You keep ${Math.round(CREW_KEEP * 100)}% of their loads.`);
+    return "";
+  }
+  v.operator = !v.operator;
+  log(state, v.operator ? `${name} operator on duty.` : `${name} operator off shift.`);
+  return "";
+}
+
+export function setActive(state: GameState, index: number) {
+  if (index < 0 || index >= state.vehicles.length) return;
+  state.active = index;
+  state.vehicles[index].stuck = 0;
+  state.vehicles[index].unstick = 0;
+}
+
+function cargoLine(v: VehicleState) {
+  const st = vehicleStats(v);
+  if (st.capacity <= 0) return "No bed";
+  if (v.cargo < 0.05 || !v.cargoOre) return `Empty · ${st.capacity.toFixed(1)} t`;
+  return `${ORES[v.cargoOre].name} ${v.cargo.toFixed(1)} / ${st.capacity.toFixed(1)} t`;
+}
+
+function objective(state: GameState) {
+  const t = state.tutorial;
+  if (!t.loaded) return "Load iron into the claim truck.";
+  if (!t.dumped) return "Sell the load at the crusher.";
+  if (!t.bought) return "Open the yard office and buy a machine.";
+  if (!owns(state, "skid") && !owns(state, "dozer") && !owns(state, "loader") && !owns(state, "excavator")) {
+    return "Buy a skid steer and cut the iron face.";
+  }
+  if (!state.claims.includes(2)) return "Lease the copper bench when the box can cover it.";
+  if (!state.sluice) return "The sluice is how gold becomes a company.";
+  if (!state.claims.includes(3)) return "Lease the gold creek, then wash it.";
+  if (!owns(state, "truck") && (owns(state, "loader") || owns(state, "excavator"))) {
+    return "A dump truck turns the digger into a crew.";
+  }
+  if (!owns(state, "excavator")) return "An excavator keeps a face working while you haul.";
+  if (!state.claims.includes(4)) return "Lease the deep bench. Bring a heavy crew.";
+  if (!owns(state, "heavy")) return "The heavy haul is the last truck on the yard.";
+  const info = tierInfo(state.lifetime);
+  if (info.next) return `Company mark: ${info.next}.`;
+  return "The ridge is yours. Keep the faces moving.";
+}
+
+function hint(state: GameState) {
+  const v = state.vehicles[state.active];
+  if (!v) return "No machine in the seat.";
+  const def = DEFS[v.defId];
+  const st = vehicleStats(v);
+  if (!state.tutorial.loaded) return "Drive to the iron pile. Hold DIG to scoop.";
+  if (!state.tutorial.dumped) return "Hold DIG on the orange crusher pad.";
+  if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
+  const extra = def.id === "excavator" ? 2.2 : 0;
+  const pad = nearestPad(state, v.x, v.z);
+  if (v.cargo > 0.08 && pad) return `Hold DIG to sell at the ${pad.name.toLowerCase()}.`;
+  const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 9 + extra, false) : null;
+  if (truck) return `Hold DIG to load the ${DEFS[truck.defId].name.toLowerCase()}.`;
+  if (st.capacity > 0 && v.cargo >= st.capacity * 0.92) {
+    return def.receives ? "Bed full. Crusher is east of the yard." : "Full. Haul it out, or pull up to a dump truck.";
+  }
+  const locked = state.deposits.find((d) => !ownsClaim(state, d.claim) && distTo(v.x, v.z, d.x, d.z) < d.radius + 3);
+  if (locked) return `${locked.sign} is unleased. Open Ground in the yard office.`;
+  if (def.push > 0) return "Hold DIG with the blade in a face. It builds a pile.";
+  if (def.dig > 0) {
+    const vein = closestDeposit(state, v.x, v.z, "vein", extra);
+    if (vein && ownsClaim(state, vein.claim)) return `Hold DIG to cut ${ORES[vein.ore].name.toLowerCase()}.`;
+    return "Find a face inside the gate. V switches machines.";
+  }
+  if (def.scoop > 0) {
+    const pile = closestDeposit(state, v.x, v.z, "pile", 0);
+    if (pile) return `Hold DIG to scoop ${ORES[pile.ore].name.toLowerCase()}.`;
+    return "No pile in reach. A dozer or excavator makes them.";
+  }
+  if (def.receives) {
+    if (v.cargo < 0.1) return "Park beside a payloader or excavator and let them fill you.";
+    return "Hold DIG on the crusher pad to dump.";
+  }
+  return "WASD drive. Hold DIG to work. V next machine.";
+}
+
+export function buildHud(state: GameState, hadSave: boolean): HudModel {
+  const v = state.vehicles[state.active];
+  const info = tierInfo(state.lifetime);
+  const st = v ? vehicleStats(v) : null;
+  const sec = Math.floor(state.seconds);
+  const mm = Math.floor(sec / 60);
+  const ss = sec % 60;
+  const machines: HudModel["machines"] = VEHICLE_ORDER.filter((id) => id !== "pickup").map((id) => {
+    const def = DEFS[id];
+    const owned = owns(state, id);
+    return {
+      id,
+      name: def.name,
+      blurb: def.blurb,
+      priceLabel: formatMoney(def.price),
+      owned,
+      affordable: !owned && state.cash >= def.price,
+      kind: "vehicle" as const,
+    };
+  });
+  machines.push({
+    id: SLUICE.id,
+    name: SLUICE.name,
+    blurb: SLUICE.blurb,
+    priceLabel: formatMoney(SLUICE.price),
+    owned: state.sluice,
+    affordable: !state.sluice && state.cash >= SLUICE.price,
+    kind: "plant",
+  });
+  const crew: HudModel["crew"] = state.vehicles.map((veh, index) => {
+    const def = DEFS[veh.defId];
+    const kinds: { kind: UpgradeKind; label: string }[] = [
+      { kind: "engine", label: "Engine" },
+      { kind: "body", label: def.bodyLabel },
+      { kind: "hydro", label: "Hydraulics" },
+    ];
+    return {
+      index,
+      name: def.name,
+      status: index === state.active ? "In your seat" : veh.operator ? veh.status : "Parked",
+      cargo: cargoLine(veh),
+      active: index === state.active,
+      hired: veh.hired,
+      operator: veh.operator,
+      hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
+      affordableHire: veh.hired || state.cash >= HIRE_COST,
+      upgrades: kinds.map((k) => {
+        const cost = upgradeCost(veh.defId, k.kind, veh.upgrades[k.kind]);
+        return {
+          kind: k.kind,
+          label: k.label,
+          level: veh.upgrades[k.kind],
+          costLabel: cost == null ? null : formatMoney(cost),
+          affordable: cost != null && state.cash >= cost,
+        };
+      }),
+    };
+  });
+  const grounds: HudModel["grounds"] = CLAIMS.map((c) => ({
+    id: c.id,
+    name: c.name,
+    blurb: c.blurb,
+    priceLabel: c.price === 0 ? "Included" : formatMoney(c.price),
+    owned: ownsClaim(state, c.id),
+    affordable: !ownsClaim(state, c.id) && state.cash >= c.price,
+  }));
+  const savedBlurb = hadSave
+    ? `${state.company} · ${formatMoney(state.cash)} · ${info.name}`
+    : `New outfit. Claim truck and ${formatMoney(START_CASH)} in the box.`;
+  return {
+    company: state.company,
+    cashLabel: formatMoney(state.cash),
+    tier: info.name,
+    tierNext: info.next,
+    tierProgress: info.progress,
+    tierDetail: info.nextAt != null ? `${formatMoney(state.lifetime)} earned · ${formatMoney(info.nextAt)} to ${info.next}` : "The books are closed on a full company.",
+    shift: `Shift ${mm}:${ss.toString().padStart(2, "0")}`,
+    hint: hint(state),
+    objective: objective(state),
+    vehicleName: v ? DEFS[v.defId].name : "—",
+    vehicleIndex: state.active,
+    vehicleCount: state.vehicles.length,
+    speedLabel: `${Math.round(Math.abs(v?.speed ?? 0) * 2.15)} mph`,
+    cargoLabel: v ? cargoLine(v) : "",
+    cargoFrac: st && st.capacity > 0 && v ? clamp(v.cargo / st.capacity, 0, 1) : 0,
+    muted: state.muted,
+    log: state.log.slice(0, 4),
+    machines,
+    crew,
+    grounds,
+    hadSave,
+    savedBlurb,
+  };
+}
