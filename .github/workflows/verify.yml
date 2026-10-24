@@ -35,8 +35,16 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Run tests
-        run: npm test
+      # The full scripts test glob includes workspace-only .grok/skills
+      # fixtures that are intentionally not in the public repository.
+      - name: Run repository-portable tests
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/app-data/app-data.test.ts
+          src/lib/app-data/readiness-schedule.test.ts
+          src/lib/auth/gate-identity.test.ts
+          src/lib/auth/sign-in-gate.test.ts
+          src/lib/preview-path-prefix.test.ts
 
       - name: Build production client/server bundle
         run: npm run build:dev
