@@ -15,7 +15,7 @@ type Rig = {
   house: THREE.Object3D | null;
   bed: THREE.Object3D | null;
   blade: THREE.Object3D | null;
-  load: THREE.Mesh | null;
+  load: THREE.Object3D | null;
   dump: number;
   uid: string;
 };
@@ -194,7 +194,7 @@ export function createWorld(host: HTMLElement): World {
     let house: THREE.Object3D | null = null;
     let bed: THREE.Object3D | null = null;
     let blade: THREE.Object3D | null = null;
-    let load: THREE.Mesh | null = null;
+    let load: THREE.Object3D | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : paintDark;
 
@@ -204,7 +204,7 @@ export function createWorld(host: HTMLElement): World {
       box(root, 1.15, 0.55, 1.05, 0, 1.35, -0.55, glass, false);
       box(root, 1.35, 0.28, 0.85, 0, 0.9, -1.55, body);
       box(root, 1.5, 0.4, 1.55, 0, 0.95, 1.05, trim);
-      load = box(root, 1.3, 0.35, 1.3, 0, 1.25, 1.05, std(ORES.iron.color), false);
+      load = makeCargoLoad(root, 1.3, 0.35, 1.3, 0, 1.25, 1.05);
       wheels.push(addWheel(root, -0.85, 0.46, -1.15), addWheel(root, 0.85, 0.46, -1.15));
       wheels.push(addWheel(root, -0.85, 0.46, 1.05), addWheel(root, 0.85, 0.46, 1.05));
     } else if (id === "skid") {
@@ -217,7 +217,7 @@ export function createWorld(host: HTMLElement): World {
       bucket.position.set(0, 0.55, -1.35);
       box(bucket, 1.4, 0.42, 0.48, 0, 0.15, 0, steel);
       root.add(bucket);
-      load = box(bucket, 1.1, 0.22, 0.28, 0, 0.28, 0.05, std(ORES.iron.color), false);
+      load = makeCargoLoad(bucket, 1.1, 0.22, 0.28, 0, 0.28, 0.05);
       box(root, 0.28, 0.32, 1.5, -0.72, 0.4, 0, cabMat);
       box(root, 0.28, 0.32, 1.5, 0.72, 0.4, 0, cabMat);
     } else if (id === "dozer") {
@@ -243,7 +243,7 @@ export function createWorld(host: HTMLElement): World {
       bucket.position.set(0, 0.7, -2.15);
       box(bucket, 2.05, 0.7, 0.7, 0, 0.25, 0, steel);
       root.add(bucket);
-      load = box(bucket, 1.7, 0.35, 0.45, 0, 0.55, 0.05, std(ORES.iron.color), false);
+      load = makeCargoLoad(bucket, 1.7, 0.35, 0.45, 0, 0.55, 0.05);
     } else if (id === "excavator") {
       box(root, 0.45, 0.4, 2.6, -0.7, 0.4, 0.1, cabMat);
       box(root, 0.45, 0.4, 2.6, 0.7, 0.4, 0.1, cabMat);
@@ -262,7 +262,7 @@ export function createWorld(host: HTMLElement): World {
       bucket = new THREE.Group();
       bucket.position.set(0, -0.45, -1.05);
       box(bucket, 0.85, 0.45, 0.5, 0, -0.05, 0, steel);
-      load = box(bucket, 0.65, 0.22, 0.32, 0, 0.12, 0.02, std(ORES.iron.color), false);
+      load = makeCargoLoad(bucket, 0.65, 0.22, 0.32, 0, 0.12, 0.02);
       stick.add(bucket);
       boom.add(stick);
       house.add(boom);
@@ -276,7 +276,7 @@ export function createWorld(host: HTMLElement): World {
       bed.position.set(0, 1.15, 1.55 * len);
       box(bed, 1.9 * len, 0.85, 3.3 * len, 0, 0.45, -1.3 * len, trim);
       box(bed, 1.7 * len, 0.12, 3.0 * len, 0, 0.12, -1.3 * len, steel, false);
-      load = box(bed, 1.6 * len, 0.55, 2.6 * len, 0, 0.5, -1.3 * len, std(ORES.iron.color), false);
+      load = makeCargoLoad(bed, 1.6 * len, 0.55, 2.6 * len, 0, 0.5, -1.3 * len);
       root.add(bed);
       const wx = 0.95 * len;
       wheels.push(addWheel(root, -wx, 0.52, -2.2 * len), addWheel(root, wx, 0.52, -2.2 * len));
@@ -306,6 +306,25 @@ export function createWorld(host: HTMLElement): World {
     copper: oreMat(ORES.copper.color),
     gold: oreMat(ORES.gold.color),
   };
+  function makeCargoLoad(parent: THREE.Object3D, width: number, height: number, depth: number, x: number, y: number, z: number) {
+    const pile = new THREE.Group();
+    pile.position.set(x, y, z);
+    const count = Math.max(7, Math.min(24, Math.round(width * depth * 5)));
+    for (let i = 0; i < count; i++) {
+      const size = 0.11 + ((i * 7) % 5) * 0.025;
+      const rock = new THREE.Mesh(rockGeometries[i % rockGeometries.length], oreMaterials.iron);
+      const angle = i * 2.399963229728653;
+      const radius = Math.sqrt((i + 0.5) / count);
+      rock.position.set(Math.cos(angle) * radius * width * 0.43, (0.22 + ((i * 3) % 5) * 0.12) * height, Math.sin(angle) * radius * depth * 0.43);
+      rock.rotation.set(i * 0.61, angle, i * 0.37);
+      rock.scale.set(size * 1.15, size * 0.8, size);
+      rock.castShadow = true;
+      rock.receiveShadow = true;
+      pile.add(rock);
+    }
+    parent.add(pile);
+    return pile;
+  }
   const lockedMat = std(0x4a463f, { roughness: 1, flatShading: true });
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
@@ -502,8 +521,10 @@ export function createWorld(host: HTMLElement): World {
         const f = cap > 0 ? v.cargo / cap : 0;
         rig.load.visible = f > 0.04;
         rig.load.scale.y = Math.max(0.08, f);
-        const mat = rig.load.material as THREE.MeshStandardMaterial;
-        if (v.cargoOre) mat.color.setHex(ORES[v.cargoOre].color);
+        const material = oreMaterials[v.cargoOre ?? "iron"];
+        rig.load.traverse((part) => {
+          if (part instanceof THREE.Mesh) part.material = material;
+        });
       }
     }
     for (const d of state.deposits) {
