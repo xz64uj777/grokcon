@@ -364,10 +364,12 @@ function bestPile(state: GameState, v: VehicleState) {
 }
 
 function routeTo(v: VehicleState, tx: number, tz: number) {
-  if (inPit(v.x, v.z) !== inPit(tx, tz)) {
-    if (distTo(v.x, v.z, GATE.x, GATE.z) > 9) return GATE;
-  }
-  return { x: tx, z: tz };
+  if (inPit(v.x, v.z) === inPit(tx, tz)) return { x: tx, z: tz };
+  // The yard side of the gate is still outside the pit. Turning back for the
+  // gate there made crew pace a figure-8 and never reach the iron pile.
+  const inGateSlot = v.z < GATE.z + 6 && v.z > 0 && Math.abs(v.x - GATE.x) < 24;
+  if (inGateSlot || distTo(v.x, v.z, GATE.x, GATE.z) <= 9) return { x: tx, z: tz };
+  return GATE;
 }
 
 function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control {
@@ -488,9 +490,23 @@ function aiControl(state: GameState, index: number): Control {
     }
   } else if (has && full) {
     haulTarget();
-  } else if (def.dig > 0) {
-    const vein = bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null);
-    if (!full && vein) {
+  } else if (def.dig > 0 || def.scoop > 0) {
+    const vein = def.dig > 0 && !full ? bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null) : null;
+    const pile = def.scoop > 0 && !full ? bestPile(state, v) : null;
+    const pileD = pile ? distTo(v.x, v.z, pile.x, pile.z) : Infinity;
+    const veinD = vein ? distTo(v.x, v.z, vein.x, vein.z) : Infinity;
+    // The iron pile sits on the gate. Take it when it is closer than a face.
+    const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD;
+    if (takePile && pile) {
+      const held = workHere(v, pile.x, pile.z, pile.radius * 0.9);
+      if (held) {
+        v.status = `Scooping ${ORES[pile.ore].name}`;
+        return held;
+      }
+      target = pile;
+      arrive = Math.max(3.5, pile.radius * 0.72);
+      label = pile.id === "starter" ? "Scooping the gate pile" : `Scooping ${ORES[pile.ore].name}`;
+    } else if (vein) {
       const held = workHere(v, vein.x, vein.z, vein.radius * 0.95);
       if (held) {
         v.status = `Digging ${ORES[vein.ore].name}`;
@@ -500,29 +516,19 @@ function aiControl(state: GameState, index: number): Control {
       arrive = Math.max(4, vein.radius * 0.82);
       label = `Digging ${ORES[vein.ore].name}`;
     } else if (has) haulTarget();
-    else label = "No face in reach";
-  } else if (def.scoop > 0) {
-    const pile = !full ? bestPile(state, v) : null;
-    if (pile) {
-      const held = workHere(v, pile.x, pile.z, pile.radius * 0.9);
-      if (held) {
-        v.status = `Scooping ${ORES[pile.ore].name}`;
-        return held;
-      }
-      target = pile;
-      arrive = Math.max(3.5, pile.radius * 0.75);
-      label = `Scooping ${ORES[pile.ore].name}`;
-    } else if (has) haulTarget();
-    else if (v.operator && v.workClaim != null) {
-      // A crew-assigned loader can work the selected face directly when no
-      // loose pile exists yet; otherwise it would wait forever at an empty bench.
+    else if (def.scoop > 0 && v.operator && v.workClaim != null) {
       const face = bestVein(state, v, null);
       if (face) {
+        const held = workHere(v, face.x, face.z, face.radius * 0.9);
+        if (held) {
+          v.status = `Working ${ORES[face.ore].name} face`;
+          return held;
+        }
         target = face;
-        arrive = face.radius * 0.7;
+        arrive = face.radius * 0.8;
         label = `Working ${ORES[face.ore].name} face`;
       } else label = "No material at assigned source";
-    } else label = "Looking for a pile";
+    } else label = def.scoop > 0 ? "Looking for a pile" : "No face in reach";
   }
 
   if ((def.id === "excavator" || def.id === "loader") && has && !full) {
