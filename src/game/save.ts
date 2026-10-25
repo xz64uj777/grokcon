@@ -4,6 +4,7 @@ import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types
 
 const KEY = "ridge-ore.save";
 const BAK = "ridge-ore.save.bak";
+const BEST = "ridge-ore.save.best";
 
 function num(v: unknown, fallback: number, min: number, max: number) {
   if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
@@ -144,37 +145,75 @@ function sanitize(raw: unknown): GameState | null {
   return state;
 }
 
-export function loadGame(): GameState | null {
-  if (typeof localStorage === "undefined") return null;
+export function bookWorth(state: GameState) {
+  const machines = state.vehicles.filter((v) => v.defId !== "pickup" && v.defId !== "crusher").length;
+  return state.seconds + state.lifetime / 10 + state.cash / 50 + machines * 800 + state.claims.length * 400 + (state.sluice ? 2500 : 0);
+}
+
+function readRaw(raw: string | null) {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    memorySave = raw;
-    return sanitize(JSON.parse(raw));
+    const state = sanitize(JSON.parse(raw));
+    return state ? { state, raw, worth: bookWorth(state) } : null;
   } catch {
-    try {
-      const bak = localStorage.getItem(BAK);
-      if (!bak) return null;
-      return sanitize(JSON.parse(bak));
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
-export function saveGame(state: GameState) {
+function richer<T extends { worth: number }>(a: T | null, b: T | null) {
+  if (!a) return b;
+  if (!b) return a;
+  return b.worth > a.worth ? b : a;
+}
+
+export function loadGame(): GameState | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const best = richer(readRaw(localStorage.getItem(KEY)), readRaw(localStorage.getItem(BAK)));
+    if (!best) return null;
+    memorySave = best.raw;
+    memoryWorth = best.worth;
+    return best.state;
+  } catch {
+    return null;
+  }
+}
+
+function isNewBook(state: GameState) {
+  return (
+    state.seconds < 8 &&
+    state.lifetime < 1 &&
+    !state.sluice &&
+    state.claims.length <= 1 &&
+    state.vehicles.every((v) => v.defId === "pickup" || v.defId === "crusher")
+  );
+}
+
+export function saveGame(state: GameState, force = false) {
   const json = JSON.stringify(snapshot(state));
+  const worth = bookWorth(state);
   memorySave = json;
   if (typeof localStorage !== "undefined") {
     try {
-      const prev = localStorage.getItem(KEY);
-      if (prev && prev !== json) localStorage.setItem(BAK, prev);
+      const current = readRaw(localStorage.getItem(KEY));
+      const backup = readRaw(localStorage.getItem(BAK));
+      const kept = richer(current, backup);
+      if (!force && isNewBook(state) && kept && kept.worth > worth + 25) {
+        memorySave = kept.raw;
+        memoryWorth = kept.worth;
+        return false;
+      }
+      if (current && current.raw !== json) {
+        const bakWorth = backup?.worth ?? -1;
+        if (current.worth >= bakWorth) localStorage.setItem(BAK, current.raw);
+      }
       localStorage.setItem(KEY, json);
+      memoryWorth = worth;
     } catch {
       /* private mode or a full disk — the IndexedDB copy may still land */
     }
   }
-  mirrorSave(json);
+  mirrorSave(json, worth, force);
   return true;
 }
 
@@ -191,6 +230,7 @@ function snapshot(state: GameState): GameState {
 }
 
 let memorySave: string | null = null;
+let memoryWorth = 0;
 
 export function currentSaveText() {
   return memorySave;
@@ -219,12 +259,18 @@ function openBooks(): Promise<IDBDatabase | null> {
   });
 }
 
-function mirrorSave(json: string) {
+function mirrorSave(json: string, worth: number, force: boolean) {
   void openBooks().then((db) => {
     if (!db) return;
     try {
       const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).put(json, KEY);
+      const store = tx.objectStore(IDB_STORE);
+      const bestReq = store.get(BEST);
+      bestReq.onsuccess = () => {
+        const previous = typeof bestReq.result === "string" ? readRaw(bestReq.result) : null;
+        if (force || !previous || worth + 1 >= previous.worth) store.put(json, BEST);
+        store.put(json, KEY);
+      };
       tx.oncomplete = () => db.close();
       tx.onerror = () => db.close();
     } catch {
@@ -243,15 +289,33 @@ export function loadGameBackup(): Promise<GameState | null> {
         }
         try {
           const tx = db.transaction(IDB_STORE, "readonly");
-          const req = tx.objectStore(IDB_STORE).get(KEY);
-          req.onsuccess = () => {
+          const store = tx.objectStore(IDB_STORE);
+          const current = store.get(KEY);
+          const best = store.get(BEST);
+          let currentRaw: string | null = null;
+          let bestRaw: string | null = null;
+          let pending = 2;
+          const finish = () => {
+            pending -= 1;
+            if (pending > 0) return;
             db.close();
-            resolve(typeof req.result === "string" ? readSaveText(req.result) : null);
+            const picked = richer(readRaw(currentRaw), readRaw(bestRaw));
+            if (picked && picked.worth > memoryWorth) {
+              memorySave = picked.raw;
+              memoryWorth = picked.worth;
+            }
+            resolve(picked ? picked.state : null);
           };
-          req.onerror = () => {
-            db.close();
-            resolve(null);
+          current.onsuccess = () => {
+            currentRaw = typeof current.result === "string" ? current.result : null;
+            finish();
           };
+          best.onsuccess = () => {
+            bestRaw = typeof best.result === "string" ? best.result : null;
+            finish();
+          };
+          current.onerror = () => finish();
+          best.onerror = () => finish();
         } catch {
           db.close();
           resolve(null);

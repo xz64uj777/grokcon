@@ -1,7 +1,7 @@
 import { createAudio } from "@/game/audio";
 import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
-import { currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
+import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, setActive, step, toggleCrew } from "@/game/sim";
 import type { GameApi, Input, ViewModel } from "@/game/types";
 
@@ -17,6 +17,7 @@ type Hooks = {
 export function mountGame(host: HTMLElement, hooks: Hooks) {
   const loaded = loadGame();
   let hadSave = loaded != null;
+  let booksReady = hadSave;
   let state = loaded ?? freshGame("Ridge Ore Co.");
   let running = false;
   let panelOpen = false;
@@ -47,7 +48,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function push() {
     if (dead) return;
-    hooks.onHud({ ...buildHud(state, hadSave), mode: running ? "play" : "title" });
+    hooks.onHud({ ...buildHud(state, hadSave), mode: running ? "play" : "title", booksReady });
   }
 
   function held(code: string) {
@@ -71,14 +72,27 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   const api: GameApi = {
     start(mode, company) {
+      if (!booksReady) return;
       const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
-      if (mode === "fresh" || !hadSave) state = freshGame(name);
-      else state.company = name;
+      if (mode === "fresh") {
+        state = freshGame(name);
+        hadSave = true;
+        saveGame(state, true);
+      } else if (!hadSave) {
+        state = freshGame(name);
+        if (!saveGame(state)) {
+          const kept = loadGame();
+          if (kept) state = kept;
+        }
+        hadSave = true;
+      } else {
+        state.company = name;
+        saveGame(state);
+      }
       running = true;
       keys.clear();
       world.snap();
       audio.unlock();
-      saveGame(state);
       push();
     },
     setPanel(open) {
@@ -255,11 +269,24 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   window.addEventListener("pagehide", onPageHide);
   void navigator.storage?.persist?.();
   void loadGameBackup().then((backup) => {
-    if (dead || running || hadSave || !backup) return;
-    state = backup;
-    hadSave = true;
+    if (dead) return;
+    if (backup && bookWorth(backup) > bookWorth(state) + 20) {
+      const untouched = state.seconds < 8 && state.lifetime < 1;
+      if (!running || untouched) {
+        state = backup;
+        hadSave = true;
+        if (running) world.snap();
+        saveGame(state);
+      }
+    }
+    booksReady = true;
     push();
   });
+  window.setTimeout(() => {
+    if (dead || booksReady) return;
+    booksReady = true;
+    push();
+  }, 1600);
   const resize = () => {
     world.resize();
     sizeOverlay();

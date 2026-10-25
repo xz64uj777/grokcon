@@ -153,7 +153,7 @@ export type HudModel = {
   contractLabel: string;
 };
 
-export type ViewModel = HudModel & { mode: "title" | "play" };
+export type ViewModel = HudModel & { mode: "title" | "play"; booksReady: boolean };
 
 export type GameApi = {
   start: (mode: "continue" | "fresh", company: string) => void;

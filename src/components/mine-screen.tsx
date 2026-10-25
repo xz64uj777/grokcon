@@ -41,7 +41,7 @@ export function MineScreen() {
   }, []);
 
   useEffect(() => {
-    if (hud && !seeded) {
+    if (hud?.booksReady && !seeded) {
       setCompany(hud.company);
       setSeeded(true);
     }
@@ -78,19 +78,19 @@ export function MineScreen() {
             />
           </label>
           <p className="mt-3 text-sm text-cash">{hud ? hud.savedBlurb : "Opening the gate…"}</p>
-          {hud ? (
+          {hud?.booksReady ? (
             <button
               type="button"
               className="mt-4 h-12 w-full bg-primary font-display text-xl uppercase tracking-wide text-primary-fg"
               onClick={(e) => {
                 e.currentTarget.blur();
-                apiRef.current?.start(hud.hadSave ? "continue" : "fresh", company);
+                apiRef.current?.start("continue", company);
               }}
             >
               {hud.hadSave ? "Continue" : "Start"}
             </button>
           ) : (
-            <p className="mt-4 text-sm text-muted">Bringing the pit online.</p>
+            <p className="mt-4 text-sm text-muted">Checking the books…</p>
           )}
           {hud?.hadSave && (
             <button
