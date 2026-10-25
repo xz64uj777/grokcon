@@ -97,6 +97,30 @@ function log(state: GameState, msg: string) {
   if (state.log.length > 5) state.log.length = 5;
 }
 
+function rollContract(seq: number, claims: number[]): GameState["contract"] {
+  const options: OreId[] = ["iron"];
+  if (claims.includes(2)) options.push("copper");
+  if (claims.includes(3)) options.push("gold");
+  const ore = options[seq % options.length] ?? "iron";
+  const need = (ore === "gold" ? 4 : ore === "copper" ? 6 : 8) + seq * 2;
+  const unit = ore === "gold" ? ORES.gold.sluice : ORES[ore].crusher;
+  return { ore, delivered: 0, need, bonus: Math.round(need * unit * 0.5) };
+}
+
+function fillContract(state: GameState, ore: OreId, tons: number) {
+  const contract = state.contract;
+  if (!contract || contract.ore !== ore || tons <= 0) return 0;
+  contract.delivered += tons;
+  if (contract.delivered + 0.05 < contract.need) return 0;
+  const bonus = contract.bonus;
+  state.cash += bonus;
+  state.lifetime += bonus;
+  state.contractSeq += 1;
+  state.contract = rollContract(state.contractSeq, state.claims);
+  log(state, `Contract filled. Bonus ${formatMoney(bonus)}. Next: ${state.contract.need} t ${ORES[state.contract.ore].name}.`);
+  return bonus;
+}
+
 export function freshGame(company: string): GameState {
   const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
   return {
@@ -113,6 +137,8 @@ export function freshGame(company: string): GameState {
     deposits: BASE_DEPOSITS.map((d) => ({ ...d })),
     pileSeq: 1,
     tutorial: { loaded: false, dumped: false, bought: false },
+    contractSeq: 0,
+    contract: rollContract(0, [1]),
     log: ["The claim truck is fueled. The iron pile is south of the gate."],
   };
 }
@@ -492,9 +518,12 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
   if (v.cargo > 0.04 && v.cargoOre && pad) {
     const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
-    const gross = v.cargo * unit;
+    const sold = v.cargo;
+    const soldOre = v.cargoOre;
+    const gross = sold * unit;
     const net = gross * (player ? 1 : CREW_KEEP);
-    const oreName = ORES[v.cargoOre].name;
+    const oreName = ORES[soldOre].name;
+    const bonus = fillContract(state, soldOre, sold);
     state.cash += net;
     state.lifetime += net;
     v.cargo = 0;
@@ -502,7 +531,8 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
     saleAcc.set(v, 0);
     v.busy = true;
     if (player) state.tutorial.dumped = true;
-    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName}`, player };
+    const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
+    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName}${extra}`, player };
   }
 
   const extra = def.id === "excavator" ? 2.2 : 0;
@@ -1002,6 +1032,10 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
   const savedBlurb = hadSave
     ? `${state.company} · ${formatMoney(state.cash)} · ${info.name}`
     : `New outfit. Claim truck and ${formatMoney(START_CASH)} in the box.`;
+  const contract = state.contract;
+  const contractLabel = contract
+    ? `Contract: ${ORES[contract.ore].name} ${Math.min(contract.delivered, contract.need).toFixed(1)}/${contract.need} t · ${formatMoney(contract.bonus)} bonus`
+    : "";
   return {
     company: state.company,
     cashLabel: formatMoney(state.cash),
@@ -1025,5 +1059,6 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
     grounds,
     hadSave,
     savedBlurb,
+    contractLabel,
   };
 }

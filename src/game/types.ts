@@ -53,6 +53,13 @@ export type Tutorial = {
   bought: boolean;
 };
 
+export type Contract = {
+  ore: OreId;
+  delivered: number;
+  need: number;
+  bonus: number;
+};
+
 export type GameState = {
   version: 1;
   company: string;
@@ -67,6 +74,8 @@ export type GameState = {
   deposits: Deposit[];
   pileSeq: number;
   tutorial: Tutorial;
+  contractSeq: number;
+  contract: Contract;
   log: string[];
 };
 
@@ -140,6 +149,7 @@ export type HudModel = {
   grounds: GroundCard[];
   hadSave: boolean;
   savedBlurb: string;
+  contractLabel: string;
 };
 
 export type ViewModel = HudModel & { mode: "title" | "play" };
@@ -157,5 +167,7 @@ export type GameApi = {
   setAction: (down: boolean) => void;
   toggleMute: () => void;
   cycle: (dir: number) => void;
+  downloadBooks: () => void;
+  importBooks: (text: string) => boolean;
 };
 

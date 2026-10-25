@@ -10,6 +10,7 @@ export function MineScreen() {
   const [panel, setPanel] = useState<null | "machines" | "ground" | "crew">(null);
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
+  const [booksNote, setBooksNote] = useState("");
   const [wipe, setWipe] = useState(false);
 
   bridges.current.toggle = () => setPanel((p) => (p ? null : "machines"));
@@ -86,11 +87,41 @@ export function MineScreen() {
                 apiRef.current?.start(hud.hadSave ? "continue" : "fresh", company);
               }}
             >
-              Start
+              {hud.hadSave ? "Continue" : "Start"}
             </button>
           ) : (
             <p className="mt-4 text-sm text-muted">Bringing the pit online.</p>
           )}
+          {hud?.hadSave && (
+            <button
+              type="button"
+              className="mt-2 h-11 w-full border border-border font-display text-lg uppercase tracking-wide text-fg"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                apiRef.current?.downloadBooks();
+              }}
+            >
+              Download books
+            </button>
+          )}
+          <label className="mt-2 flex h-11 w-full cursor-pointer items-center justify-center border border-border font-display text-lg uppercase tracking-wide text-fg">
+            Load books
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.currentTarget.value = "";
+                if (!file) return;
+                void file.text().then((text) => {
+                  const ok = apiRef.current?.importBooks(text) ?? false;
+                  setBooksNote(ok ? "Books loaded. Press continue." : "That file is not a Ridge Ore save.");
+                });
+              }}
+            />
+          </label>
+          {booksNote && <p className="mt-2 text-sm text-cash">{booksNote}</p>}
           {hud?.hadSave && (
             <button
               type="button"
@@ -108,7 +139,7 @@ export function MineScreen() {
             </button>
           )}
           <p className="key-hint mt-4 text-sm leading-relaxed text-muted">
-            WASD drives. A turns left, D turns right. Hold Space to dig, scoop, or dump. V changes machine. Tab opens the yard office.
+            WASD drives. Hold Space to dig or dump. The books save on this phone. Download a copy before you switch devices.
           </p>
         </section>
       )}
@@ -129,6 +160,7 @@ export function MineScreen() {
               </div>
               <div className="pointer-events-auto max-w-sm border border-border bg-surface px-3 py-2">
                 <p className="font-display text-lg uppercase leading-tight tracking-wide text-fg">{hud.objective}</p>
+                {hud.contractLabel && <p className="mt-1 text-sm text-cash">{hud.contractLabel}</p>}
                 <p className="mt-1 text-sm text-muted">{hud.shift}</p>
               </div>
               <button

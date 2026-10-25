@@ -1,7 +1,7 @@
 import { createAudio } from "@/game/audio";
 import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
-import { loadGame, saveGame } from "@/game/save";
+import { currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, setActive, step, toggleCrew } from "@/game/sim";
 import type { GameApi, Input, ViewModel } from "@/game/types";
 
@@ -16,7 +16,7 @@ type Hooks = {
 
 export function mountGame(host: HTMLElement, hooks: Hooks) {
   const loaded = loadGame();
-  const hadSave = loaded != null;
+  let hadSave = loaded != null;
   let state = loaded ?? freshGame("Ridge Ore Co.");
   let running = false;
   let panelOpen = false;
@@ -137,6 +137,29 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       world.snap();
       push();
     },
+    downloadBooks() {
+      saveGame(state);
+      const text = currentSaveText();
+      if (!text) return;
+      const file = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "ridge-ore-books.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+    importBooks(text) {
+      const next = readSaveText(text);
+      if (!next) return false;
+      state = next;
+      hadSave = true;
+      running = false;
+      saveGame(state);
+      world.snap();
+      push();
+      return true;
+    },
   };
 
   const qa = import.meta.env.DEV || new URLSearchParams(window.location.search).has("qa");
@@ -213,9 +236,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   function onHide() {
     if (document.hidden) {
       keys.clear();
-      if (running) saveGame(state);
+      if (running || hadSave) saveGame(state);
       audio.setMuted(true);
     } else if (!state.muted) audio.setMuted(false);
+  }
+  function onPageHide() {
+    if (running || hadSave) saveGame(state);
   }
 
   host.addEventListener("pointerdown", onCameraPointerDown, { passive: false });
@@ -226,6 +252,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", onHide);
+  window.addEventListener("pagehide", onPageHide);
+  void navigator.storage?.persist?.();
+  void loadGameBackup().then((backup) => {
+    if (dead || running || hadSave || !backup) return;
+    state = backup;
+    hadSave = true;
+    push();
+  });
   const resize = () => {
     world.resize();
     sizeOverlay();
@@ -314,6 +348,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     let digPulse = false;
+    let sold = false;
     if (running) {
       acc += dt;
       let guard = 0;
@@ -328,6 +363,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
             world.kick(0.16);
           }
         }
+        if (fx.sales.length) sold = true;
         if (fx.dig) digPulse = true;
         acc -= 1 / 60;
         guard++;
@@ -336,6 +372,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         audio.dig();
         digCool = 0.16;
       }
+      if (sold) saveGame(state);
       digCool = Math.max(0, digCool - dt);
       const v = state.vehicles[state.active];
       audio.engine(v?.speed ?? 0, panelOpen ? 0 : input.throttle);
@@ -372,6 +409,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("resize", resize);
     document.removeEventListener("visibilitychange", onHide);
+    window.removeEventListener("pagehide", onPageHide);
     observer.disconnect();
     audio.stop();
     world.dispose();

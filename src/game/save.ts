@@ -107,6 +107,18 @@ function sanitize(raw: unknown): GameState | null {
       if (pile.tons >= 0.2) state.deposits.push(pile);
     }
   }
+  if (o.contract && typeof o.contract === "object") {
+    const c = o.contract as Record<string, unknown>;
+    if (typeof c.ore === "string" && isOreId(c.ore)) {
+      state.contract = {
+        ore: c.ore,
+        delivered: num(c.delivered, 0, 0, 1e6),
+        need: num(c.need, 8, 1, 1e6),
+        bonus: num(c.bonus, 0, 0, 1e12),
+      };
+      state.contractSeq = Math.round(num(o.contractSeq, 0, 0, 1e6));
+    }
+  }
   if (!state.vehicles.length) return null;
   return state;
 }
@@ -116,6 +128,7 @@ export function loadGame(): GameState | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
+    memorySave = raw;
     return sanitize(JSON.parse(raw));
   } catch {
     try {
@@ -129,21 +142,99 @@ export function loadGame(): GameState | null {
 }
 
 export function saveGame(state: GameState) {
-  if (typeof localStorage === "undefined") return false;
-  try {
-    const prev = localStorage.getItem(KEY);
-    if (prev) localStorage.setItem(BAK, prev);
-    const copy: GameState = {
-      ...state,
-      vehicles: state.vehicles.map((v) => ({ ...v, speed: 0, busy: false, stuck: 0, unstick: 0 })),
-      deposits: state.deposits.map((d) => ({ ...d })),
-      tutorial: { ...state.tutorial },
-      log: state.log.slice(0, 5),
-      claims: [...state.claims],
-    };
-    localStorage.setItem(KEY, JSON.stringify(copy));
-    return true;
-  } catch {
-    return false;
+  const json = JSON.stringify(snapshot(state));
+  memorySave = json;
+  if (typeof localStorage !== "undefined") {
+    try {
+      const prev = localStorage.getItem(KEY);
+      if (prev && prev !== json) localStorage.setItem(BAK, prev);
+      localStorage.setItem(KEY, json);
+    } catch {
+      /* private mode or a full disk — the IndexedDB copy may still land */
+    }
   }
+  mirrorSave(json);
+  return true;
+}
+
+function snapshot(state: GameState): GameState {
+  return {
+    ...state,
+    vehicles: state.vehicles.map((v) => ({ ...v, speed: 0, busy: false, stuck: 0, unstick: 0 })),
+    deposits: state.deposits.map((d) => ({ ...d })),
+    tutorial: { ...state.tutorial },
+    contract: { ...state.contract },
+    log: state.log.slice(0, 5),
+    claims: [...state.claims],
+  };
+}
+
+let memorySave: string | null = null;
+
+export function currentSaveText() {
+  return memorySave;
+}
+
+export function readSaveText(text: string): GameState | null {
+  try {
+    return sanitize(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+const IDB_NAME = "ridge-ore";
+const IDB_STORE = "kv";
+
+function openBooks(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+function mirrorSave(json: string) {
+  void openBooks().then((db) => {
+    if (!db) return;
+    try {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(json, KEY);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+    } catch {
+      db.close();
+    }
+  });
+}
+
+export function loadGameBackup(): Promise<GameState | null> {
+  return openBooks().then(
+    (db) =>
+      new Promise((resolve) => {
+        if (!db) {
+          resolve(null);
+          return;
+        }
+        try {
+          const tx = db.transaction(IDB_STORE, "readonly");
+          const req = tx.objectStore(IDB_STORE).get(KEY);
+          req.onsuccess = () => {
+            db.close();
+            resolve(typeof req.result === "string" ? readSaveText(req.result) : null);
+          };
+          req.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        } catch {
+          db.close();
+          resolve(null);
+        }
+      }),
+  );
 }
