@@ -957,9 +957,12 @@ function spend(state: GameState, cost: number, msg: string) {
 }
 
 export function buyVehicle(state: GameState, id: VehicleId) {
-  if (owns(state, id)) return "Already on the yard.";
+  const count = state.vehicles.filter((v) => v.defId === id).length;
+  if (id !== "skid" && count > 0) return "Already on the yard.";
+  if (id === "skid" && count >= 3) return "Three skid steers is the yard limit.";
   const def = DEFS[id];
-  if (!spend(state, def.price, `${def.name} is on the yard.`)) return "Not enough cash.";
+  const price = id === "skid" ? def.price * (count + 1) : def.price;
+  if (!spend(state, price, `${def.name} is on the yard for ${formatMoney(price)}.`)) return "Not enough cash.";
   state.vehicles.push(makeVehicle(id, state.vehicles.length));
   return "";
 }
@@ -1098,14 +1101,17 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
   const ss = sec % 60;
   const machines: HudModel["machines"] = VEHICLE_ORDER.filter((id) => id !== "pickup" && id !== "crusher").map((id) => {
     const def = DEFS[id];
-    const owned = owns(state, id);
+    const count = state.vehicles.filter((v) => v.defId === id).length;
+    const price = id === "skid" ? def.price * (count + 1) : def.price;
+    const owned = id === "skid" ? count >= 3 : count > 0;
+    const blurb = id === "skid" && count > 0 && count < 3 ? `${count} on the yard. Next one is ${formatMoney(price)}.` : def.blurb;
     return {
       id,
       name: def.name,
-      blurb: def.blurb,
-      priceLabel: formatMoney(def.price),
+      blurb,
+      priceLabel: formatMoney(price),
       owned,
-      affordable: !owned && state.cash >= def.price,
+      affordable: !owned && state.cash >= price,
       kind: "vehicle" as const,
     };
   });

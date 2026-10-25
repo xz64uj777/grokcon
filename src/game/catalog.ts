@@ -210,7 +210,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   skid: {
     id: "skid",
     name: "Skid steer",
-    blurb: "Cuts veins and scoops. The first machine that can open a face.",
+    blurb: "Cuts veins and scoops. Up to three. Each one costs more.",
     price: 2200,
     capacity: 2.4,
     maxSpeed: 12,
