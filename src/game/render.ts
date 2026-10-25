@@ -22,6 +22,7 @@ type Rig = {
   flyHub: THREE.Object3D | null;
   beltCleats: THREE.Object3D[];
   beaconMat: THREE.MeshStandardMaterial | null;
+  conveyor: THREE.Object3D | null;
 };
 
 type DepositView = {
@@ -207,6 +208,7 @@ export function createWorld(host: HTMLElement): World {
     let flyHub: THREE.Object3D | null = null;
     let beltCleats: THREE.Object3D[] = [];
     let beaconMat: THREE.MeshStandardMaterial | null = null;
+    let conveyor: THREE.Object3D | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : paintDark;
 
@@ -217,6 +219,7 @@ export function createWorld(host: HTMLElement): World {
       flyHub = parts.flyHub;
       beltCleats = parts.beltCleats;
       beaconMat = parts.beaconMat;
+      conveyor = parts.conveyor;
       root.scale.setScalar(1.45);
     } else if (id === "pickup") {
       box(root, 1.55, 0.32, 3.5, 0, 0.7, 0.1, body);
@@ -331,7 +334,7 @@ export function createWorld(host: HTMLElement): World {
     shadow.position.y = 0.04;
     root.add(shadow);
     scene.add(root);
-    return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat };
+    return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat, conveyor };
   }
 
   const rockGeometries = [
@@ -582,6 +585,10 @@ export function createWorld(host: HTMLElement): World {
         const rate = 1.6 + crushLeft * 7;
         rig.flywheel.rotation.x += dt * rate;
         if (rig.flyHub) rig.flyHub.rotation.x = rig.flywheel.rotation.x;
+        if (rig.conveyor) {
+          const raised = Math.abs(v.speed) > 0.4 ? 0.42 : -0.3;
+          rig.conveyor.rotation.x += (raised - rig.conveyor.rotation.x) * (1 - Math.exp(-1.4 * dt));
+        }
         if (rig.beaconMat) rig.beaconMat.emissiveIntensity = 0.15 + Math.min(1.2, crushLeft);
         if (crushLeft > 0.2 || Math.abs(v.speed) > 0.3) {
           beltTravel = (beltTravel + dt * (0.45 + crushLeft)) % 5.1;
@@ -915,8 +922,8 @@ function buildCrusherDressing(
   beacon.position.set(-1.02, 2.52, 1.25);
   root.add(beacon);
   const conveyor = new THREE.Group();
-  conveyor.position.set(0.25, 1.35, -0.7);
-  conveyor.rotation.x = 0.34;
+  conveyor.position.set(0.25, 1.15, -0.7);
+  conveyor.rotation.x = -0.3;
   box(conveyor, 1.35, 0.18, 5.6, 0, 0.7, -2.25, darkSteel);
   box(conveyor, 1.04, 0.06, 5.25, 0, 0.82, -2.25, belt, false);
   box(conveyor, 0.1, 0.28, 5.3, -0.62, 0.84, -2.25, yellow);
@@ -930,9 +937,9 @@ function buildCrusherDressing(
   root.add(conveyor);
   // Hydraulic support, access ladder and operator/service platform.
   const supportA = box(root, 0.13, 1.4, 0.13, -0.5, 1.1, -2.5, steel);
-  supportA.rotation.x = 0.28;
+  supportA.rotation.x = -0.22;
   const supportB = box(root, 0.13, 1.4, 0.13, 0.75, 1.1, -2.5, steel);
-  supportB.rotation.x = 0.28;
+  supportB.rotation.x = -0.22;
   box(root, 1.7, 0.1, 0.75, 0.2, 2.15, 0.95, steel);
   box(root, 0.08, 0.55, 0.08, -0.6, 2.45, 0.95, steel);
   box(root, 0.08, 0.55, 0.08, 1.0, 2.45, 0.95, steel);
@@ -946,7 +953,7 @@ function buildCrusherDressing(
       object.receiveShadow = true;
     }
   });
-  return { rollers, flywheel, flyHub: flywheelHub, beltCleats, beaconMat };
+  return { rollers, flywheel, flyHub: flywheelHub, beltCleats, beaconMat, conveyor };
 }
 
 function buildRidges(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {
