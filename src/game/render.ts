@@ -639,6 +639,7 @@ export function createWorld(host: HTMLElement): World {
         });
       }
     }
+    const player = state.vehicles[state.active];
     for (const d of state.deposits) {
       const view = depositViews.get(d.id);
       if (!view) continue;
@@ -667,9 +668,12 @@ export function createWorld(host: HTMLElement): World {
         view.lease = !owned;
         (view.sign.material as THREE.SpriteMaterial).map = owned ? view.ownedTex : view.leaseTex;
       }
+      const dist = player ? Math.hypot(player.x - d.x, player.z - d.z) : 999;
+      const fade = Math.min(1, Math.max(0, (dist - d.radius - 3) / 12));
+      view.sign.visible = fade > 0.04 && view.group.visible;
+      view.sign.scale.set(7.2 * fade, 3.4 * fade, 1);
       view.sign.position.set(d.x, 3.4 + fullness * 2.4, d.z);
     }
-    const player = state.vehicles[state.active];
     if (player && Math.abs(player.speed) > 2.5) {
       const fx = -Math.sin(player.yaw);
       const fz = -Math.cos(player.yaw);
