@@ -304,6 +304,10 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
   });
 }
 
+function prefersSluice(state: GameState, ore: OreId) {
+  return state.sluice && (ore === "copper" || ore === "gold");
+}
+
 function bestPad(state: GameState, ore: OreId, x: number, z: number) {
   let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
@@ -543,7 +547,11 @@ function aiControl(state: GameState, index: number): Control {
   v.status = label;
   if (has && v.cargoOre && full) {
     const pad = nearestPad(state, v.x, v.z);
-    if (pad) return { throttle: 0, steer: 0, action: true, brake: 1 };
+    const wrongPlant = prefersSluice(state, v.cargoOre) && pad?.kind !== "sluice";
+    if (pad && !wrongPlant) {
+      v.status = `Dumping at ${pad.name}`;
+      return { throttle: 0, steer: 0, action: true, brake: 1 };
+    }
   }
   if (!target) return { ...ZERO };
   return seek(v, target.x, target.z, arrive);
@@ -590,7 +598,8 @@ function performAction(
   const player = index === state.active;
 
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
-  if (v.cargo > 0.04 && v.cargoOre && pad) {
+  const holdForSluice = !player && !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
+  if (v.cargo > 0.04 && v.cargoOre && pad && !holdForSluice) {
     const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
     const sold = v.cargo;
     const soldOre = v.cargoOre;
