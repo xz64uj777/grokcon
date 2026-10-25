@@ -368,12 +368,20 @@ function bestPile(state: GameState, v: VehicleState) {
 }
 
 function routeTo(v: VehicleState, tx: number, tz: number) {
-  if (inPit(v.x, v.z) === inPit(tx, tz)) return { x: tx, z: tz };
-  // The yard side of the gate is still outside the pit. Turning back for the
-  // gate there made crew pace a figure-8 and never reach the iron pile.
-  const inGateSlot = v.z < GATE.z + 6 && v.z > 0 && Math.abs(v.x - GATE.x) < 24;
-  if (inGateSlot || distTo(v.x, v.z, GATE.x, GATE.z) <= 9) return { x: tx, z: tz };
-  return GATE;
+  if (inPit(v.x, v.z) !== inPit(tx, tz)) {
+    // The yard side of the gate is still outside the pit. Turning back for the
+    // gate there made crew pace a figure-8 and never reach the iron pile.
+    const inGateSlot = v.z < GATE.z + 6 && v.z > 0 && Math.abs(v.x - GATE.x) < 24;
+    if (!(inGateSlot || distTo(v.x, v.z, GATE.x, GATE.z) <= 9)) return GATE;
+  }
+  // Gold creek and the sluice are west of the yard wall. A straight line from
+  // the gate clips that wall and leaves the skid steers stuck on it.
+  if (tx < -58 && v.x > -62) {
+    if (v.z < 12 && v.x < -22) return { x: -6, z: Math.min(v.z, 3) };
+    if (v.z < 16) return { x: Math.max(v.x, -18), z: 20 };
+    return { x: -70, z: Math.max(18, Math.min(v.z, 30)) };
+  }
+  return { x: tx, z: tz };
 }
 
 function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control {
@@ -418,6 +426,11 @@ function aiControl(state: GameState, index: number): Control {
   let target: { x: number; z: number } | null = null;
   let arrive = 6;
   let label = "Looking for work";
+
+  if (v.unstick > 0) {
+    v.status = "Backing off a wall";
+    return { throttle: -0.65, steer: v.bias, action: false, brake: 0 };
+  }
 
   if (def.id === "crusher") {
     const digger = state.vehicles.find(
