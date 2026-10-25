@@ -47,6 +47,33 @@ const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
 const saleAcc = new WeakMap<VehicleState, number>();
 const biteAcc = new WeakMap<VehicleState, number>();
 
+export function faceOf(d: Deposit) {
+  const dug = d.max > 0 ? clamp(1 - d.tons / d.max, 0, 1) : 1;
+  let rx = d.x - GATE.x;
+  let rz = d.z - GATE.z;
+  const len = Math.hypot(rx, rz) || 1;
+  rx /= len;
+  rz /= len;
+  // Fresh ground is at the opening. The cut walks away from the gate as it is mined.
+  const along = d.radius * (-0.85 + dug * 1.7);
+  return { x: d.x + rx * along, z: d.z + rz * along, reach: 3.6, yaw: Math.atan2(-rx, -rz) };
+}
+
+function closestFace(state: GameState, x: number, z: number) {
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (d.kind !== "vein" || d.tons < 0.08) continue;
+    const face = faceOf(d);
+    const dist = distTo(x, z, face.x, face.z);
+    if (dist <= face.reach && dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+
 function takeBite(v: VehicleState, dt: number, period: number) {
   const t = (biteAcc.get(v) ?? period) + dt;
   if (t < period) {
@@ -386,6 +413,7 @@ function routeTo(v: VehicleState, tx: number, tz: number) {
 
 function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control {
   const routed = routeTo(v, tx, tz);
+  const via = Math.hypot(routed.x - tx, routed.z - tz) > 3;
   const dx = routed.x - v.x;
   const dz = routed.z - v.z;
   const d = Math.hypot(dx, dz) || 0.0001;
@@ -404,6 +432,7 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   }
   if (d < arrive + 6) throttle = Math.min(throttle, 0.4);
   if (d < arrive) {
+    if (via) return { throttle: 0.55, steer: clamp(diff, -1, 1), action: false, brake: 0 };
     if (Math.abs(diff) > 1) return { throttle: 0, steer: clamp(diff, -1, 1), action: false, brake: 1 };
     return { throttle: 0, steer: 0, action: true, brake: 1 };
   }
@@ -524,26 +553,28 @@ function aiControl(state: GameState, index: number): Control {
       arrive = Math.max(3.5, pile.radius * 0.72);
       label = pile.id === "starter" ? "Scooping the gate pile" : `Scooping ${ORES[pile.ore].name}`;
     } else if (vein) {
-      const held = workHere(v, vein.x, vein.z, vein.radius * 0.95);
+      const cut = faceOf(vein);
+      const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
         v.status = `Digging ${ORES[vein.ore].name}`;
         return held;
       }
-      target = vein;
-      arrive = Math.max(4, vein.radius * 0.82);
+      target = cut;
+      arrive = Math.max(3, cut.reach * 0.75);
       label = `Digging ${ORES[vein.ore].name}`;
     } else if (has) haulTarget();
     else if (def.scoop > 0 && v.operator && v.workClaim != null) {
-      const face = bestVein(state, v, null);
-      if (face) {
-        const held = workHere(v, face.x, face.z, face.radius * 0.9);
+      const spot = bestVein(state, v, null);
+      const cut = spot ? faceOf(spot) : null;
+      if (spot && cut) {
+        const held = workHere(v, cut.x, cut.z, cut.reach);
         if (held) {
-          v.status = `Working ${ORES[face.ore].name} face`;
+          v.status = `Working ${ORES[spot.ore].name} face`;
           return held;
         }
-        target = face;
-        arrive = face.radius * 0.8;
-        label = `Working ${ORES[face.ore].name} face`;
+        target = cut;
+        arrive = cut.reach * 0.75;
+        label = `Working ${ORES[spot.ore].name} face`;
       } else label = "No material at assigned source";
     } else label = def.scoop > 0 ? "Looking for a pile" : "No face in reach";
   }
@@ -660,7 +691,7 @@ function performAction(
   }
 
   if (def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
-    const vein = closestDeposit(state, v.x, v.z, "vein", extra);
+    const vein = closestFace(state, v.x, v.z);
     if (vein) {
       if (!ownsClaim(state, vein.claim)) {
         if (player) v.status = "Unleased ground";
@@ -709,13 +740,10 @@ function performAction(
 
   if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
     const pile = closestDeposit(state, v.x, v.z, "pile", 0);
-    // Only crew explicitly assigned to a claim may scoop directly from its
-    // vein when that claim has no loose pile. Player controls keep their
-    // existing pile-only behavior.
-    const face = !pile && v.operator && v.workClaim != null
-      ? bestVein(state, v, null)
-      : null;
-    const source = pile && pile.tons > 0.05 ? pile : face && face.tons > 0.05 && face.claim === v.workClaim ? face : null;
+    const spot = !pile && v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
+    const cut = spot ? faceOf(spot) : null;
+    const faceNear = spot && cut && distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
+    const source = pile && pile.tons > 0.05 ? pile : faceNear && spot ? spot : null;
     if (source) {
       if (!ownsClaim(state, source.claim)) return null;
       if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== source.ore) {

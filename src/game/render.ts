@@ -2,7 +2,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
-import { vehicleStats } from "@/game/sim";
+import { faceOf, vehicleStats } from "@/game/sim";
 
 const CAMS = [14, 20, 28];
 
@@ -647,6 +647,14 @@ export function createWorld(host: HTMLElement): World {
       view.group.position.set(d.x, 0, d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
       view.group.visible = d.tons > 0.15 || d.regen > 0;
+      if (d.kind === "vein") {
+        const cut = faceOf(d);
+        view.group.position.set(cut.x, 0, cut.z);
+        view.group.rotation.y = cut.yaw;
+      } else {
+        view.group.position.set(d.x, 0, d.z);
+        view.group.rotation.y = 0;
+      }
       if (d.kind === "vein") {
         view.group.scale.set(1, 0.42 + fullness * 0.7, 1);
         const show = Math.max(2, Math.ceil(view.group.children.length * (0.16 + fullness * 0.84)));
