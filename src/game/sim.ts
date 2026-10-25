@@ -598,8 +598,10 @@ function performAction(
   const player = index === state.active;
 
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
-  const holdForSluice = !player && !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
-  if (v.cargo > 0.04 && v.cargoOre && pad && !holdForSluice) {
+  const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
+  if (holdForSluice && v.cargoOre) {
+    if (player) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
+  } else if (v.cargo > 0.04 && v.cargoOre && pad) {
     const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
     const sold = v.cargo;
     const soldOre = v.cargoOre;
@@ -1057,6 +1059,10 @@ function hint(state: GameState) {
   if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
   const extra = def.id === "excavator" ? 2.2 : 0;
   const pad = nearestPad(state, v.x, v.z);
+  if (v.cargoOre && prefersSluice(state, v.cargoOre) && v.cargo > 0.08) {
+    if (pad?.kind === "sluice") return "Hold DIG. The sluice pays for this load.";
+    return `${ORES[v.cargoOre].name} pays at the sluice, west of the yard. The crusher will not buy it.`;
+  }
   if (v.cargo > 0.08 && pad) return `Hold DIG to sell at the ${pad.name.toLowerCase()}.`;
   const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 9 + extra, false) : null;
   if (truck) return `Hold DIG to load the ${DEFS[truck.defId].name.toLowerCase()}.`;
