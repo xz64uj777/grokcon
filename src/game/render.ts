@@ -485,7 +485,7 @@ export function createWorld(host: HTMLElement): World {
     slot.z0 = z;
     slot.x1 = tx;
     slot.z1 = tz;
-    slot.mesh.position.set(x, 0.7, z);
+    slot.mesh.position.set(x, 1.05, z);
   }
 
   let camIdx = 1;
@@ -577,10 +577,8 @@ export function createWorld(host: HTMLElement): World {
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
       if (rig.flywheel) {
-        const working = state.vehicles.some(
-          (o) => o !== v && o.busy && Math.hypot(o.x - v.x, o.z - v.z) < 12,
-        );
-        if (working) crushLeft = 1.8;
+        const dumped = v.busy;
+        if (dumped) crushLeft = 0.9;
         crushLeft = Math.max(0, crushLeft - dt);
         const rate = 1.6 + crushLeft * 7;
         rig.flywheel.rotation.x += dt * rate;
@@ -596,14 +594,15 @@ export function createWorld(host: HTMLElement): World {
             cleat.position.z = 0.45 - ((i * 0.68 + beltTravel) % 5.1);
           });
         }
-        if (crushLeft > 0.35) {
+        const beltDown = !rig.conveyor || rig.conveyor.rotation.x < -0.05;
+        if (crushLeft > 0.2 && beltDown && Math.abs(v.speed) < 0.8) {
           chipCool -= dt;
           if (chipCool <= 0) {
-            chipCool = 0.22;
+            chipCool = 0.16;
             const fx = -Math.sin(v.yaw);
             const fz = -Math.cos(v.yaw);
             const ore = state.vehicles.find((o) => o !== v && o.cargoOre)?.cargoOre ?? "iron";
-            chip(ore, v.x + fx * 6.2, v.z + fz * 6.2, v.x + fx * 11, v.z + fz * 11);
+            chip(ore, v.x + fx * 4.6, v.z + fz * 4.6, v.x + fx * 6.4, v.z + fz * 6.4);
           }
         }
       }
@@ -715,7 +714,7 @@ export function createWorld(host: HTMLElement): World {
       const k = 1 - Math.max(0, c.life) / 0.46;
       c.mesh.position.set(
         c.x0 + (c.x1 - c.x0) * k,
-        0.3 + Math.sin(Math.min(1, k) * Math.PI) * 1.8,
+        0.35 + Math.sin(Math.min(1, k) * Math.PI) * 0.45,
         c.z0 + (c.z1 - c.z0) * k,
       );
       c.mesh.rotation.y += dt * 7;
