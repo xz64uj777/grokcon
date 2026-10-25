@@ -364,6 +364,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
           }
         }
         if (fx.sales.length) sold = true;
+        for (const b of fx.breaks) world.chip(b.ore, b.x, b.z, b.tx, b.tz);
         if (fx.dig) digPulse = true;
         acc -= 1 / 60;
         guard++;

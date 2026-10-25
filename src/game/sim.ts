@@ -40,10 +40,22 @@ export type Control = {
 export type StepFX = {
   dig: boolean;
   sales: { x: number; z: number; text: string; player: boolean }[];
+  breaks: { x: number; z: number; tx: number; tz: number; ore: OreId }[];
 };
 
 const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
 const saleAcc = new WeakMap<VehicleState, number>();
+const biteAcc = new WeakMap<VehicleState, number>();
+
+function takeBite(v: VehicleState, dt: number, period: number) {
+  const t = (biteAcc.get(v) ?? period) + dt;
+  if (t < period) {
+    biteAcc.set(v, t);
+    return false;
+  }
+  biteAcc.set(v, t - period);
+  return true;
+}
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -507,7 +519,13 @@ function materialInFront(state: GameState, v: VehicleState, reach: number) {
   return vein ?? pile;
 }
 
-function performAction(state: GameState, index: number, dt: number, allowStockpile: boolean): StepFX["sales"][number] | null {
+function performAction(
+  state: GameState,
+  index: number,
+  dt: number,
+  allowStockpile: boolean,
+  breaks: StepFX["breaks"],
+): StepFX["sales"][number] | null {
   const v = state.vehicles[index];
   const def = DEFS[v.defId];
   const st = vehicleStats(v);
@@ -568,13 +586,38 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
         if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
         return null;
       }
-      const take = Math.min(vein.tons, st.capacity - v.cargo, st.dig * dt);
-      if (take > 0) {
-        vein.tons -= take;
-        v.cargo += take;
-        v.cargoOre = vein.ore;
-        v.busy = true;
-        if (player) state.tutorial.loaded = true;
+      v.busy = true;
+      if (!takeBite(v, dt, 0.5)) {
+        if (player) v.status = `Breaking ${ORES[vein.ore].name}`;
+        return null;
+      }
+      const bite = Math.min(vein.tons, st.dig * 0.5);
+      if (bite > 0) {
+        const room = st.capacity - v.cargo;
+        const intoBucket = Math.min(room, bite * 0.62);
+        const spill = bite - intoBucket;
+        vein.tons -= bite;
+        if (intoBucket > 0.01) {
+          v.cargo += intoBucket;
+          v.cargoOre = vein.ore;
+        }
+        const dx = v.x - vein.x;
+        const dz = v.z - vein.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const toeX = vein.x + (dx / dist) * 5.2;
+        const toeZ = vein.z + (dz / dist) * 5.2;
+        if (spill > 0.04) addPile(state, vein.ore, spill, toeX, toeZ);
+        breaks.push({
+          x: vein.x,
+          z: vein.z,
+          tx: spill > intoBucket ? toeX : v.x,
+          tz: spill > intoBucket ? toeZ : v.z,
+          ore: vein.ore,
+        });
+        if (player) {
+          state.tutorial.loaded = true;
+          v.status = `Broke ${bite.toFixed(1)} t of ${ORES[vein.ore].name}`;
+        }
       }
       return null;
     }
@@ -595,12 +638,17 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
         if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
         return null;
       }
-      const take = Math.min(source.tons, st.capacity - v.cargo, st.scoop * dt);
+      v.busy = true;
+      if (!takeBite(v, dt, 0.42)) {
+        if (player) v.status = `Scooping ${ORES[source.ore].name}`;
+        return null;
+      }
+      const take = Math.min(source.tons, st.capacity - v.cargo, st.scoop * 0.42);
       if (take > 0) {
         source.tons -= take;
         v.cargo += take;
         v.cargoOre = source.ore;
-        v.busy = true;
+        breaks.push({ x: source.x, z: source.z, tx: v.x, tz: v.z, ore: source.ore });
         if (player) state.tutorial.loaded = true;
       }
       return null;
@@ -613,8 +661,10 @@ function performAction(state: GameState, index: number, dt: number, allowStockpi
       const take = Math.min(src.tons, st.push * dt);
       if (take > 0) {
         src.tons -= take;
-        if (src.kind === "vein") addPile(state, src.ore, take, src.x + 7, src.z + 6);
-        else addPile(state, src.ore, take, v.x + fx * (st.radius + 3.4), v.z + fz * (st.radius + 3.4));
+        const dropX = src.kind === "vein" ? src.x + fx * 6 : v.x + fx * (st.radius + 3.4);
+        const dropZ = src.kind === "vein" ? src.z + fz * 6 : v.z + fz * (st.radius + 3.4);
+        addPile(state, src.ore, take, dropX, dropZ);
+        if (takeBite(v, dt, 0.34)) breaks.push({ x: src.x, z: src.z, tx: dropX, tz: dropZ, ore: src.ore });
         v.busy = true;
         if (player) state.tutorial.loaded = true;
       }
@@ -782,6 +832,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     resolveVehicles(state);
   }
   const sales: StepFX["sales"] = [];
+  const breaks: StepFX["breaks"] = [];
   let dig = false;
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
@@ -811,7 +862,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     }
     if (i === state.active) v.status = "";
     const before = v.cargo;
-    const sale = performAction(state, i, dt, i === state.active);
+    const sale = performAction(state, i, dt, i === state.active, breaks);
     if (sale) sales.push(sale);
     if (i === state.active && v.busy && v.cargo >= before - 1e-6 && !sale) dig = true;
   }
@@ -820,7 +871,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     player.status = player.busy ? "Working" : "In your seat";
   }
   state.seconds += dt;
-  return { dig, sales };
+  return { dig, sales, breaks };
 }
 
 function spend(state: GameState, cost: number, msg: string) {
@@ -947,12 +998,12 @@ function hint(state: GameState) {
   if (def.push > 0) return "Hold DIG with the blade in a face. It builds a pile.";
   if (def.dig > 0) {
     const vein = closestDeposit(state, v.x, v.z, "vein", extra);
-    if (vein && ownsClaim(state, vein.claim)) return `Hold DIG to cut ${ORES[vein.ore].name.toLowerCase()}.`;
+    if (vein && ownsClaim(state, vein.claim)) return `Hold DIG to break ${ORES[vein.ore].name.toLowerCase()} off the face. The loose rock falls in front.`;
     return "Find a face inside the gate. V switches machines.";
   }
   if (def.scoop > 0) {
     const pile = closestDeposit(state, v.x, v.z, "pile", 0);
-    if (pile) return `Hold DIG to scoop ${ORES[pile.ore].name.toLowerCase()}.`;
+    if (pile) return `Hold DIG. Each bite lifts ${ORES[pile.ore].name.toLowerCase()} into the bucket.`;
     return "No pile in reach. A dozer or excavator makes them.";
   }
   if (def.receives) {

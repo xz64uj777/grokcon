@@ -41,6 +41,7 @@ export type World = {
   cameraDrag: (deltaX: number) => void;
   zoom: (factor: number) => void;
   project: (x: number, y: number, z: number, w: number, h: number) => { x: number; y: number } | null;
+  chip: (ore: string, x: number, z: number, tx: number, tz: number) => void;
   resize: () => void;
   dispose: () => void;
 };
@@ -364,12 +365,19 @@ export function createWorld(host: HTMLElement): World {
     const count = d.kind === "vein" ? 30 : 22;
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
-      const angle = i * 2.399963229728653;
-      const ring = 0.22 + Math.sqrt((i + 0.5) / count) * (d.kind === "vein" ? 2.05 : 1.8);
       const size = d.kind === "vein"
-        ? 0.18 + ((i * 7) % 9) * 0.035
+        ? 0.22 + ((i * 7) % 6) * 0.04
         : 0.12 + ((i * 5) % 7) * 0.028;
-      mesh.position.set(Math.cos(angle) * ring, size * 0.62, Math.sin(angle) * ring);
+      if (d.kind === "vein") {
+        const col = i % 6;
+        const row = Math.floor(i / 6);
+        mesh.position.set((col - 2.5) * 0.78, 0.16 + row * 0.36, -0.4 - row * 0.28);
+      } else {
+        const angle = i * 2.399963229728653;
+        const ring = 0.22 + Math.sqrt((i + 0.5) / count) * 1.8;
+        mesh.position.set(Math.cos(angle) * ring, size * 0.62, Math.sin(angle) * ring);
+      }
+      const angle = i * 0.9;
       mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
       mesh.scale.set(size * (0.8 + (i % 3) * 0.18), size * (0.65 + (i % 4) * 0.12), size * (0.75 + (i % 5) * 0.1));
       mesh.castShadow = true;
@@ -377,11 +385,10 @@ export function createWorld(host: HTMLElement): World {
       group.add(mesh);
     }
     if (d.kind === "vein") {
-      // A low, fractured outcrop beneath the loose fragments.
       const core = new THREE.Mesh(rockGeometries[0], mat);
-      core.position.set(0, 0.24, 0);
-      core.scale.set(1.25, 0.42, 1.05);
-      core.rotation.set(0.18, 0.4, -0.12);
+      core.position.set(0, 0.22, -1.15);
+      core.scale.set(2.4, 0.7, 0.55);
+      core.rotation.set(0.08, 0.2, 0);
       core.castShadow = true;
       core.receiveShadow = true;
       group.add(core);
@@ -440,6 +447,28 @@ export function createWorld(host: HTMLElement): World {
     track(new THREE.PointsMaterial({ color: 0xcbb8a0, size: 0.35, transparent: true, opacity: 0.45, depthWrite: false })),
   );
   scene.add(dust);
+
+  type Chip = { mesh: THREE.Mesh; life: number; x0: number; z0: number; x1: number; z1: number };
+  const chips: Chip[] = [];
+  for (let i = 0; i < 24; i++) {
+    const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], oreMaterials.iron);
+    mesh.visible = false;
+    mesh.castShadow = true;
+    mesh.scale.setScalar(0.28);
+    scene.add(mesh);
+    chips.push({ mesh, life: 0, x0: 0, z0: 0, x1: 0, z1: 0 });
+  }
+  function chip(ore: string, x: number, z: number, tx: number, tz: number) {
+    const slot = chips.find((c) => c.life <= 0) ?? chips[0];
+    slot.mesh.material = ore in oreMaterials ? oreMaterials[ore as keyof typeof oreMaterials] : oreMaterials.iron;
+    slot.mesh.visible = true;
+    slot.life = 0.46;
+    slot.x0 = x;
+    slot.z0 = z;
+    slot.x1 = tx;
+    slot.z1 = tz;
+    slot.mesh.position.set(x, 0.7, z);
+  }
 
   let camIdx = 1;
   let camZoom = 1;
@@ -566,11 +595,20 @@ export function createWorld(host: HTMLElement): World {
       const owned = state.claims.includes(d.claim);
       view.group.position.set(d.x, 0, d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
-      // Keep each fragment realistically sized; depletion reduces the pile's
-      // footprint instead of scaling individual stones up into giant boulders.
-      const s = (d.kind === "vein" ? 0.72 : 0.58) + fullness * (d.kind === "vein" ? 0.42 : 0.38);
-      view.group.scale.setScalar(s);
       view.group.visible = d.tons > 0.15 || d.regen > 0;
+      if (d.kind === "vein") {
+        view.group.scale.set(1, 0.42 + fullness * 0.7, 1);
+        const show = Math.max(2, Math.ceil(view.group.children.length * (0.16 + fullness * 0.84)));
+        view.group.children.forEach((child, i) => {
+          child.visible = i < show;
+        });
+      } else {
+        const s = 0.58 + fullness * 0.38;
+        view.group.scale.setScalar(s);
+        view.group.children.forEach((child) => {
+          child.visible = true;
+        });
+      }
       for (const child of view.group.children) {
         const mesh = child as THREE.Mesh;
         mesh.material = owned ? oreMaterials[d.ore] : lockedMat;
@@ -579,7 +617,7 @@ export function createWorld(host: HTMLElement): World {
         view.lease = !owned;
         (view.sign.material as THREE.SpriteMaterial).map = owned ? view.ownedTex : view.leaseTex;
       }
-      view.sign.position.set(d.x, 4.6 + Math.min(2, s), d.z);
+      view.sign.position.set(d.x, 3.4 + fullness * 2.4, d.z);
     }
     const player = state.vehicles[state.active];
     if (player && Math.abs(player.speed) > 2.5) {
@@ -620,6 +658,18 @@ export function createWorld(host: HTMLElement): World {
       dustPos[i * 3 + 1] += dt * 0.8;
     }
     (dustGeo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    for (const c of chips) {
+      if (c.life <= 0) continue;
+      c.life -= dt;
+      const k = 1 - Math.max(0, c.life) / 0.46;
+      c.mesh.position.set(
+        c.x0 + (c.x1 - c.x0) * k,
+        0.3 + Math.sin(Math.min(1, k) * Math.PI) * 1.8,
+        c.z0 + (c.z1 - c.z0) * k,
+      );
+      c.mesh.rotation.y += dt * 7;
+      if (c.life <= 0) c.mesh.visible = false;
+    }
     frameCamera(state, dt, follow);
     renderer.render(scene, camera);
   }
@@ -665,6 +715,7 @@ export function createWorld(host: HTMLElement): World {
       if (_proj.z > 1) return null;
       return { x: (_proj.x * 0.5 + 0.5) * w, y: (-_proj.y * 0.5 + 0.5) * h };
     },
+    chip,
     resize,
     dispose() {
       renderer.dispose();
