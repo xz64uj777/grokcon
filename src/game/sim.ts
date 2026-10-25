@@ -377,28 +377,29 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const d = Math.hypot(dx, dz) || 0.0001;
   const desired = Math.atan2(-dx, -dz);
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
-  let steer = clamp(diff / 0.42, -1, 1);
+  // Fast machines (the skid steer especially) were bang-bang steering around
+  // the target and drawing figure-eights. Scale the gain to the turn rate.
+  const steer = clamp(diff / Math.max(0.9, vehicleStats(v).turn * 0.5), -1, 1);
   let throttle = 1;
-  // Turn first when badly misaligned. Driving forward while steering hard
-  // makes crew machines orbit their target in repeated figure-eights.
-  if (Math.abs(diff) > 0.95) throttle = 0;
-  else if (Math.abs(diff) > 0.55) throttle = 0.42;
-  if (d < arrive + 8) throttle = Math.min(throttle, 0.6);
   let brake = 0;
-  if (d < arrive) {
+  if (Math.abs(diff) > 0.7) {
     throttle = 0;
-    brake = 1;
-    if (Math.abs(diff) > 0.4) {
-      steer = clamp(diff / 0.35, -1, 1);
-      return { throttle, steer, action: false, brake };
-    }
-    steer = 0;
-    return { throttle, steer, action: true, brake };
+    brake = 0.7;
+  } else if (Math.abs(diff) > 0.32) {
+    throttle = 0.25;
   }
-  // Keep steering aligned to the current target during recovery. The old
-  // random fixed-steer override ignored the target and repeatedly sent crew
-  // vehicles into circles when the stuck timer retriggered.
+  if (d < arrive + 6) throttle = Math.min(throttle, 0.4);
+  if (d < arrive) {
+    if (Math.abs(diff) > 1) return { throttle: 0, steer: clamp(diff, -1, 1), action: false, brake: 1 };
+    return { throttle: 0, steer: 0, action: true, brake: 1 };
+  }
   return { throttle, steer, action: false, brake };
+}
+
+function workHere(v: VehicleState, x: number, z: number, radius: number): Control | null {
+  if (distTo(v.x, v.z, x, z) > radius) return null;
+  if (Math.abs(v.speed) > 0.7) return { throttle: 0, steer: 0, action: false, brake: 1 };
+  return { throttle: 0, steer: 0, action: true, brake: 1 };
 }
 
 function aiControl(state: GameState, index: number): Control {
@@ -423,8 +424,12 @@ function aiControl(state: GameState, index: number): Control {
     const dx = digger.x - v.x;
     const dz = digger.z - v.z;
     const dist = Math.hypot(dx, dz) || 1;
+    // A moving digger is usually driving here to dump. Chasing it makes a figure-8.
+    if (dist < 22 || Math.abs(digger.speed) > 1.1) {
+      v.status = "Plant set";
+      return { throttle: 0, steer: 0, action: false, brake: 1 };
+    }
     v.status = "Tracking the face";
-    if (dist < 18) return { throttle: 0, steer: 0, action: false, brake: 1 };
     return seek(v, digger.x - (dx / dist) * 16, digger.z - (dz / dist) * 16, 6);
   }
 
@@ -486,16 +491,26 @@ function aiControl(state: GameState, index: number): Control {
   } else if (def.dig > 0) {
     const vein = bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null);
     if (!full && vein) {
+      const held = workHere(v, vein.x, vein.z, vein.radius * 0.95);
+      if (held) {
+        v.status = `Digging ${ORES[vein.ore].name}`;
+        return held;
+      }
       target = vein;
-      arrive = vein.radius * 0.7;
+      arrive = Math.max(4, vein.radius * 0.82);
       label = `Digging ${ORES[vein.ore].name}`;
     } else if (has) haulTarget();
     else label = "No face in reach";
   } else if (def.scoop > 0) {
     const pile = !full ? bestPile(state, v) : null;
     if (pile) {
+      const held = workHere(v, pile.x, pile.z, pile.radius * 0.9);
+      if (held) {
+        v.status = `Scooping ${ORES[pile.ore].name}`;
+        return held;
+      }
       target = pile;
-      arrive = pile.radius * 0.7;
+      arrive = Math.max(3.5, pile.radius * 0.75);
       label = `Scooping ${ORES[pile.ore].name}`;
     } else if (has) haulTarget();
     else if (v.operator && v.workClaim != null) {
@@ -520,6 +535,10 @@ function aiControl(state: GameState, index: number): Control {
   }
 
   v.status = label;
+  if (has && v.cargoOre && full) {
+    const pad = nearestPad(state, v.x, v.z);
+    if (pad) return { throttle: 0, steer: 0, action: true, brake: 1 };
+  }
   if (!target) return { ...ZERO };
   return seek(v, target.x, target.z, arrive);
 }
