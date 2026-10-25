@@ -144,7 +144,14 @@ export function freshGame(company: string): GameState {
     claims: [1],
     sluice: false,
     muted: false,
-    vehicles: [makeVehicle("pickup", 0)],
+    vehicles: (() => {
+      const pickup = makeVehicle("pickup", 0);
+      const plant = makeVehicle("crusher", 1);
+      plant.x = 34;
+      plant.z = 36;
+      plant.yaw = Math.PI;
+      return [pickup, plant];
+    })(),
     active: 0,
     deposits: BASE_DEPOSITS.map((d) => ({ ...d })),
     pileSeq: 1,
@@ -182,10 +189,18 @@ function distTo(x: number, z: number, tx: number, tz: number) {
   return hypot(tx - x, tz - z);
 }
 
+function livePads(state: GameState) {
+  const plant = state.vehicles.find((v) => v.defId === "crusher");
+  return PADS.map((pad) => {
+    if (pad.kind !== "crusher" || !plant) return pad;
+    return { ...pad, x: plant.x, z: plant.z, r: 11 };
+  });
+}
+
 function nearestPad(state: GameState, x: number, z: number) {
-  let best: (typeof PADS)[number] | null = null;
+  let best: ReturnType<typeof livePads>[number] | null = null;
   let bestD = Infinity;
-  for (const pad of PADS) {
+  for (const pad of livePads(state)) {
     if (pad.kind === "sluice" && !state.sluice) continue;
     const d = distTo(x, z, pad.x, pad.z);
     if (d < bestD) {
@@ -290,9 +305,9 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
 }
 
 function bestPad(state: GameState, ore: OreId, x: number, z: number) {
-  let best: (typeof PADS)[number] | null = null;
+  let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
-  for (const pad of PADS) {
+  for (const pad of livePads(state)) {
     if (pad.kind === "sluice" && !state.sluice) continue;
     const unit = unitPrice(ore, pad.kind, state.sluice);
     const d = distTo(x, z, pad.x, pad.z);
@@ -396,6 +411,22 @@ function aiControl(state: GameState, index: number): Control {
   let target: { x: number; z: number } | null = null;
   let arrive = 6;
   let label = "Looking for work";
+
+  if (def.id === "crusher") {
+    const digger = state.vehicles.find(
+      (o, i) => i !== index && (o.operator || i === state.active) && (DEFS[o.defId].dig > 0 || DEFS[o.defId].scoop > 0),
+    );
+    if (!digger) {
+      v.status = "Plant parked";
+      return { ...ZERO };
+    }
+    const dx = digger.x - v.x;
+    const dz = digger.z - v.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    v.status = "Tracking the face";
+    if (dist < 18) return { throttle: 0, steer: 0, action: false, brake: 1 };
+    return seek(v, digger.x - (dx / dist) * 16, digger.z - (dz / dist) * 16, 6);
+  }
 
   const haulTarget = () => {
     if (!v.cargoOre) return;
@@ -549,6 +580,10 @@ function performAction(
     saleAcc.set(v, 0);
     v.busy = true;
     if (player) state.tutorial.dumped = true;
+    if (pad.kind === "crusher") {
+      const plant = state.vehicles.find((o) => o.defId === "crusher");
+      if (plant) plant.busy = true;
+    }
     const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
     return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName}${extra}`, player };
   }
@@ -983,7 +1018,8 @@ function hint(state: GameState) {
   const def = DEFS[v.defId];
   const st = vehicleStats(v);
   if (!state.tutorial.loaded) return "Drive to the iron pile. Hold DIG to scoop.";
-  if (!state.tutorial.dumped) return "Hold DIG on the orange crusher pad.";
+  if (!state.tutorial.dumped) return "Hold DIG beside the track crusher. Drive that plant with Next.";
+  if (def.id === "crusher") return "Tracks. Drive it up to the dig. Other machines dump into the hopper beside you.";
   if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
   const extra = def.id === "excavator" ? 2.2 : 0;
   const pad = nearestPad(state, v.x, v.z);
@@ -991,7 +1027,7 @@ function hint(state: GameState) {
   const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 9 + extra, false) : null;
   if (truck) return `Hold DIG to load the ${DEFS[truck.defId].name.toLowerCase()}.`;
   if (st.capacity > 0 && v.cargo >= st.capacity * 0.92) {
-    return def.receives ? "Bed full. Crusher is east of the yard." : "Full. Haul it out, or pull up to a dump truck.";
+    return def.receives ? "Bed full. Dump beside the track crusher." : "Full. Haul it out, or pull up to a dump truck.";
   }
   const locked = state.deposits.find((d) => !ownsClaim(state, d.claim) && distTo(v.x, v.z, d.x, d.z) < d.radius + 3);
   if (locked) return `${locked.sign} is unleased. Open Ground in the yard office.`;
@@ -1008,7 +1044,7 @@ function hint(state: GameState) {
   }
   if (def.receives) {
     if (v.cargo < 0.1) return "Park beside a payloader or excavator and let them fill you.";
-    return "Hold DIG on the crusher pad to dump.";
+    return "Hold DIG beside the track crusher to dump.";
   }
   return "WASD drive. Hold DIG to work. V next machine.";
 }
@@ -1020,7 +1056,7 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
   const sec = Math.floor(state.seconds);
   const mm = Math.floor(sec / 60);
   const ss = sec % 60;
-  const machines: HudModel["machines"] = VEHICLE_ORDER.filter((id) => id !== "pickup").map((id) => {
+  const machines: HudModel["machines"] = VEHICLE_ORDER.filter((id) => id !== "pickup" && id !== "crusher").map((id) => {
     const def = DEFS[id];
     const owned = owns(state, id);
     return {

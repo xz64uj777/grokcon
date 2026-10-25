@@ -64,7 +64,7 @@ export function MineScreen() {
             A claim truck first. Then the excavator, payloader, dump truck, bulldozer, and sluice. The ridge becomes the company.
           </p>
           <ol className="mt-4 space-y-2 text-sm leading-relaxed text-fg">
-            <li>1. Scoop the iron pile and sell it at the crusher.</li>
+            <li>1. Scoop the iron pile. Press Next, drive the track crusher to the dig, and dump beside it.</li>
             <li>2. Buy machines and upgrades. Hire operators for the seats you leave.</li>
             <li>3. Lease benches, wash gold at the sluice, and run a full crew.</li>
           </ol>

@@ -18,6 +18,10 @@ type Rig = {
   load: THREE.Object3D | null;
   dump: number;
   uid: string;
+  flywheel: THREE.Object3D | null;
+  flyHub: THREE.Object3D | null;
+  beltCleats: THREE.Object3D[];
+  beaconMat: THREE.MeshStandardMaterial | null;
 };
 
 type DepositView = {
@@ -199,10 +203,22 @@ export function createWorld(host: HTMLElement): World {
     let bed: THREE.Object3D | null = null;
     let blade: THREE.Object3D | null = null;
     let load: THREE.Object3D | null = null;
+    let flywheel: THREE.Object3D | null = null;
+    let flyHub: THREE.Object3D | null = null;
+    let beltCleats: THREE.Object3D[] = [];
+    let beaconMat: THREE.MeshStandardMaterial | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : paintDark;
 
-    if (id === "pickup") {
+    if (id === "crusher") {
+      const parts = buildCrusherDressing(root, track, box, steel, orange);
+      wheels.push(...parts.rollers);
+      flywheel = parts.flywheel;
+      flyHub = parts.flyHub;
+      beltCleats = parts.beltCleats;
+      beaconMat = parts.beaconMat;
+      root.scale.setScalar(1.45);
+    } else if (id === "pickup") {
       box(root, 1.55, 0.32, 3.5, 0, 0.7, 0.1, body);
       box(root, 1.4, 0.85, 1.25, 0, 1.25, -0.55, cream);
       box(root, 1.15, 0.55, 1.05, 0, 1.35, -0.55, glass, false);
@@ -315,7 +331,7 @@ export function createWorld(host: HTMLElement): World {
     shadow.position.y = 0.04;
     root.add(shadow);
     scene.add(root);
-    return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid };
+    return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat };
   }
 
   const rockGeometries = [
@@ -405,6 +421,7 @@ export function createWorld(host: HTMLElement): World {
   }
 
   for (const pad of PADS) {
+    if (pad.kind === "crusher") continue;
     const ring = new THREE.Mesh(
       track(new THREE.TorusGeometry(pad.r * 0.72, 0.14, 6, 28)),
       pad.kind === "sluice" ? brassMat : beaconMat,
@@ -431,8 +448,6 @@ export function createWorld(host: HTMLElement): World {
   scene.add(gatePost);
 
   buildSluice(scene, track, box, steel, std);
-  const crusherAnimators: ((time: number) => void)[] = [];
-  buildCrusherDressing(scene, track, box, steel, orange, crusherAnimators);
   buildRidges(scene, track, std);
   buildTrees(scene, track, std);
   buildFence(scene, track, std);
@@ -475,6 +490,9 @@ export function createWorld(host: HTMLElement): World {
   let orbitOffset = 0;
   let orbitAng = 0.4;
   let shake = 0;
+  let crushLeft = 0;
+  let beltTravel = 0;
+  let chipCool = 0;
   let snapNext = false;
   let bound: GameState | null = null;
   const clock = { t: 0 };
@@ -546,7 +564,6 @@ export function createWorld(host: HTMLElement): World {
 
   function sync(state: GameState, dt: number, follow: boolean) {
     clock.t += dt;
-    for (const animate of crusherAnimators) animate(clock.t);
     if (bound !== state) bound = state;
     ensure(state);
     for (const v of state.vehicles) {
@@ -556,6 +573,33 @@ export function createWorld(host: HTMLElement): World {
       rig.root.rotation.y = v.yaw;
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
+      if (rig.flywheel) {
+        const working = state.vehicles.some(
+          (o) => o !== v && o.busy && Math.hypot(o.x - v.x, o.z - v.z) < 12,
+        );
+        if (working) crushLeft = 1.8;
+        crushLeft = Math.max(0, crushLeft - dt);
+        const rate = 1.6 + crushLeft * 7;
+        rig.flywheel.rotation.x += dt * rate;
+        if (rig.flyHub) rig.flyHub.rotation.x = rig.flywheel.rotation.x;
+        if (rig.beaconMat) rig.beaconMat.emissiveIntensity = 0.15 + Math.min(1.2, crushLeft);
+        if (crushLeft > 0.2 || Math.abs(v.speed) > 0.3) {
+          beltTravel = (beltTravel + dt * (0.45 + crushLeft)) % 5.1;
+          rig.beltCleats.forEach((cleat, i) => {
+            cleat.position.z = -4.65 + ((i * 0.68 + beltTravel) % 5.1);
+          });
+        }
+        if (crushLeft > 0.35) {
+          chipCool -= dt;
+          if (chipCool <= 0) {
+            chipCool = 0.22;
+            const fx = -Math.sin(v.yaw);
+            const fz = -Math.cos(v.yaw);
+            const ore = state.vehicles.find((o) => o !== v && o.cargoOre)?.cargoOre ?? "iron";
+            chip(ore, v.x + fx * 2.4, v.z + fz * 2.4, v.x + fx * 8, v.z + fz * 8);
+          }
+        }
+      }
       const k = 1 - Math.exp(-8 * dt);
       if (rig.bucket) {
         const target = v.busy ? 0.7 : 0.05;
@@ -806,38 +850,31 @@ function buildSluice(
 }
 
 function buildCrusherDressing(
-  scene: THREE.Scene,
+  root: THREE.Group,
   track: <T extends { dispose: () => void }>(g: T) => T,
   box: (parent: THREE.Object3D, w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, shadow?: boolean) => THREE.Mesh,
   steel: THREE.Material,
   orange: THREE.Material,
-  animators: ((time: number) => void)[],
 ) {
-  // Compact tracked mobile jaw crusher: undercarriage, engine bay, feed hopper,
-  // crushing chamber, safety rails and a raised discharge conveyor.
-  const root = new THREE.Group();
-  root.position.set(42, 0, 28);
+  const rollers: THREE.Object3D[] = [];
   const rubber = track(new THREE.MeshStandardMaterial({ color: 0x252523, roughness: 0.98 }));
   const darkSteel = track(new THREE.MeshStandardMaterial({ color: 0x383b3b, roughness: 0.78, metalness: 0.25 }));
   const yellow = orange;
   const belt = track(new THREE.MeshStandardMaterial({ color: 0x252729, roughness: 0.92 }));
   const glass = track(new THREE.MeshStandardMaterial({ color: 0x526b70, roughness: 0.32, metalness: 0.15 }));
-  const addCyl = (radiusTop: number, radiusBottom: number, height: number, x: number, y: number, z: number, mat: THREE.Material, segments = 10) => {
-    const mesh = new THREE.Mesh(track(new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments)), mat);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    root.add(mesh);
-    return mesh;
-  };
 
-  // Twin crawler tracks with visible rollers.
   for (const x of [-1.55, 1.55]) {
     box(root, 0.62, 0.62, 5.2, x, 0.48, 0.25, rubber);
     box(root, 0.67, 0.12, 4.35, x, 0.78, 0.25, darkSteel);
     for (let i = 0; i < 5; i++) {
-      const roller = addCyl(0.22, 0.22, 0.16, x, 0.43, -1.55 + i * 0.9, steel, 10);
+      const g = new THREE.Group();
+      g.position.set(x, 0.43, -1.55 + i * 0.9);
+      const roller = new THREE.Mesh(track(new THREE.CylinderGeometry(0.22, 0.22, 0.16, 10)), steel);
       roller.rotation.z = Math.PI / 2;
+      roller.castShadow = true;
+      g.add(roller);
+      root.add(g);
+      rollers.push(g);
     }
   }
   box(root, 3.5, 0.38, 4.7, 0, 1.02, 0.2, darkSteel);
@@ -877,12 +914,6 @@ function buildCrusherDressing(
   const beacon = new THREE.Mesh(track(new THREE.CylinderGeometry(0.15, 0.18, 0.22, 10)), beaconMat);
   beacon.position.set(-1.02, 2.52, 1.25);
   root.add(beacon);
-  animators.push((time) => {
-    flywheel.rotation.x = time * 5.5;
-    flywheelHub.rotation.x = flywheel.rotation.x;
-    beaconMat.emissiveIntensity = 0.25 + (Math.sin(time * 3.2) + 1) * 0.48;
-  });
-  // Angled discharge conveyor with belt and side guards.
   const conveyor = new THREE.Group();
   conveyor.position.set(0.25, 1.35, -0.7);
   conveyor.rotation.x = -0.34;
@@ -896,11 +927,6 @@ function buildCrusherDressing(
     const cleat = box(conveyor, 0.92, 0.045, 0.07, 0, 0.87, -4.65 + i * 0.68, steel, false);
     beltCleats.push(cleat);
   }
-  animators.push((time) => {
-    for (let i = 0; i < beltCleats.length; i++) {
-      beltCleats[i].position.z = -4.65 + ((i * 0.68 + time * 0.85) % 5.1);
-    }
-  });
   root.add(conveyor);
   // Hydraulic support, access ladder and operator/service platform.
   const supportA = box(root, 0.13, 1.4, 0.13, -0.5, 1.1, -2.5, steel);
@@ -920,9 +946,7 @@ function buildCrusherDressing(
       object.receiveShadow = true;
     }
   });
-  // Scale the crusher to read as a major processing plant beside the player vehicles.
-  root.scale.setScalar(1.65);
-  scene.add(root);
+  return { rollers, flywheel, flyHub: flywheelHub, beltCleats, beaconMat };
 }
 
 function buildRidges(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {

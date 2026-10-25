@@ -67,6 +67,27 @@ function sanitize(raw: unknown): GameState | null {
         busy: false,
       });
     }
+    if (vehicles.length && !vehicles.some((v) => v.defId === "crusher")) {
+      vehicles.push({
+        uid: "crusher-plant",
+        defId: "crusher",
+        x: 34,
+        z: 36,
+        yaw: Math.PI,
+        speed: 0,
+        cargoOre: null,
+        cargo: 0,
+        upgrades: { engine: 0, body: 0, hydro: 0 },
+        hired: false,
+        operator: false,
+        status: "",
+        stuck: 0,
+        unstick: 0,
+        bias: 1,
+        workClaim: null,
+        busy: false,
+      });
+    }
     if (vehicles.length) {
       state.vehicles = vehicles;
       state.active = Math.round(num(o.active, 0, 0, vehicles.length - 1));

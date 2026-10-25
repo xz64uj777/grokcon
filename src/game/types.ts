@@ -7,7 +7,8 @@ export type VehicleId =
   | "loader"
   | "excavator"
   | "truck"
-  | "heavy";
+  | "heavy"
+  | "crusher";
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 

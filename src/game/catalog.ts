@@ -33,7 +33,6 @@ export const BLOCKS: Block[] = [
   { id: "wall-se", x: 26, z: 8, sx: 32, sy: 7, sz: 7, kind: "wall" },
   { id: "office", x: 22, z: 54, sx: 14, sy: 4.2, sz: 7, kind: "building" },
   { id: "garage", x: -22, z: 54, sx: 18, sy: 5, sz: 8, kind: "building" },
-  { id: "crusher", x: 50, z: 26, sx: 12, sy: 9, sz: 10, kind: "building" },
   { id: "rock-1", x: 28, z: -16, sx: 5, sy: 2.8, sz: 4, kind: "rock" },
   { id: "rock-2", x: -42, z: -8, sx: 5, sy: 2.4, sz: 4, kind: "rock" },
   { id: "rock-3", x: -28, z: -44, sx: 4, sy: 2.2, sz: 4, kind: "rock" },
@@ -180,6 +179,7 @@ export type VehicleDef = {
 
 export const VEHICLE_ORDER: VehicleId[] = [
   "pickup",
+  "crusher",
   "skid",
   "dozer",
   "loader",
@@ -314,6 +314,24 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
     receives: true,
     upgradeScale: 2.5,
     bodyLabel: "Bed",
+  },
+  crusher: {
+    id: "crusher",
+    name: "Track crusher",
+    blurb: "Already yours. Drive the tracks up to the dig. Trucks dump into the hopper beside it.",
+    price: 0,
+    capacity: 0,
+    maxSpeed: 7,
+    accel: 3.4,
+    turn: 1.05,
+    dig: 0,
+    scoop: 0,
+    push: 0,
+    range: 8,
+    radius: 3.8,
+    receives: false,
+    upgradeScale: 1.4,
+    bodyLabel: "Jaw",
   },
 };
 

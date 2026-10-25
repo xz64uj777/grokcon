@@ -298,6 +298,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     ctx.fillRect(sx(GATE.x) - 2, sz(GATE.z) - 2, 4, 4);
     for (const pad of PADS) {
       if (pad.kind === "sluice" && !state.sluice) continue;
+      if (pad.kind === "crusher") continue;
       ctx.fillStyle = pad.kind === "reclaim" ? "#e6b325" : "#e26a2c";
       ctx.beginPath();
       ctx.arc(sx(pad.x), sz(pad.z), 3, 0, Math.PI * 2);
