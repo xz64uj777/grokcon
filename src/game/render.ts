@@ -586,7 +586,7 @@ export function createWorld(host: HTMLElement): World {
         if (crushLeft > 0.2 || Math.abs(v.speed) > 0.3) {
           beltTravel = (beltTravel + dt * (0.45 + crushLeft)) % 5.1;
           rig.beltCleats.forEach((cleat, i) => {
-            cleat.position.z = -4.65 + ((i * 0.68 + beltTravel) % 5.1);
+            cleat.position.z = 0.45 - ((i * 0.68 + beltTravel) % 5.1);
           });
         }
         if (crushLeft > 0.35) {
@@ -596,7 +596,7 @@ export function createWorld(host: HTMLElement): World {
             const fx = -Math.sin(v.yaw);
             const fz = -Math.cos(v.yaw);
             const ore = state.vehicles.find((o) => o !== v && o.cargoOre)?.cargoOre ?? "iron";
-            chip(ore, v.x + fx * 2.4, v.z + fz * 2.4, v.x + fx * 8, v.z + fz * 8);
+            chip(ore, v.x + fx * 6.2, v.z + fz * 6.2, v.x + fx * 11, v.z + fz * 11);
           }
         }
       }
@@ -916,12 +916,12 @@ function buildCrusherDressing(
   root.add(beacon);
   const conveyor = new THREE.Group();
   conveyor.position.set(0.25, 1.35, -0.7);
-  conveyor.rotation.x = -0.34;
+  conveyor.rotation.x = 0.34;
   box(conveyor, 1.35, 0.18, 5.6, 0, 0.7, -2.25, darkSteel);
   box(conveyor, 1.04, 0.06, 5.25, 0, 0.82, -2.25, belt, false);
   box(conveyor, 0.1, 0.28, 5.3, -0.62, 0.84, -2.25, yellow);
   box(conveyor, 0.1, 0.28, 5.3, 0.62, 0.84, -2.25, yellow);
-  // Raised belt cleats travel down the conveyor so the discharge looks active.
+  // Cleats ride up the belt and off the raised tip.
   const beltCleats: THREE.Mesh[] = [];
   for (let i = 0; i < 8; i++) {
     const cleat = box(conveyor, 0.92, 0.045, 0.07, 0, 0.87, -4.65 + i * 0.68, steel, false);
@@ -930,9 +930,9 @@ function buildCrusherDressing(
   root.add(conveyor);
   // Hydraulic support, access ladder and operator/service platform.
   const supportA = box(root, 0.13, 1.4, 0.13, -0.5, 1.1, -2.5, steel);
-  supportA.rotation.x = -0.28;
+  supportA.rotation.x = 0.28;
   const supportB = box(root, 0.13, 1.4, 0.13, 0.75, 1.1, -2.5, steel);
-  supportB.rotation.x = -0.28;
+  supportB.rotation.x = 0.28;
   box(root, 1.7, 0.1, 0.75, 0.2, 2.15, 0.95, steel);
   box(root, 0.08, 0.55, 0.08, -0.6, 2.45, 0.95, steel);
   box(root, 0.08, 0.55, 0.08, 1.0, 2.45, 0.95, steel);
