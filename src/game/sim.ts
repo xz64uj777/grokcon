@@ -398,8 +398,10 @@ function routeTo(v: VehicleState, tx: number, tz: number) {
   if (inPit(v.x, v.z) !== inPit(tx, tz)) {
     // The yard side of the gate is still outside the pit. Turning back for the
     // gate there made crew pace a figure-8 and never reach the iron pile.
-    const inGateSlot = v.z < GATE.z + 6 && v.z > 0 && Math.abs(v.x - GATE.x) < 24;
-    if (!(inGateSlot || distTo(v.x, v.z, GATE.x, GATE.z) <= 9)) return GATE;
+    // Only the real opening counts. The old wide slot let a skid west of the
+    // yard wall turn early and stick on that wall on the way back from the sluice.
+    const inGap = v.x > -20 && v.x < 8 && v.z > 0 && v.z < GATE.z + 6;
+    if (!(inGap || distTo(v.x, v.z, GATE.x, GATE.z) <= 9)) return GATE;
   }
   // Gold creek and the sluice are west of the yard wall. A straight line from
   // the gate clips that wall and leaves the skid steers stuck on it.
