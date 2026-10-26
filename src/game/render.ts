@@ -31,6 +31,8 @@ type DepositView = {
   sign: THREE.Sprite;
   ownedTex: THREE.Texture;
   leaseTex: THREE.Texture;
+  face: THREE.Group | null;
+  floor: THREE.Mesh | null;
 };
 
 const _look = new THREE.Vector3();
@@ -379,38 +381,64 @@ export function createWorld(host: HTMLElement): World {
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
     const mat = oreMaterials[d.ore];
-    // Many small, irregular fragments read as broken ore/gravel rather than
-    // a few oversized boulders. The vein still has a rough exposed-rock core.
-    const count = d.kind === "vein" ? 30 : 22;
-    for (let i = 0; i < count; i++) {
-      const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
-      const size = d.kind === "vein"
-        ? 0.22 + ((i * 7) % 6) * 0.04
-        : 0.12 + ((i * 5) % 7) * 0.028;
-      if (d.kind === "vein") {
+    let face: THREE.Group | null = null;
+    let floor: THREE.Mesh | null = null;
+    if (d.kind === "vein") {
+      const bermMat = std(0x6a5340, { roughness: 1, flatShading: true });
+      const cutMat = std(0x2c261f, { roughness: 1 });
+      const berm = new THREE.Group();
+      for (let i = 0; i < 8; i++) {
+        const lump = new THREE.Mesh(rockGeometries[i % rockGeometries.length], bermMat);
+        const col = (i % 4) - 1.5;
+        const row = Math.floor(i / 4);
+        lump.position.set(col * 2.3, 0.7 + row * 0.45, -3.4 - row * 1.35);
+        lump.scale.set(2.5, 1.45 + row * 0.4, 2.2);
+        lump.rotation.y = i * 0.6;
+        lump.castShadow = true;
+        lump.receiveShadow = true;
+        berm.add(lump);
+      }
+      group.add(berm);
+      face = new THREE.Group();
+      for (let i = 0; i < 18; i++) {
+        const rock = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
+        rock.userData.ore = true;
         const col = i % 6;
         const row = Math.floor(i / 6);
-        mesh.position.set((col - 2.5) * 0.78, 0.16 + row * 0.36, -0.4 - row * 0.28);
-      } else {
-        const angle = i * 2.399963229728653;
-        const ring = 0.22 + Math.sqrt((i + 0.5) / count) * 1.8;
-        mesh.position.set(Math.cos(angle) * ring, size * 0.62, Math.sin(angle) * ring);
+        rock.position.set((col - 2.5) * 1.15, 0.32 + row * 0.78, -0.18 * row);
+        rock.scale.set(0.9, 0.72, 0.5);
+        rock.rotation.set(i * 0.4, i * 0.65, i * 0.25);
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        face.add(rock);
       }
-      const angle = i * 0.9;
-      mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
-      mesh.scale.set(size * (0.8 + (i % 3) * 0.18), size * (0.65 + (i % 4) * 0.12), size * (0.75 + (i % 5) * 0.1));
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
-    }
-    if (d.kind === "vein") {
-      const core = new THREE.Mesh(rockGeometries[0], mat);
-      core.position.set(0, 0.22, -1.15);
-      core.scale.set(2.4, 0.7, 0.55);
-      core.rotation.set(0.08, 0.2, 0);
-      core.castShadow = true;
-      core.receiveShadow = true;
-      group.add(core);
+      face.position.set(0, 0, -0.8);
+      group.add(face);
+      floor = new THREE.Mesh(track(new THREE.BoxGeometry(9.2, 0.08, 7)), cutMat);
+      floor.position.set(0, 0.05, 2.6);
+      floor.receiveShadow = true;
+      group.add(floor);
+      group.rotation.y = faceOf(d).yaw;
+    } else {
+      const scrape = new THREE.Mesh(track(new THREE.CircleGeometry(2.4, 16)), std(0x3a322b, { roughness: 1 }));
+      scrape.rotation.x = -Math.PI / 2;
+      scrape.position.y = 0.03;
+      scrape.receiveShadow = true;
+      group.add(scrape);
+      const count = 22;
+      for (let i = 0; i < count; i++) {
+        const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
+        mesh.userData.ore = true;
+        const size = 0.16 + ((i * 5) % 7) * 0.03;
+        const angle = i * 2.399963229728653;
+        const ring = 0.15 + Math.sqrt((i + 0.5) / count) * 1.55;
+        mesh.position.set(Math.cos(angle) * ring, size * 0.45, Math.sin(angle) * ring);
+        mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
+        mesh.scale.set(size, size * 0.7, size * 0.9);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      }
     }
     group.position.set(d.x, 0, d.z);
     scene.add(group);
@@ -420,7 +448,7 @@ export function createWorld(host: HTMLElement): World {
     sign.position.set(d.x, 5.2, d.z);
     sign.scale.set(7.2, 3.4, 1);
     scene.add(sign);
-    return { group, lease: false, sign, ownedTex, leaseTex };
+    return { group, lease: false, sign, ownedTex, leaseTex, face, floor };
   }
 
   for (const pad of PADS) {
@@ -647,30 +675,34 @@ export function createWorld(host: HTMLElement): World {
       view.group.position.set(d.x, 0, d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
       view.group.visible = d.tons > 0.15 || d.regen > 0;
-      if (d.kind === "vein") {
-        const cut = faceOf(d);
-        view.group.position.set(cut.x, 0, cut.z);
-        view.group.rotation.y = cut.yaw;
+      if (d.kind === "vein" && view.face && view.floor) {
+        const dug = 1 - fullness;
+        view.group.position.set(d.x, 0, d.z);
+        view.group.rotation.y = faceOf(d).yaw;
+        view.group.scale.set(1, 1, 1);
+        view.face.position.z = -0.8 - dug * d.radius * 0.7;
+        view.face.position.y = -dug * 0.45;
+        view.face.scale.y = 0.32 + fullness * 0.78;
+        view.floor.scale.z = 0.28 + dug * 1.85;
+        view.floor.position.z = 1.1 + dug * d.radius * 0.32;
+        view.group.children.forEach((child) => {
+          child.visible = true;
+        });
       } else {
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = 0;
-      }
-      if (d.kind === "vein") {
-        view.group.scale.set(1, 0.42 + fullness * 0.7, 1);
-        const show = Math.max(2, Math.ceil(view.group.children.length * (0.16 + fullness * 0.84)));
-        view.group.children.forEach((child, i) => {
-          child.visible = i < show;
-        });
-      } else {
-        const s = 0.58 + fullness * 0.38;
+        const s = 0.62 + fullness * 0.42;
         view.group.scale.setScalar(s);
         view.group.children.forEach((child) => {
           child.visible = true;
         });
       }
       for (const child of view.group.children) {
-        const mesh = child as THREE.Mesh;
-        mesh.material = owned ? oreMaterials[d.ore] : lockedMat;
+        child.traverse((part) => {
+          const mesh = part as THREE.Mesh;
+          if (!(mesh instanceof THREE.Mesh) || !mesh.userData.ore) return;
+          mesh.material = owned ? oreMaterials[d.ore] : lockedMat;
+        });
       }
       if (view.lease !== !owned) {
         view.lease = !owned;
