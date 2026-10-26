@@ -166,6 +166,7 @@ export type GameApi = {
   drive: (index: number) => void;
   setStick: (steer: number, throttle: number) => void;
   setAction: (down: boolean) => void;
+  loadTruck: () => void;
   toggleMute: () => void;
   cycle: (dir: number) => void;
   downloadBooks: () => void;

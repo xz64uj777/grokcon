@@ -880,27 +880,52 @@ function regen(state: GameState, dt: number) {
   }
 }
 
-function pourIntoTrucks(state: GameState) {
-  for (const v of state.vehicles) {
-    if (v.defId !== "loader" && v.defId !== "excavator") continue;
-    if (v.cargo < 0.2 || !v.cargoOre) continue;
-    const truck = nearestHauler(state, v, 20, false);
-    if (!truck) continue;
-    const room = vehicleStats(truck).capacity - truck.cargo;
-    if (room < 0.05) continue;
-    if (truck.cargo > 0.15 && truck.cargoOre && truck.cargoOre !== v.cargoOre) continue;
-    const move = Math.min(v.cargo, room);
-    if (truck.cargo < 0.05) truck.cargoOre = v.cargoOre;
-    truck.cargo += move;
-    v.cargo -= move;
-    if (v.cargo <= 0.05) {
-      v.cargo = 0;
-      v.cargoOre = null;
+export function loadTruck(state: GameState, index = state.active, maxDist = 32): string {
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  const def = DEFS[v.defId];
+  if (def.receives || def.capacity <= 0) return "This machine can't load a truck.";
+  if (v.cargo < 0.08 || !v.cargoOre) return "Bucket is empty.";
+  let truck: VehicleState | null = null;
+  let bestD = maxDist;
+  for (const o of state.vehicles) {
+    if (o === v || !DEFS[o.defId].receives) continue;
+    const d = distTo(v.x, v.z, o.x, o.z);
+    if (d <= bestD) {
+      bestD = d;
+      truck = o;
     }
-    v.busy = true;
-    v.status = `Loading the ${DEFS[truck.defId].name}`;
-    truck.status = `Taking ${ORES[truck.cargoOre ?? "iron"].name}`;
   }
+  if (!truck) return "No dump truck close enough. Pull up beside it.";
+  const room = vehicleStats(truck).capacity - truck.cargo;
+  if (room < 0.2) return "Dump truck is full.";
+  if (truck.cargoOre && truck.cargoOre !== v.cargoOre) {
+    if (truck.cargo > 1.5) return `Truck is loaded with ${ORES[truck.cargoOre].name}.`;
+    truck.cargo = 0;
+    truck.cargoOre = null;
+  }
+  const move = Math.min(v.cargo, room);
+  const ore = v.cargoOre;
+  if (truck.cargo < 0.05) truck.cargoOre = ore;
+  truck.cargo += move;
+  v.cargo -= move;
+  if (v.cargo <= 0.08) {
+    v.cargo = 0;
+    v.cargoOre = null;
+  }
+  v.busy = true;
+  const msg = `Loaded ${move.toFixed(1)} t of ${ORES[ore].name} into the ${DEFS[truck.defId].name}.`;
+  v.status = msg;
+  truck.status = `Bed ${truck.cargo.toFixed(1)} t ${ORES[truck.cargoOre ?? ore].name}`;
+  return msg;
+}
+
+function pourIntoTrucks(state: GameState) {
+  state.vehicles.forEach((v, index) => {
+    if (v.defId !== "loader" && v.defId !== "excavator") return;
+    if (v.cargo < 0.2 || !v.cargoOre) return;
+    loadTruck(state, index, 22);
+  });
 }
 
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
@@ -1085,6 +1110,9 @@ function objective(state: GameState) {
 function hint(state: GameState) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine in the seat.";
+  if (v.status.startsWith("Loaded") || v.status.startsWith("No dump") || v.status.startsWith("Bucket") || v.status.startsWith("Dump truck") || v.status.startsWith("Truck is") || v.status.startsWith("This machine")) {
+    return v.status;
+  }
   const def = DEFS[v.defId];
   const st = vehicleStats(v);
   if (!state.tutorial.loaded) return "Drive to the iron pile. Hold DIG to scoop.";
@@ -1098,8 +1126,8 @@ function hint(state: GameState) {
     return `${ORES[v.cargoOre].name} pays at the sluice, west of the yard. The crusher will not buy it.`;
   }
   if (v.cargo > 0.08 && pad) return `Hold DIG to sell at the ${pad.name.toLowerCase()}.`;
-  const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 9 + extra, false) : null;
-  if (truck) return `Hold DIG to load the ${DEFS[truck.defId].name.toLowerCase()}.`;
+  const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 28, false) : null;
+  if (truck) return `Tap LOAD to put this bucket in the ${DEFS[truck.defId].name.toLowerCase()}.`;
   if (st.capacity > 0 && v.cargo >= st.capacity * 0.92) {
     return def.receives ? "Bed full. Dump beside the track crusher." : "Full. Haul it out, or pull up to a dump truck.";
   }

@@ -2,7 +2,7 @@ import { createAudio } from "@/game/audio";
 import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
 import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
-import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, setActive, step, toggleCrew } from "@/game/sim";
+import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, loadTruck, setActive, step, toggleCrew } from "@/game/sim";
 import type { GameApi, Input, ViewModel } from "@/game/types";
 
 type Floater = { x: number; y: number; z: number; text: string; life: number };
@@ -139,6 +139,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     setAction(down) {
       actionBtn = down;
     },
+    loadTruck() {
+      const msg = loadTruck(state);
+      state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      saveGame(state);
+      push();
+    },
     toggleMute() {
       state.muted = !state.muted;
       audio.setMuted(state.muted);
@@ -237,6 +244,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     if (e.code === "KeyV") api.cycle(1);
     if (e.code === "KeyC") world.cycleCam();
     if (e.code === "KeyM") api.toggleMute();
+    if (e.code === "KeyL") api.loadTruck();
   }
   function onKeyUp(e: KeyboardEvent) {
     keys.delete(e.code);

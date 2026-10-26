@@ -205,7 +205,7 @@ export function MineScreen() {
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
               <p className="desk-only mt-2 text-sm leading-relaxed text-muted">{hud.hint}</p>
-              {hud.log[0] && <p className="desk-only mt-1 text-sm text-cash">{hud.log[0]}</p>}
+              {hud.log[0] && <p className="mt-1 truncate text-sm text-cash">{hud.log[0]}</p>}
             </div>
             <p className="key-hint mt-2 text-sm text-muted">Space works the tool · V next machine · View changes camera · drag to orbit · pinch to zoom · Tab office</p>
           </footer>
@@ -218,6 +218,13 @@ export function MineScreen() {
                 onClick={() => apiRef.current?.cycle(1)}
               >
                 Next
+              </button>
+              <button
+                type="button"
+                className="h-14 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
+                onClick={() => apiRef.current?.loadTruck()}
+              >
+                Load
               </button>
               <button
                 type="button"
