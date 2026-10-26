@@ -282,7 +282,7 @@ function closestDeposit(
 function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number) {
   if (tons <= 0) return;
   let best: Deposit | null = null;
-  let bestD = 5.5;
+  let bestD = 16;
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.ore !== ore) continue;
     const dist = distTo(x, z, d.x, d.z);

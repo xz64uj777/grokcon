@@ -128,6 +128,26 @@ function sanitize(raw: unknown): GameState | null {
       };
       if (pile.tons >= 0.2) state.deposits.push(pile);
     }
+    const drop = new Set<string>();
+    const loose = state.deposits.filter((d) => d.kind === "pile" && d.id.startsWith("pile-"));
+    for (let i = 0; i < loose.length; i++) {
+      const a = loose[i];
+      if (drop.has(a.id)) continue;
+      for (let j = i + 1; j < loose.length; j++) {
+        const b = loose[j];
+        if (drop.has(b.id) || b.ore !== a.ore) continue;
+        if (Math.hypot(a.x - b.x, a.z - b.z) > 18) continue;
+        const t = a.tons + b.tons;
+        if (t > 0) {
+          a.x = (a.x * a.tons + b.x * b.tons) / t;
+          a.z = (a.z * a.tons + b.z * b.tons) / t;
+        }
+        a.tons = t;
+        a.max = Math.max(a.max, b.max, t);
+        drop.add(b.id);
+      }
+    }
+    if (drop.size) state.deposits = state.deposits.filter((d) => !drop.has(d.id));
   }
   if (o.contract && typeof o.contract === "object") {
     const c = o.contract as Record<string, unknown>;
