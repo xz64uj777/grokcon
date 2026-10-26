@@ -61,9 +61,9 @@ export function MineScreen() {
           <p className="font-display text-sm uppercase tracking-widest text-primary">Open pit</p>
           <h1 className="mt-1 font-display text-5xl uppercase leading-none text-fg md:text-6xl">Ridge Ore</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted">
-            A claim truck first. Then the excavator, payloader, dump truck, bulldozer, and sluice. The ridge becomes the company.
+            Scoop iron, buy machines, lease ground, wash gold.
           </p>
-          <ol className="mt-4 space-y-2 text-sm leading-relaxed text-fg">
+          <ol className="desk-only mt-4 space-y-2 text-sm leading-relaxed text-fg">
             <li>1. Scoop the iron pile. Press Next, drive the track crusher to the dig, and dump beside it.</li>
             <li>2. Buy machines and upgrades. Hire operators for the seats you leave.</li>
             <li>3. Lease benches, wash gold at the sluice, and run a full crew.</li>
@@ -145,27 +145,29 @@ export function MineScreen() {
       )}
       {playing && hud && (
         <>
-          <header className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 pr-36 md:p-4">
-            <div className="flex flex-wrap items-start gap-2">
+          <header className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 md:p-4">
+            <div className="flex items-center gap-2">
               <div className="pointer-events-auto border border-border bg-surface px-3 py-2">
                 <div className="flex items-center gap-2">
                   <CircleDollarSign className="size-4 text-cash" aria-hidden />
-                  <p className="font-display text-2xl leading-none tracking-wide text-cash">{hud.cashLabel}</p>
+                  <p className="font-display text-xl leading-none tracking-wide text-cash md:text-2xl">{hud.cashLabel}</p>
                 </div>
-                <p className="mt-1 text-sm text-fg">{hud.tier}</p>
-                <div className="mt-2 h-1.5 w-36 bg-bg">
-                  <div className="h-full bg-cash" style={{ width: `${Math.round(hud.tierProgress * 100)}%` }} />
+                <div className="desk-only">
+                  <p className="mt-1 text-sm text-fg">{hud.tier}</p>
+                  <div className="mt-2 h-1.5 w-36 bg-bg">
+                    <div className="h-full bg-cash" style={{ width: `${Math.round(hud.tierProgress * 100)}%` }} />
+                  </div>
+                  <p className="mt-1 max-w-56 text-sm text-muted">{hud.tierDetail}</p>
                 </div>
-                <p className="mt-1 max-w-56 text-sm text-muted">{hud.tierDetail}</p>
               </div>
-              <div className="pointer-events-auto max-w-sm border border-border bg-surface px-3 py-2">
+              <div className="desk-only pointer-events-auto max-w-sm border border-border bg-surface px-3 py-2">
                 <p className="font-display text-lg uppercase leading-tight tracking-wide text-fg">{hud.objective}</p>
                 {hud.contractLabel && <p className="mt-1 text-sm text-cash">{hud.contractLabel}</p>}
                 <p className="mt-1 text-sm text-muted">{hud.shift}</p>
               </div>
               <button
                 type="button"
-                className="pointer-events-auto inline-flex h-11 items-center gap-2 border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg"
+                className="pointer-events-auto ml-auto inline-flex h-11 items-center gap-2 border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg"
                 onClick={() => setPanel((p) => (p ? null : "machines"))}
               >
                 <Mountain className="size-4" aria-hidden />
@@ -189,21 +191,21 @@ export function MineScreen() {
               </button>
             </div>
           </header>
-          <footer className="hud-foot pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 pb-4 md:p-4">
-            <div className="max-w-md border border-border bg-surface px-3 py-3">
+          <footer className="hud-foot pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 md:p-4">
+            <div className="max-w-md border border-border bg-surface px-3 py-2 md:py-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="font-display text-xl uppercase leading-none tracking-wide text-fg">{hud.vehicleName}</p>
+                <p className="font-display text-lg uppercase leading-none tracking-wide text-fg md:text-xl">{hud.vehicleName}</p>
                 <p className="flex items-center gap-1 text-sm text-muted">
                   <Gauge className="size-4" aria-hidden />
                   {hud.speedLabel}
                 </p>
               </div>
-              <p className="mt-2 text-sm text-fg">{hud.cargoLabel}</p>
-              <div className="mt-2 h-2 bg-bg">
+              <p className="mt-1 text-sm text-fg">{hud.cargoLabel}</p>
+              <div className="mt-1 h-2 bg-bg md:mt-2">
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{hud.hint}</p>
-              {hud.log[0] && <p className="mt-1 text-sm text-cash">{hud.log[0]}</p>}
+              <p className="desk-only mt-2 text-sm leading-relaxed text-muted">{hud.hint}</p>
+              {hud.log[0] && <p className="desk-only mt-1 text-sm text-cash">{hud.log[0]}</p>}
             </div>
             <p className="key-hint mt-2 text-sm text-muted">Space works the tool · V next machine · View changes camera · drag to orbit · pinch to zoom · Tab office</p>
           </footer>

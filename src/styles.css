@@ -57,11 +57,12 @@
   .touch-ui {
     display: flex;
   }
-  .key-hint {
+  .key-hint,
+  .desk-only {
     display: none;
   }
   .hud-foot {
-    bottom: 12rem;
+    bottom: 11rem;
   }
 }
 
