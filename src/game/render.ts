@@ -632,7 +632,7 @@ export function createWorld(host: HTMLElement): World {
         const cap = vehicleStats(v).capacity;
         const f = cap > 0 ? v.cargo / cap : 0;
         rig.load.visible = f > 0.04;
-        rig.load.scale.y = Math.max(0.08, f);
+        rig.load.scale.y = Math.max(0.55, Math.sqrt(f));
         const material = oreMaterials[v.cargoOre ?? "iron"];
         rig.load.traverse((part) => {
           if (part instanceof THREE.Mesh) part.material = material;

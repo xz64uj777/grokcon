@@ -884,12 +884,12 @@ function pourIntoTrucks(state: GameState) {
   for (const v of state.vehicles) {
     if (v.defId !== "loader" && v.defId !== "excavator") continue;
     if (v.cargo < 0.2 || !v.cargoOre) continue;
-    const truck = nearestHauler(state, v, 12, false);
+    const truck = nearestHauler(state, v, 20, false);
     if (!truck) continue;
     const room = vehicleStats(truck).capacity - truck.cargo;
     if (room < 0.05) continue;
     if (truck.cargo > 0.15 && truck.cargoOre && truck.cargoOre !== v.cargoOre) continue;
-    const move = Math.min(v.cargo, room, 5);
+    const move = Math.min(v.cargo, room);
     if (truck.cargo < 0.05) truck.cargoOre = v.cargoOre;
     truck.cargo += move;
     v.cargo -= move;
@@ -898,7 +898,6 @@ function pourIntoTrucks(state: GameState) {
       v.cargoOre = null;
     }
     v.busy = true;
-    truck.busy = true;
     v.status = `Loading the ${DEFS[truck.defId].name}`;
     truck.status = `Taking ${ORES[truck.cargoOre ?? "iron"].name}`;
   }
