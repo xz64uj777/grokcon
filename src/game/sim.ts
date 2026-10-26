@@ -633,7 +633,6 @@ function performAction(
   state: GameState,
   index: number,
   dt: number,
-  allowStockpile: boolean,
   breaks: StepFX["breaks"],
 ): StepFX["sales"][number] | null {
   const v = state.vehicles[index];
@@ -790,27 +789,7 @@ function performAction(
     }
   }
 
-  if (
-    allowStockpile &&
-    (def.dig > 0 || def.scoop > 0) &&
-    v.cargo > 0.04 &&
-    v.cargoOre &&
-    Math.abs(v.speed) < 1.1
-  ) {
-    const nearVein = closestDeposit(state, v.x, v.z, "vein", extra);
-    const nearTruck = nearestHauler(state, v, 9, false);
-    if (!nearVein && !pad && !nearTruck) {
-      const drop = Math.min(v.cargo, Math.max(st.scoop, st.dig, 3) * dt);
-      addPile(state, v.cargoOre, drop, v.x + fx * (st.radius + 2.6), v.z + fz * (st.radius + 2.6));
-      v.cargo -= drop;
-      if (v.cargo <= 0.08) {
-        // Clear tiny floating-point leftovers so the machine can be fully emptied.
-        v.cargo = 0;
-        v.cargoOre = null;
-      }
-      v.busy = true;
-    }
-  }
+  if (player && v.cargo > 0.04 && v.cargoOre) v.status = `${ORES[v.cargoOre].name} stays in the bucket`;
   return null;
 }
 
@@ -980,7 +959,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     }
     if (i === state.active) v.status = "";
     const before = v.cargo;
-    const sale = performAction(state, i, dt, i === state.active, breaks);
+    const sale = performAction(state, i, dt, breaks);
     if (sale) sales.push(sale);
     if (i === state.active && v.busy && v.cargo >= before - 1e-6 && !sale) dig = true;
   }
