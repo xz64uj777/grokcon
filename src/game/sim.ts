@@ -642,9 +642,12 @@ function performAction(
   const player = index === state.active;
 
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
+  const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
   const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
-  if (holdForSluice && v.cargoOre) {
-    if (player) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
+  const crewShort = !player && precious && v.cargo < st.capacity * 0.8;
+  const reclaimWaste = precious && pad?.kind === "reclaim";
+  if ((holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
+    if (player && holdForSluice) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
   } else if (v.cargo > 0.04 && v.cargoOre && pad) {
     const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
     const sold = v.cargo;
@@ -665,7 +668,7 @@ function performAction(
       if (plant) plant.busy = true;
     }
     const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
-    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName}${extra}`, player };
+    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName} ${sold.toFixed(1)}t${extra}`, player };
   }
 
   const extra = def.id === "excavator" ? 2.2 : 0;
@@ -709,7 +712,8 @@ function performAction(
       const bite = Math.min(vein.tons, st.dig * 0.5);
       if (bite > 0) {
         const room = st.capacity - v.cargo;
-        const intoBucket = Math.min(room, bite * 0.62);
+        const precious = vein.ore === "gold" || vein.ore === "copper";
+        const intoBucket = Math.min(room, precious ? bite : bite * 0.62);
         const spill = bite - intoBucket;
         vein.tons -= bite;
         if (intoBucket > 0.01) {
