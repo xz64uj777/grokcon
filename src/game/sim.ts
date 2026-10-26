@@ -514,19 +514,29 @@ function aiControl(state: GameState, index: number): Control {
     const bedFull = cap > 0 && v.cargo >= cap * 0.9;
     if (bedFull) haulTarget();
     else {
-      const digger = state.vehicles.find(
-        (o, i) => i !== index && (o.operator || i === state.active) && (DEFS[o.defId].dig > 0 || DEFS[o.defId].id === "loader"),
-      );
-      if (digger) {
-        target = { x: digger.x + 7, z: digger.z + 5 };
-        arrive = 8;
-        label = "Waiting on a load";
-      } else {
-        const iron = state.deposits.find((d) => d.id === "iron");
-        target = iron ? { x: iron.x + 9, z: iron.z + 7 } : { x: GATE.x, z: 2 };
-        arrive = 8;
-        label = "Waiting on a loader";
+      let digger: VehicleState | null = null;
+      let diggerD = Infinity;
+      for (let i = 0; i < state.vehicles.length; i++) {
+        if (i === index) continue;
+        const o = state.vehicles[i];
+        if (!(o.operator || i === state.active)) continue;
+        if (o.defId !== "loader" && o.defId !== "excavator") continue;
+        const d = distTo(v.x, v.z, o.x, o.z);
+        if (d < diggerD) {
+          diggerD = d;
+          digger = o;
+        }
       }
+      if (digger) {
+        if (diggerD < 8) {
+          v.status = "Under the bucket";
+          return { throttle: 0, steer: 0, action: false, brake: 1 };
+        }
+        v.status = `Pulling up to the ${DEFS[digger.defId].name}`;
+        return seek(v, digger.x + 5, digger.z, 3);
+      }
+      v.status = "Needs a payloader";
+      return { ...ZERO };
     }
   } else if (has && full) {
     haulTarget();
