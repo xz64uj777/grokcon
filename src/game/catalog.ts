@@ -1,8 +1,8 @@
 import type { OreId, UpgradeKind, VehicleId } from "@/game/types";
 
 export const HIRE_COST = 800;
-/** Share of a hired operator's sale that lands in the company box. */
-export const CREW_KEEP = 0.7;
+/** Share of a hired operator's sale that lands in the company box. The crew keeps the rest. */
+export const CREW_KEEP = 0.85;
 export const START_CASH = 350;
 
 export const BOUNDS = { minX: -96, maxX: 96, minZ: -72, maxZ: 68 };

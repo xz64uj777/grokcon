@@ -511,16 +511,8 @@ function aiControl(state: GameState, index: number): Control {
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
   } else if (def.receives) {
-    const diggerNear = state.vehicles.some(
-      (o, i) =>
-        i !== index &&
-        (o.operator || i === state.active) &&
-        (DEFS[o.defId].dig > 0 || DEFS[o.defId].scoop > 0) &&
-        distTo(v.x, v.z, o.x, o.z) < 18,
-    );
-    const bedFull = cap > 0 && v.cargo >= cap * 0.82;
-    const leftWithALoad = v.cargo >= 4 && !diggerNear;
-    if (bedFull || leftWithALoad) haulTarget();
+    const bedFull = cap > 0 && v.cargo >= cap * 0.9;
+    if (bedFull) haulTarget();
     else {
       const digger = state.vehicles.find(
         (o, i) => i !== index && (o.operator || i === state.active) && (DEFS[o.defId].dig > 0 || DEFS[o.defId].id === "loader"),
@@ -564,8 +556,7 @@ function aiControl(state: GameState, index: number): Control {
       target = cut;
       arrive = Math.max(3, cut.reach * 0.75);
       label = `Digging ${ORES[vein.ore].name}`;
-    } else if (has) haulTarget();
-    else if (def.scoop > 0 && v.operator && v.workClaim != null) {
+    } else if (def.scoop > 0 && v.operator && v.workClaim != null) {
       const spot = bestVein(state, v, null);
       const cut = spot ? faceOf(spot) : null;
       if (spot && cut) {
@@ -579,15 +570,6 @@ function aiControl(state: GameState, index: number): Control {
         label = `Working ${ORES[spot.ore].name} face`;
       } else label = "No material at assigned source";
     } else label = def.scoop > 0 ? "Looking for a pile" : "No face in reach";
-  }
-
-  if ((def.id === "excavator" || def.id === "loader") && has && !full) {
-    const truck = nearestHauler(state, v, 18, true);
-    if (truck && v.cargo > Math.min(1.4, cap * 0.4)) {
-      target = truck;
-      arrive = 7.5;
-      label = `Loading ${DEFS[truck.defId].name}`;
-    }
   }
 
   v.status = label;
@@ -645,7 +627,7 @@ function performAction(
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
   const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
   const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
-  const crewShort = !player && precious && pad?.kind !== "sluice" && v.cargo < st.capacity * 0.8;
+  const crewShort = !player && st.capacity > 0 && v.cargo < st.capacity * 0.9;
   const reclaimWaste = precious && pad?.kind === "reclaim";
   if ((holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
     if (player && holdForSluice) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
