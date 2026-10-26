@@ -513,7 +513,18 @@ function aiControl(state: GameState, index: number): Control {
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
   } else if (def.id === "excavator") {
-    const vein = bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null);
+    let vein: Deposit | null = null;
+    let veinD = Infinity;
+    for (const d of state.deposits) {
+      if (d.kind !== "vein" || d.tons < 0.35) continue;
+      if (!ownsClaim(state, d.claim)) continue;
+      if (v.workClaim != null && d.claim !== v.workClaim) continue;
+      const dist = distTo(v.x, v.z, d.x, d.z);
+      if (dist < veinD) {
+        veinD = dist;
+        vein = d;
+      }
+    }
     if (vein) {
       const cut = faceOf(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -521,7 +532,7 @@ function aiControl(state: GameState, index: number): Control {
         v.status = `Digging a ${ORES[vein.ore].name} pile`;
         return held;
       }
-      v.status = `Moving to the ${ORES[vein.ore].name} face`;
+      v.status = `Staying on the ${ORES[vein.ore].name} face`;
       return seek(v, cut.x, cut.z, Math.max(3, cut.reach * 0.75));
     }
     if (v.cargo > 0.25 && v.cargoOre) haulTarget();
@@ -698,8 +709,14 @@ function performAction(
         return null;
       }
       if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== vein.ore) {
-        if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
-        return null;
+        if (def.id === "excavator") {
+          addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6);
+          v.cargo = 0;
+          v.cargoOre = null;
+        } else {
+          if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
+          return null;
+        }
       }
       v.busy = true;
       if (!takeBite(v, dt, 0.5)) {
