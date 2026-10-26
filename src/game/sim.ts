@@ -644,7 +644,7 @@ function performAction(
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
   const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
   const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
-  const crewShort = !player && precious && v.cargo < st.capacity * 0.8;
+  const crewShort = !player && precious && pad?.kind !== "sluice" && v.cargo < st.capacity * 0.8;
   const reclaimWaste = precious && pad?.kind === "reclaim";
   if ((holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
     if (player && holdForSluice) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
