@@ -360,6 +360,15 @@ export function MineScreen() {
                         >
                           {c.hireLabel}
                         </button>
+                        {c.sellLabel && (
+                          <button
+                            type="button"
+                            className="h-11 border border-border px-3 font-display text-lg uppercase tracking-wide text-fg"
+                            onClick={() => apiRef.current?.sell(c.index)}
+                          >
+                            {c.sellLabel}
+                          </button>
+                        )}
                       </div>
                       <div className="mt-3 flex flex-col gap-2">
                         {c.upgrades.map((u) => (

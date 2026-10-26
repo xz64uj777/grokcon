@@ -2,7 +2,7 @@ import { createAudio } from "@/game/audio";
 import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
 import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
-import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, loadTruck, setActive, step, toggleCrew } from "@/game/sim";
+import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, loadTruck, sellVehicle, setActive, step, toggleCrew } from "@/game/sim";
 import type { GameApi, Input, ViewModel } from "@/game/types";
 
 type Floater = { x: number; y: number; z: number; text: string; life: number };
@@ -130,6 +130,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     drive(index) {
       setActive(state, index);
       world.snap();
+      push();
+    },
+    sell(index) {
+      const wasActive = index === state.active;
+      sellVehicle(state, index);
+      if (wasActive) world.snap();
+      saveGame(state);
       push();
     },
     setStick(steer, throttle) {

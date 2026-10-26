@@ -114,6 +114,7 @@ export type CrewCard = {
   operator: boolean;
   workClaim: number | null;
   hireLabel: string;
+  sellLabel: string | null;
   affordableHire: boolean;
   upgrades: UpgradeCard[];
 };
@@ -164,6 +165,7 @@ export type GameApi = {
   crew: (index: number) => void;
   assignSource: (index: number, claim: number | null) => void;
   drive: (index: number) => void;
+  sell: (index: number) => void;
   setStick: (steer: number, throttle: number) => void;
   setAction: (down: boolean) => void;
   loadTruck: () => void;

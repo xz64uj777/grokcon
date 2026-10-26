@@ -1071,6 +1071,28 @@ export function toggleCrew(state: GameState, index: number) {
   return "";
 }
 
+export function sellVehicle(state: GameState, index: number) {
+  if (state.vehicles.length <= 1) return "Keep one machine on the yard.";
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  const refund = resale(v);
+  const name = DEFS[v.defId].name;
+  state.vehicles.splice(index, 1);
+  if (state.active > index) state.active -= 1;
+  if (state.active >= state.vehicles.length) state.active = state.vehicles.length - 1;
+  state.cash += refund;
+  log(state, `Sold the ${name} for ${formatMoney(refund)}.`);
+  return "";
+}
+
+function resale(v: VehicleState) {
+  let sunk = DEFS[v.defId].price;
+  for (const kind of ["engine", "body", "hydro"] as const) {
+    for (let level = 0; level < v.upgrades[kind]; level++) sunk += upgradeCost(v.defId, kind, level) ?? 0;
+  }
+  return Math.round(sunk * 0.5);
+}
+
 export function setActive(state: GameState, index: number) {
   if (index < 0 || index >= state.vehicles.length) return;
   state.active = index;
@@ -1200,6 +1222,7 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
       operator: veh.operator,
       workClaim: veh.workClaim ?? null,
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
+      sellLabel: state.vehicles.length > 1 ? `Sell · ${formatMoney(resale(veh))}` : null,
       affordableHire: veh.hired || state.cash >= HIRE_COST,
       upgrades: kinds.map((k) => {
         const cost = upgradeCost(veh.defId, k.kind, veh.upgrades[k.kind]);
