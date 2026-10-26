@@ -485,7 +485,7 @@ function aiControl(state: GameState, index: number): Control {
 
   const haulTarget = () => {
     if (!v.cargoOre) return;
-    const loaderLike = def.id === "loader" || def.id === "excavator";
+    const loaderLike = def.id === "loader";
     if (loaderLike) {
       const truck = nearestHauler(state, v, 70, true);
       if (truck) {
@@ -503,9 +503,7 @@ function aiControl(state: GameState, index: number): Control {
     }
   };
 
-  const waitingTruck = (def.id === "loader" || def.id === "excavator") && v.cargo > 0.35
-    ? nearestHauler(state, v, 80, true)
-    : null;
+  const waitingTruck = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, 80, true) : null;
 
   if (def.push > 0) {
     const vein = bestVein(state, v, null);
@@ -514,6 +512,23 @@ function aiControl(state: GameState, index: number): Control {
       arrive = vein.radius * 0.72;
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
+  } else if (def.id === "excavator") {
+    const vein = bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null);
+    if (vein) {
+      const cut = faceOf(vein);
+      const held = workHere(v, cut.x, cut.z, cut.reach);
+      if (held) {
+        v.status = `Digging a ${ORES[vein.ore].name} pile`;
+        return held;
+      }
+      v.status = `Moving to the ${ORES[vein.ore].name} face`;
+      return seek(v, cut.x, cut.z, Math.max(3, cut.reach * 0.75));
+    }
+    if (v.cargo > 0.25 && v.cargoOre) haulTarget();
+    else {
+      v.status = "Face is dug out";
+      return { ...ZERO };
+    }
   } else if (def.receives) {
     const bedFull = cap > 0 && v.cargo >= cap * 0.9;
     if (bedFull) haulTarget();
@@ -524,7 +539,7 @@ function aiControl(state: GameState, index: number): Control {
         if (i === index) continue;
         const o = state.vehicles[i];
         if (!(o.operator || i === state.active)) continue;
-        if (o.defId !== "loader" && o.defId !== "excavator") continue;
+        if (o.defId !== "loader") continue;
         const d = distTo(v.x, v.z, o.x, o.z);
         if (d < diggerD) {
           diggerD = d;
@@ -695,7 +710,7 @@ function performAction(
       if (bite > 0) {
         const room = st.capacity - v.cargo;
         const precious = vein.ore === "gold" || vein.ore === "copper";
-        const intoBucket = Math.min(room, precious ? bite : bite * 0.62);
+        const intoBucket = def.id === "excavator" ? Math.min(room, bite * 0.2) : Math.min(room, precious ? bite : bite * 0.62);
         const spill = bite - intoBucket;
         vein.tons -= bite;
         if (intoBucket > 0.01) {
@@ -705,8 +720,9 @@ function performAction(
         const dx = v.x - vein.x;
         const dz = v.z - vein.z;
         const dist = Math.hypot(dx, dz) || 1;
-        const toeX = vein.x + (dx / dist) * 5.2;
-        const toeZ = vein.z + (dz / dist) * 5.2;
+        const side = def.id === "excavator" ? 8 : 0;
+        const toeX = vein.x + (dx / dist) * 4.2 + (-dz / dist) * side;
+        const toeZ = vein.z + (dz / dist) * 4.2 + (dx / dist) * side;
         if (spill > 0.04) addPile(state, vein.ore, spill, toeX, toeZ);
         breaks.push({
           x: vein.x,
@@ -922,7 +938,7 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32):
 
 function pourIntoTrucks(state: GameState) {
   state.vehicles.forEach((v, index) => {
-    if (v.defId !== "loader" && v.defId !== "excavator") return;
+    if (v.defId !== "loader") return;
     if (v.cargo < 0.2 || !v.cargoOre) return;
     loadTruck(state, index, 22);
   });
