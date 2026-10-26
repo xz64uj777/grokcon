@@ -512,7 +512,7 @@ function aiControl(state: GameState, index: number): Control {
       arrive = vein.radius * 0.72;
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
-  } else if (def.id === "excavator") {
+  } else if (def.dig > 0) {
     let vein: Deposit | null = null;
     let veinD = Infinity;
     for (const d of state.deposits) {
@@ -709,7 +709,7 @@ function performAction(
         return null;
       }
       if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== vein.ore) {
-        if (def.id === "excavator") {
+        if (def.dig > 0) {
           addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6);
           v.cargo = 0;
           v.cargoOre = null;
