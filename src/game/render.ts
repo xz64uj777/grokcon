@@ -31,8 +31,8 @@ type DepositView = {
   sign: THREE.Sprite;
   ownedTex: THREE.Texture;
   leaseTex: THREE.Texture;
-  face: THREE.Group | null;
-  floor: THREE.Mesh | null;
+  cut: THREE.Mesh | null;
+  lastDug: number;
 };
 
 const _look = new THREE.Vector3();
@@ -378,46 +378,58 @@ export function createWorld(host: HTMLElement): World {
   }
 
   const lockedMat = std(0x4a463f, { roughness: 1, flatShading: true });
+  const cutMat = std(0xffffff, { roughness: 0.96, metalness: 0, flatShading: true, vertexColors: true });
+  function carveFace(d: Deposit, dug: number) {
+    const radius = d.radius;
+    const geo = new THREE.PlaneGeometry(radius * 1.9, radius * 2.4, 18, 22);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const colors = new Float32Array(pos.count * 3);
+    const ore = new THREE.Color(ORES[d.ore].color);
+    const dirt = new THREE.Color(0x6d5644);
+    const floorC = new THREE.Color(0x3a322b);
+    const tint = new THREE.Color();
+    const cutZ = radius * (0.58 - dug * 1.4);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const edge = Math.max(0, 1 - (x / (radius * 0.98)) ** 2);
+      const back = Math.max(0, -z / (radius * 1.15));
+      const hill = edge * (1.7 + back * 2.6);
+      const into = cutZ - z;
+      let h = 0.04;
+      let kind: "ore" | "dirt" | "floor" = "floor";
+      if (into > 1.4) {
+        h = hill;
+        kind = "dirt";
+      } else if (into > -0.2) {
+        const t = Math.max(0, Math.min(1, (into + 0.2) / 1.6));
+        h = 0.06 + hill * t * t;
+        kind = t > 0.22 && t < 0.9 ? "ore" : t >= 0.9 ? "dirt" : "floor";
+      } else {
+        h = 0.05 + Math.abs(Math.sin(x * 1.4 + z * 0.85)) * 0.1 * edge;
+      }
+      pos.setY(i, h);
+      tint.copy(kind === "ore" ? ore : kind === "floor" ? floorC : dirt);
+      colors[i * 3] = tint.r;
+      colors[i * 3 + 1] = tint.g;
+      colors[i * 3 + 2] = tint.b;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
     const mat = oreMaterials[d.ore];
-    let face: THREE.Group | null = null;
-    let floor: THREE.Mesh | null = null;
+    let cut: THREE.Mesh | null = null;
     if (d.kind === "vein") {
-      const bermMat = std(0x6a5340, { roughness: 1, flatShading: true });
-      const cutMat = std(0x2c261f, { roughness: 1 });
-      const berm = new THREE.Group();
-      for (let i = 0; i < 8; i++) {
-        const lump = new THREE.Mesh(rockGeometries[i % rockGeometries.length], bermMat);
-        const col = (i % 4) - 1.5;
-        const row = Math.floor(i / 4);
-        lump.position.set(col * 2.3, 0.7 + row * 0.45, -3.4 - row * 1.35);
-        lump.scale.set(2.5, 1.45 + row * 0.4, 2.2);
-        lump.rotation.y = i * 0.6;
-        lump.castShadow = true;
-        lump.receiveShadow = true;
-        berm.add(lump);
-      }
-      group.add(berm);
-      face = new THREE.Group();
-      for (let i = 0; i < 18; i++) {
-        const rock = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
-        rock.userData.ore = true;
-        const col = i % 6;
-        const row = Math.floor(i / 6);
-        rock.position.set((col - 2.5) * 1.15, 0.32 + row * 0.78, -0.18 * row);
-        rock.scale.set(0.9, 0.72, 0.5);
-        rock.rotation.set(i * 0.4, i * 0.65, i * 0.25);
-        rock.castShadow = true;
-        rock.receiveShadow = true;
-        face.add(rock);
-      }
-      face.position.set(0, 0, -0.8);
-      group.add(face);
-      floor = new THREE.Mesh(track(new THREE.BoxGeometry(9.2, 0.08, 7)), cutMat);
-      floor.position.set(0, 0.05, 2.6);
-      floor.receiveShadow = true;
-      group.add(floor);
+      const skin = cutMat.clone();
+      track(skin);
+      cut = new THREE.Mesh(carveFace(d, 0), skin);
+      cut.castShadow = true;
+      cut.receiveShadow = true;
+      group.add(cut);
       group.rotation.y = faceOf(d).yaw;
     } else {
       const scrape = new THREE.Mesh(track(new THREE.CircleGeometry(2.4, 16)), std(0x3a322b, { roughness: 1 }));
@@ -448,7 +460,7 @@ export function createWorld(host: HTMLElement): World {
     sign.position.set(d.x, 5.2, d.z);
     sign.scale.set(7.2, 3.4, 1);
     scene.add(sign);
-    return { group, lease: false, sign, ownedTex, leaseTex, face, floor };
+    return { group, lease: false, sign, ownedTex, leaseTex, cut, lastDug: 0 };
   }
 
   for (const pad of PADS) {
@@ -675,19 +687,18 @@ export function createWorld(host: HTMLElement): World {
       view.group.position.set(d.x, 0, d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
       view.group.visible = d.tons > 0.15 || d.regen > 0;
-      if (d.kind === "vein" && view.face && view.floor) {
+      if (d.kind === "vein" && view.cut) {
         const dug = 1 - fullness;
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = faceOf(d).yaw;
         view.group.scale.set(1, 1, 1);
-        view.face.position.z = -0.8 - dug * d.radius * 0.7;
-        view.face.position.y = -dug * 0.45;
-        view.face.scale.y = 0.32 + fullness * 0.78;
-        view.floor.scale.z = 0.28 + dug * 1.85;
-        view.floor.position.z = 1.1 + dug * d.radius * 0.32;
-        view.group.children.forEach((child) => {
-          child.visible = true;
-        });
+        if (Math.abs(dug - view.lastDug) > 0.02) {
+          const next = carveFace(d, dug);
+          view.cut.geometry.dispose();
+          view.cut.geometry = next;
+          view.lastDug = dug;
+        }
+        (view.cut.material as THREE.MeshStandardMaterial).color.set(owned ? 0xffffff : 0x8d8680);
       } else {
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = 0;
