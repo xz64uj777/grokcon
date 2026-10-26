@@ -532,7 +532,7 @@ function aiControl(state: GameState, index: number): Control {
         }
       }
       if (digger) {
-        if (diggerD < 14) {
+        if (diggerD < 8) {
           v.status = "Under the bucket";
           return { throttle: 0, steer: 0, action: false, brake: 1 };
         }
@@ -543,7 +543,7 @@ function aiControl(state: GameState, index: number): Control {
       return { ...ZERO };
     }
   } else if (waitingTruck) {
-    if (distTo(v.x, v.z, waitingTruck.x, waitingTruck.z) < 14) {
+    if (distTo(v.x, v.z, waitingTruck.x, waitingTruck.z) < 8) {
       v.status = `Loading the ${DEFS[waitingTruck.defId].name}`;
       return { throttle: 0, steer: 0, action: true, brake: 1 };
     }
@@ -644,29 +644,6 @@ function performAction(
   const fx = -Math.sin(v.yaw);
   const fz = -Math.cos(v.yaw);
   const player = index === state.active;
-
-  const extra = def.id === "excavator" ? 2.2 : 0;
-  if ((def.dig > 0 || def.scoop > 0) && v.cargo > 0.05 && v.cargoOre && !def.receives) {
-    const truck = nearestHauler(state, v, 16 + extra, false);
-    if (truck) {
-      const room = vehicleStats(truck).capacity - truck.cargo;
-      if (room > 0.05 && (!truck.cargoOre || truck.cargo < 0.05 || truck.cargoOre === v.cargoOre)) {
-        const rate = Math.max(st.dig, st.scoop, 2.5) * 2 * dt;
-        const move = Math.min(v.cargo, room, Math.max(rate, 0.8));
-        if (truck.cargo < 0.05) truck.cargoOre = v.cargoOre;
-        truck.cargo += move;
-        v.cargo -= move;
-        if (v.cargo <= 0.05) {
-          v.cargo = 0;
-          v.cargoOre = null;
-        }
-        v.busy = true;
-        truck.busy = true;
-        if (player) v.status = `Loading the ${DEFS[truck.defId].name}`;
-        return null;
-      }
-    }
-  }
 
   const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
   const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
@@ -903,6 +880,30 @@ function regen(state: GameState, dt: number) {
   }
 }
 
+function pourIntoTrucks(state: GameState) {
+  for (const v of state.vehicles) {
+    if (v.defId !== "loader" && v.defId !== "excavator") continue;
+    if (v.cargo < 0.2 || !v.cargoOre) continue;
+    const truck = nearestHauler(state, v, 12, false);
+    if (!truck) continue;
+    const room = vehicleStats(truck).capacity - truck.cargo;
+    if (room < 0.05) continue;
+    if (truck.cargo > 0.15 && truck.cargoOre && truck.cargoOre !== v.cargoOre) continue;
+    const move = Math.min(v.cargo, room, 5);
+    if (truck.cargo < 0.05) truck.cargoOre = v.cargoOre;
+    truck.cargo += move;
+    v.cargo -= move;
+    if (v.cargo <= 0.05) {
+      v.cargo = 0;
+      v.cargoOre = null;
+    }
+    v.busy = true;
+    truck.busy = true;
+    v.status = `Loading the ${DEFS[truck.defId].name}`;
+    truck.status = `Taking ${ORES[truck.cargoOre ?? "iron"].name}`;
+  }
+}
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   regen(state, dt);
   const controls: Control[] = [];
@@ -932,6 +933,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     for (const v of state.vehicles) resolveCircle(v, vehicleStats(v).radius);
     resolveVehicles(state);
   }
+  pourIntoTrucks(state);
   const sales: StepFX["sales"] = [];
   const breaks: StepFX["breaks"] = [];
   let dig = false;
