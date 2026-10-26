@@ -365,8 +365,8 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (ore && d.ore !== ore) continue;
     const unit = ORES[d.ore].crusher;
-    const d0 = distTo(v.x, v.z, d.x, d.z) + 10;
-    const s = (unit * Math.min(d.tons, 50)) / d0;
+    const d0 = distTo(v.x, v.z, d.x, d.z);
+    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0);
     if (s > score) {
       score = s;
       best = d;
@@ -384,8 +384,8 @@ function bestPile(state: GameState, v: VehicleState) {
     if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     const unit = ORES[d.ore].crusher;
-    const d0 = distTo(v.x, v.z, d.x, d.z) + 8;
-    const s = (unit * Math.min(d.tons, 30)) / d0;
+    const d0 = distTo(v.x, v.z, d.x, d.z);
+    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0);
     if (s > score) {
       score = s;
       best = d;
@@ -497,6 +497,10 @@ function aiControl(state: GameState, index: number): Control {
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z);
     if (pad) {
+      if (distTo(v.x, v.z, pad.x, pad.z) > 36) {
+        label = "Staying. Bring the crusher here";
+        return;
+      }
       target = pad;
       arrive = Math.max(5, pad.r * 0.62);
       label = `Hauling to ${pad.name}`;
@@ -515,6 +519,8 @@ function aiControl(state: GameState, index: number): Control {
   } else if (def.dig > 0) {
     let vein: Deposit | null = null;
     let veinD = Infinity;
+    let near: Deposit | null = null;
+    let nearD = 42;
     for (const d of state.deposits) {
       if (d.kind !== "vein" || d.tons < 0.35) continue;
       if (!ownsClaim(state, d.claim)) continue;
@@ -524,7 +530,12 @@ function aiControl(state: GameState, index: number): Control {
         veinD = dist;
         vein = d;
       }
+      if (dist < nearD) {
+        nearD = dist;
+        near = d;
+      }
     }
+    vein = near ?? vein;
     if (vein) {
       const cut = faceOf(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -543,7 +554,7 @@ function aiControl(state: GameState, index: number): Control {
   } else if (def.receives) {
     const bedFull = cap > 0 && v.cargo >= cap * 0.9;
     if (bedFull) haulTarget();
-    else {
+    if (!target) {
       let digger: VehicleState | null = null;
       let diggerD = Infinity;
       for (let i = 0; i < state.vehicles.length; i++) {
@@ -577,6 +588,14 @@ function aiControl(state: GameState, index: number): Control {
     return seek(v, waitingTruck.x, waitingTruck.z, 6);
   } else if (has && full) {
     haulTarget();
+    if (!target && def.scoop > 0) {
+      const pile = bestPile(state, v);
+      if (pile) {
+        target = pile;
+        arrive = Math.max(3.5, pile.radius * 0.72);
+        label = "Staying on the pile";
+      }
+    }
   } else if (def.dig > 0 || def.scoop > 0) {
     const vein = def.dig > 0 && !full ? bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null) : null;
     const pile = def.scoop > 0 && !full ? bestPile(state, v) : null;
