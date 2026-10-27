@@ -113,14 +113,14 @@ export function roadTexture() {
 }
 
 /** Pit walls as stepped benches with uneven rock faces, one merged mesh. */
-export function buildPitWalls(scene: THREE.Scene, track: Track) {
+export function buildPitWalls(scene: THREE.Scene, track: Track, kind: "wall" | "cliff" = "wall", center: { x: number; z: number } = PIT) {
   const geos: THREE.BufferGeometry[] = [];
   const color = new THREE.Color();
   for (const b of BLOCKS) {
-    if (b.kind !== "wall") continue;
+    if (b.kind !== kind) continue;
     // Which way is "away from the pit" for this wall? Steps climb that way.
     const alongX = b.sx >= b.sz;
-    const away = alongX ? Math.sign(b.z - PIT.z) || 1 : Math.sign(b.x - PIT.x) || 1;
+    const away = alongX ? Math.sign(b.z - center.z) || 1 : Math.sign(b.x - center.x) || 1;
     const thick = alongX ? b.sz : b.sx;
     const long = alongX ? b.sx : b.sz;
     const tiers = 3;
@@ -159,11 +159,11 @@ export function buildPitWalls(scene: THREE.Scene, track: Track) {
     }
   }
   // Loose talus along the toe of each wall.
-  const r = rng(5);
+  const r = rng(kind === "wall" ? 5 : 15);
   for (const b of BLOCKS) {
-    if (b.kind !== "wall") continue;
+    if (b.kind !== kind) continue;
     const alongX = b.sx >= b.sz;
-    const toward = alongX ? -(Math.sign(b.z - PIT.z) || 1) : -(Math.sign(b.x - PIT.x) || 1);
+    const toward = alongX ? -(Math.sign(b.z - center.z) || 1) : -(Math.sign(b.x - center.x) || 1);
     const long = alongX ? b.sx : b.sz;
     const half = (alongX ? b.sz : b.sx) / 2;
     for (let i = 0; i < long / 3; i++) {
@@ -306,8 +306,12 @@ function nearPadOrRoad(x: number, z: number, roads: Road[]) {
 }
 
 /** Instanced boulders, scrub and trees, kept off the pit floor, pads and roads. */
-export function buildScatter(scene: THREE.Scene, track: Track, roads: Road[], rich: boolean) {
-  const r = rng(77);
+export type ScatterSite = { cx: number; bounds: { minX: number; maxX: number; minZ: number; maxZ: number }; avoid: (x: number, z: number) => boolean; seed: number };
+
+export function buildScatter(scene: THREE.Scene, track: Track, roads: Road[], rich: boolean, site?: ScatterSite) {
+  const r = rng(site?.seed ?? 77);
+  const B = site?.bounds ?? BOUNDS;
+  const cx = site?.cx ?? 0;
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
@@ -315,12 +319,14 @@ export function buildScatter(scene: THREE.Scene, track: Track, roads: Road[], ri
   const p = new THREE.Vector3();
   const spot = (inside: boolean) => {
     for (let tries = 0; tries < 40; tries++) {
-      const x = inside ? BOUNDS.minX + r() * (BOUNDS.maxX - BOUNDS.minX) : (r() - 0.5) * 420;
-      const z = inside ? BOUNDS.minZ + r() * (BOUNDS.maxZ - BOUNDS.minZ) : (r() - 0.5) * 420;
-      const outside = x < BOUNDS.minX - 4 || x > BOUNDS.maxX + 4 || z < BOUNDS.minZ - 4 || z > BOUNDS.maxZ + 4;
+      const x = inside ? B.minX + r() * (B.maxX - B.minX) : cx + (r() - 0.5) * 420;
+      const z = inside ? B.minZ + r() * (B.maxZ - B.minZ) : (r() - 0.5) * 420;
+      const outside = x < B.minX - 4 || x > B.maxX + 4 || z < B.minZ - 4 || z > B.maxZ + 4;
       if (!inside && !outside) continue;
-      if (inside && (inPit(x, z) || nearPadOrRoad(x, z, roads) || Math.hypot(x - 0, z - 44) < 16)) continue;
-      if (Math.hypot(x, z) > 200) continue;
+      if (site) {
+        if (inside && (site.avoid(x, z) || nearPadOrRoad(x, z, roads))) continue;
+      } else if (inside && (inPit(x, z) || nearPadOrRoad(x, z, roads) || Math.hypot(x - 0, z - 44) < 16)) continue;
+      if (Math.hypot(x - cx, z) > 200) continue;
       return { x, z };
     }
     return null;
@@ -379,8 +385,8 @@ export function buildScatter(scene: THREE.Scene, track: Track, roads: Road[], ri
 }
 
 /** Ring of low hills fading into the haze, plus a gradient sky dome. */
-export function buildBackdrop(scene: THREE.Scene, track: Track) {
-  const r = rng(99);
+export function buildBackdrop(scene: THREE.Scene, track: Track, cx = 0, withSky = true, tint = 0x9a7058) {
+  const r = rng(99 + cx);
   const geos: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * Math.PI * 2 + r() * 0.1;
@@ -394,7 +400,7 @@ export function buildBackdrop(scene: THREE.Scene, track: Track) {
     }
     g.scale(40 + r() * 40, h, 30 + r() * 30);
     g.rotateY(a);
-    g.translate(Math.cos(a) * d, -2, Math.sin(a) * d);
+    g.translate(cx + Math.cos(a) * d, -2, Math.sin(a) * d);
     g.deleteAttribute("uv");
     geos.push(g);
   }
@@ -403,8 +409,9 @@ export function buildBackdrop(scene: THREE.Scene, track: Track) {
   if (hills) {
     hills.computeVertexNormals();
     track(hills);
-    scene.add(new THREE.Mesh(hills, track(new THREE.MeshStandardMaterial({ color: 0x9a7058, roughness: 1, flatShading: true }))));
+    scene.add(new THREE.Mesh(hills, track(new THREE.MeshStandardMaterial({ color: tint, roughness: 1, flatShading: true }))));
   }
+  if (!withSky) return null;
   const sky = new THREE.SphereGeometry(300, 24, 12);
   const pos = sky.attributes.position as THREE.BufferAttribute;
   const cols = new Float32Array(pos.count * 3);

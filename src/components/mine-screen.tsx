@@ -249,13 +249,19 @@ export function MineScreen() {
               </button>
             </div>
           </header>
-          {(hud.practice || hud.blastLabel) && (
+          {(hud.practice || hud.blastLabel || hud.bridgeLabel.endsWith("TOO HEAVY") || hud.groundLabel.startsWith("Bogged")) && (
             <div className="hud-banner pointer-events-none absolute inset-x-0 top-16 z-10 flex flex-col items-center gap-2 px-3 md:top-20">
               {hud.practice && (
                 <p className="border border-primary bg-surface px-3 py-1 font-display text-base uppercase tracking-wide text-primary">Practice yard · nothing here counts or saves</p>
               )}
               {hud.blastLabel && (
                 <p className="border border-red-500 bg-red-950/90 px-3 py-2 text-center font-display text-lg uppercase tracking-wide text-red-100">{hud.blastLabel}</p>
+              )}
+              {!hud.blastLabel && hud.bridgeLabel.endsWith("TOO HEAVY") && (
+                <p className="border border-red-500 bg-red-950/90 px-3 py-1 text-center font-display text-base uppercase tracking-wide text-red-100">{hud.bridgeLabel}</p>
+              )}
+              {!hud.blastLabel && hud.groundLabel.startsWith("Bogged") && (
+                <p className="border border-cash bg-surface/95 px-3 py-1 text-center font-display text-base uppercase tracking-wide text-cash">{hud.groundLabel}</p>
               )}
             </div>
           )}
@@ -293,6 +299,13 @@ export function MineScreen() {
               </p>
               {hud.toolLabel && <p className="text-xs text-muted">{hud.toolLabel}</p>}
               {hud.faceLabel && <p className="text-xs text-fg">{hud.faceLabel}</p>}
+              {(hud.area === "river" || hud.rain > 0.05) && (
+                <p className="area-line text-xs text-muted">
+                  {hud.areaName} · {hud.weatherLabel}
+                  {hud.groundLabel && !hud.groundLabel.startsWith("Bogged") ? ` · ${hud.groundLabel}` : ""}
+                </p>
+              )}
+              {hud.bridgeLabel && !hud.bridgeLabel.endsWith("TOO HEAVY") && <p className="text-xs text-fg">{hud.bridgeLabel}</p>}
               <div className="mt-1 h-1.5 bg-bg">
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
@@ -431,6 +444,43 @@ export function MineScreen() {
                   {hud.practice ? "Leave practice" : "Practice yard"}
                 </button>
               </div>
+              {!hud.practice && (
+                <div className="travel-row border-b border-border px-4 py-2">
+                  <p className="text-xs uppercase tracking-wide text-muted">
+                    You're at <span className="text-fg">{hud.areaName}</span>
+                  </p>
+                  {hud.valleyOpen ? (
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={!hud.canHaul}
+                        aria-label="Haul this machine"
+                        className={`min-h-11 flex-1 border px-2 py-1 text-left text-sm leading-tight ${hud.canHaul ? "border-primary text-fg" : "border-border text-muted"}`}
+                        onClick={() => {
+                          apiRef.current?.haul();
+                          setPanel(null);
+                        }}
+                      >
+                        {hud.travelLabel}
+                      </button>
+                      {hud.canGoOther && (
+                        <button
+                          type="button"
+                          className="min-h-11 border border-border px-3 font-display text-base uppercase tracking-wide text-fg"
+                          onClick={() => {
+                            apiRef.current?.goOther();
+                            setPanel(null);
+                          }}
+                        >
+                          Go to {hud.otherAreaName}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-muted">{hud.travelLabel}.</p>
+                  )}
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {panel === "crew" && (
                   <div className="border-b border-border py-3">

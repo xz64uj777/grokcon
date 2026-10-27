@@ -1,11 +1,12 @@
-import { BOUNDS, isOreId, isVehicleId } from "@/game/catalog";
+import { boundsFor, isOreId, isVehicleId } from "@/game/catalog";
+import { areaOf } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
 import { MARKET_KEYS, freshGame } from "@/game/sim";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
 
 /** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 const KEY = "ridge-ore.save";
 const BAK = "ridge-ore.save.bak";
@@ -16,11 +17,21 @@ function num(v: unknown, fallback: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
 }
 
+/** Clamp a saved x/z into whichever area (ridge or valley) the x falls in. */
+function posX(raw: unknown, fallback: number) {
+  const b = boundsFor(typeof raw === "number" && Number.isFinite(raw) ? raw : fallback);
+  return num(raw, fallback, b.minX, b.maxX);
+}
+function posZ(raw: unknown, rawX: unknown, fallback: number) {
+  const b = boundsFor(typeof rawX === "number" && Number.isFinite(rawX) ? rawX : 0);
+  return num(raw, fallback, b.minZ, b.maxZ);
+}
+
 function sanitize(raw: unknown): GameState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (o.version !== 1 && o.version !== 2) return null;
-  const v2 = o.version === 2;
+  if (o.version !== 1 && o.version !== 2 && o.version !== 3) return null;
+  const v2 = o.version === 2 || o.version === 3;
   const company = typeof o.company === "string" && o.company.trim() ? o.company.trim().slice(0, 24) : "Ridge Ore Co.";
   const state = freshGame(company);
   state.cash = num(o.cash, state.cash, 0, 1e12);
@@ -28,13 +39,16 @@ function sanitize(raw: unknown): GameState | null {
   state.seconds = num(o.seconds, 0, 0, 1e9);
   state.sluice = o.sluice === true;
   state.preferSluice = o.preferSluice !== false;
+  // Version 3 (River Valley): new fields default to "not bought yet" and dry ground.
+  state.washPlant = o.washPlant === true;
+  state.wet = num(o.wet, 0, 0, 1);
   state.muted = o.muted === true;
   state.pileSeq = Math.round(num(o.pileSeq, 1, 1, 1e7));
   state.controlMode = o.controlMode === "simple" ? "simple" : "real";
   state.explosives = Math.round(num(o.explosives, 0, 0, 99));
   state.market = readMarket(o.market, state.seconds);
   if (Array.isArray(o.claims)) {
-    const claims = o.claims.filter((c) => c === 1 || c === 2 || c === 3 || c === 4) as number[];
+    const claims = o.claims.filter((c) => c === 1 || c === 2 || c === 3 || c === 4 || c === 5 || c === 6) as number[];
     state.claims = Array.from(new Set([1, ...claims]));
   }
   const tut = o.tutorial;
@@ -65,8 +79,8 @@ function sanitize(raw: unknown): GameState | null {
         damage: num(v.damage, 0, 0, 1),
         tool: readTool(v.tool, v.defId),
         manual: false,
-        x: num(v.x, 0, BOUNDS.minX, BOUNDS.maxX),
-        z: num(v.z, 40, BOUNDS.minZ, BOUNDS.maxZ),
+        x: posX(v.x, 0),
+        z: posZ(v.z, v.x, 40),
         yaw: num(v.yaw, 0, -20, 20),
         speed: 0,
         cargoOre: ore,
@@ -123,8 +137,11 @@ function sanitize(raw: unknown): GameState | null {
       const s = saved.get(d.id);
       if (!s) continue;
       d.tons = num(s.tons, d.tons, 0, Math.max(d.max * 3, 2000));
-      d.x = num(s.x, d.x, BOUNDS.minX, BOUNDS.maxX);
-      d.z = num(s.z, d.z, BOUNDS.minZ, BOUNDS.maxZ);
+      // Faces never move between areas.
+      if (areaOf(typeof s.x === "number" ? s.x : d.x) === areaOf(d.x)) {
+        d.x = posX(s.x, d.x);
+        d.z = posZ(s.z, s.x, d.z);
+      }
       d.purity = num(s.purity, d.purity, 0.3, 1);
       if (v2) {
         d.overburden = num(s.overburden, d.overburden, 0, 500);
@@ -149,10 +166,10 @@ function sanitize(raw: unknown): GameState | null {
         ore: s.ore,
         tons: num(s.tons, 0, 0, 2000),
         max: num(s.max, 1, 0, 2000),
-        x: num(s.x, 0, BOUNDS.minX, BOUNDS.maxX),
-        z: num(s.z, 0, BOUNDS.minZ, BOUNDS.maxZ),
+        x: posX(s.x, 0),
+        z: posZ(s.z, s.x, 0),
         regen: 0,
-        claim: 1,
+        claim: areaOf(typeof s.x === "number" ? s.x : 0) === "river" ? 5 : 1,
         radius: 6,
         sign: "PILE",
         purity: num(s.purity, 1, 0.3, 1),

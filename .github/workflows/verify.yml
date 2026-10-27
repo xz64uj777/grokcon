@@ -48,6 +48,7 @@ jobs:
           src/game/controls.test.ts
           src/game/mining.test.ts
           src/game/market.test.ts
+          src/game/river.test.ts
 
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts

@@ -1,7 +1,7 @@
 import type { Command, ToolState } from "@/game/controls";
 import type { Market } from "@/game/market";
 
-export type OreId = "dirt" | "iron" | "copper" | "gold";
+export type OreId = "dirt" | "iron" | "copper" | "gold" | "silver";
 
 export type VehicleId =
   | "pickup"
@@ -15,7 +15,7 @@ export type VehicleId =
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 
-export type PadKind = "crusher" | "reclaim" | "sluice";
+export type PadKind = "crusher" | "reclaim" | "sluice" | "loadout" | "wash";
 
 export type Deposit = {
   id: string;
@@ -93,7 +93,7 @@ export type Blast = {
 };
 
 export type GameState = {
-  version: 2;
+  version: 3;
   controlMode: ControlMode;
   market: Market;
   explosives: number;
@@ -105,6 +105,10 @@ export type GameState = {
   claims: number[];
   sluice: boolean;
   preferSluice: boolean;
+  /** River Valley wash plant bought. */
+  washPlant: boolean;
+  /** How soaked the ground is, 0 (dry) to 1 (soaked). Rain itself comes from the market seed. */
+  wet: number;
   muted: boolean;
   vehicles: VehicleState[];
   active: number;
@@ -213,6 +217,22 @@ export type HudModel = {
   canBlast: boolean;
   blastLabel: string;
   practice: boolean;
+  /** Which area the active machine is in. */
+  area: "ridge" | "river";
+  areaName: string;
+  /** River Valley is open (Deep bench owned). */
+  valleyOpen: boolean;
+  /** Short travel line for the office, e.g. "Haul Skid steer to River Valley · $500". */
+  travelLabel: string;
+  canHaul: boolean;
+  /** Other area has a machine you can jump to. */
+  canGoOther: boolean;
+  otherAreaName: string;
+  rain: number;
+  weatherLabel: string;
+  groundLabel: string;
+  bridgeLabel: string;
+  washPlant: boolean;
 };
 
 export type PriceRow = {
@@ -247,6 +267,10 @@ export type GameApi = {
   repair: (index: number) => void;
   practice: (on: boolean) => void;
   loadTruck: () => void;
+  /** Send the active machine to the other area on the lowboy. */
+  haul: () => void;
+  /** Jump to a machine that is already in the other area. */
+  goOther: () => void;
   toggleMute: () => void;
   cycle: (dir: number) => void;
   downloadBooks: () => void;

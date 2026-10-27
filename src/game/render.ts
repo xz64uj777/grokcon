@@ -2,6 +2,8 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
+import { X0, areaOf, rainAt } from "@/game/river";
+import { buildValley } from "@/game/valley";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
 import { faceOf, vehicleStats } from "@/game/sim";
 
@@ -130,11 +132,14 @@ export function createWorld(host: HTMLElement): World {
     wall: std(0x6e5842, { roughness: 0.95 }),
     building: std(0x4a514f, { roughness: 0.7, metalness: 0.18 }),
     rock: std(0x5a554e, { roughness: 0.95 }),
+    water: std(0x4c7a86, { roughness: 0.2 }),
+    cliff: std(0x6e5842, { roughness: 0.95 }),
   };
 
   const buckets = new Map<BlockKind, THREE.BufferGeometry[]>();
   for (const b of BLOCKS) {
-    if (b.kind === "wall") continue; // drawn as terraced rock by buildPitWalls
+    // Walls and cliffs are drawn as terraced rock; the river draws its own water.
+    if (b.kind === "wall" || b.kind === "cliff" || b.kind === "water") continue;
     const g = new THREE.BoxGeometry(b.sx, b.sy, b.sz);
     g.translate(b.x, b.sy / 2, b.z);
     const list = buckets.get(b.kind) ?? [];
@@ -176,7 +181,7 @@ export function createWorld(host: HTMLElement): World {
   buildRoads(scene, track, ROADS);
   buildPuddles(scene, track);
   buildScatter(scene, track, ROADS, quality.rich);
-  const sky = buildBackdrop(scene, track);
+  const sky = buildBackdrop(scene, track) as THREE.Mesh;
 
   const wheelGeo = track(new THREE.CylinderGeometry(0.46, 0.46, 0.38, 12));
   const hubGeo = track(new THREE.CylinderGeometry(0.16, 0.16, 0.42, 8));
@@ -370,6 +375,7 @@ export function createWorld(host: HTMLElement): World {
     iron: oreMat(ORES.iron.color),
     copper: oreMat(ORES.copper.color),
     gold: oreMat(ORES.gold.color),
+    silver: oreMat(ORES.silver.color),
   };
   function makeCargoLoad(parent: THREE.Object3D, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Group {
     const pile = new THREE.Group();
@@ -481,27 +487,32 @@ export function createWorld(host: HTMLElement): World {
     return { group, lease: false, sign, ownedTex, leaseTex, cut, lastDug: 0 };
   }
 
+  // The wash plant's pad only shows once it's bought.
+  const washGroup = new THREE.Group();
+  washGroup.visible = false;
+  scene.add(washGroup);
   for (const pad of PADS) {
     if (pad.kind === "crusher") continue;
+    const into: THREE.Object3D = pad.kind === "wash" ? washGroup : scene;
     const ring = new THREE.Mesh(
       track(new THREE.TorusGeometry(pad.r * 0.72, 0.14, 6, 28)),
       pad.kind === "sluice" ? brassMat : beaconMat,
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.set(pad.x, 0.08, pad.z);
-    scene.add(ring);
+    into.add(ring);
     const pole = new THREE.Mesh(track(new THREE.CylinderGeometry(0.08, 0.08, 4.5, 6)), steel);
     pole.position.set(pad.x, 2.3, pad.z);
-    scene.add(pole);
+    into.add(pole);
     const lamp = new THREE.Mesh(track(new THREE.SphereGeometry(0.28, 10, 8)), pad.kind === "reclaim" ? brassMat : beaconMat);
     lamp.position.set(pad.x, 4.6, pad.z);
-    scene.add(lamp);
+    into.add(lamp);
     const sign = new THREE.Sprite(
       track(new THREE.SpriteMaterial({ map: track(textTexture(pad.name.toUpperCase(), "#f4efe6")), transparent: true, depthWrite: false, fog: false })),
     );
     sign.position.set(pad.x, 6.2, pad.z);
     sign.scale.set(7.5, 3.2, 1);
-    scene.add(sign);
+    into.add(sign);
   }
 
   const gatePost = new THREE.Mesh(track(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6)), beaconMat);
@@ -509,6 +520,52 @@ export function createWorld(host: HTMLElement): World {
   scene.add(gatePost);
 
   buildSluice(scene, track, box, steel, std);
+  const valley = buildValley(scene, track, std, quality.rich, (t, a) => track(textTexture(t, a)));
+
+  // Rain: a pool of streaks that follows the camera. Only drawn while it rains.
+  const rainCount = quality.rich ? 900 : 450;
+  const rainPos = new Float32Array(rainCount * 6);
+  const rainGeo = track(new THREE.BufferGeometry());
+  rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+  for (let i = 0; i < rainCount; i++) {
+    const x = (Math.random() - 0.5) * 50;
+    const y = Math.random() * 30;
+    const z = (Math.random() - 0.5) * 50;
+    rainPos.set([x, y, z, x + 0.15, y + 0.9, z], i * 6);
+  }
+  const rainMat = track(new THREE.LineBasicMaterial({ color: 0xc9d4dc, transparent: true, opacity: 0, depthWrite: false }));
+  const rain = new THREE.LineSegments(rainGeo, rainMat);
+  rain.frustumCulled = false;
+  rain.visible = false;
+  scene.add(rain);
+  const dryFog = new THREE.Color(0xdcb594);
+  const wetFog = new THREE.Color(0x9ea4a6);
+  const dryBg = new THREE.Color(0xe2bd9a);
+  const wetBg = new THREE.Color(0x9aa3a8);
+  const tmpColor = new THREE.Color();
+  function updateWeather(intensity: number, dt: number) {
+    const k = Math.max(0, Math.min(1, intensity));
+    hemi.intensity = 1.6 - k * 0.55;
+    sun.intensity = 2.6 - k * 1.7;
+    const fog = scene.fog as THREE.Fog;
+    fog.color.copy(dryFog).lerp(wetFog, k);
+    fog.near = 80 - k * 45;
+    fog.far = 260 - k * 120;
+    (scene.background as THREE.Color).copy(tmpColor.copy(dryBg).lerp(wetBg, k));
+    rain.visible = k > 0.02;
+    if (!rain.visible) return;
+    rainMat.opacity = 0.25 + k * 0.4;
+    rain.position.set(camera.position.x, 0, camera.position.z);
+    const fall = (22 + k * 10) * dt;
+    for (let i = 0; i < rainCount; i++) {
+      const o = i * 6;
+      let y = rainPos[o + 1] - fall;
+      if (y < 0) y += 30;
+      rainPos[o + 1] = y;
+      rainPos[o + 4] = y + 0.9;
+    }
+    (rainGeo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+  }
   buildFence(scene, track, std);
 
   const dustCount = quality.dust;
@@ -841,6 +898,16 @@ export function createWorld(host: HTMLElement): World {
       if (c.life <= 0) c.mesh.visible = false;
     }
     frameCamera(state, dt, follow);
+    // Keep the one shadow light over whichever area the camera is in.
+    const cx = areaOf(camera.position.x) === "river" ? X0 : 0;
+    if (sun.target.position.x !== cx) {
+      sun.position.set(cx + 48, 72, 26);
+      sun.target.position.set(cx, 0, 0);
+      sun.target.updateMatrixWorld();
+    }
+    valley.update(dt, state.wet ?? 0, !!state.washPlant);
+    washGroup.visible = !!state.washPlant;
+    updateWeather(rainAt(state.market.seed, state.seconds), dt);
     sky.position.set(camera.position.x, 0, camera.position.z);
     renderer.render(scene, camera);
   }
@@ -1071,19 +1138,19 @@ function buildCrusherDressing(
   return { rollers, flywheel, flyHub: flywheelHub, beltCleats, beaconMat, conveyor };
 }
 
-function buildFence(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {
+function buildFence(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial, B: { minX: number; maxX: number; minZ: number; maxZ: number } = BOUNDS) {
   const geo = track(new THREE.BoxGeometry(0.18, 1.3, 0.18));
   const mat = std(0x6a5b48, { roughness: 0.9 });
   const posts: THREE.Matrix4[] = [];
   const step = 10;
   const m = new THREE.Matrix4();
-  for (let x = BOUNDS.minX; x <= BOUNDS.maxX; x += step) {
-    posts.push(m.clone().setPosition(x, 0.65, BOUNDS.minZ));
-    posts.push(m.clone().setPosition(x, 0.65, BOUNDS.maxZ));
+  for (let x = B.minX; x <= B.maxX; x += step) {
+    posts.push(m.clone().setPosition(x, 0.65, B.minZ));
+    posts.push(m.clone().setPosition(x, 0.65, B.maxZ));
   }
-  for (let z = BOUNDS.minZ + step; z < BOUNDS.maxZ; z += step) {
-    posts.push(m.clone().setPosition(BOUNDS.minX, 0.65, z));
-    posts.push(m.clone().setPosition(BOUNDS.maxX, 0.65, z));
+  for (let z = B.minZ + step; z < B.maxZ; z += step) {
+    posts.push(m.clone().setPosition(B.minX, 0.65, z));
+    posts.push(m.clone().setPosition(B.maxX, 0.65, z));
   }
   const mesh = new THREE.InstancedMesh(geo, mat, posts.length);
   posts.forEach((p, i) => mesh.setMatrixAt(i, p));

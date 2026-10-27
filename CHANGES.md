@@ -1,3 +1,52 @@
+# Ridge Ore – Round 2 update: River Valley
+
+There's a second map now: **River Valley**, a wide river flat with a bridge, muddy banks, rain and silver in the river gravel. Your company, cash and machines are shared between the two maps. It's all one save.
+
+Old saves still load. Nothing is taken away, and everything you own stays at Ridge pit until you haul it over.
+
+## 1. Opening the valley
+
+- Lease the **Deep bench** at Ridge pit (in the office, under Ground). That opens River Valley.
+- Open the **Yard office**. The new travel row shows which map you're on.
+- **Haul this machine** puts the machine you're in on a lowboy trailer and takes it to the other map for **$500**. The machine has to be empty. You can't haul the track crusher, or haul anything while a blast is going.
+- Your first haul gives you the **River bars** lease for free. The **Valley quarry** (hard copper rock behind the valley camp) costs $30,000.
+- **Go to River Valley / Go to Ridge pit** switches maps. It's free, but only works once you have a machine on the other side.
+- **Next** only cycles through the machines on the map you're looking at. The minimap shows the map you're on.
+
+## 2. The bridge (30 tonne limit)
+
+There's one bridge over the river. The sign says **30 T LIMIT**, and that counts the machine and its load together.
+
+- Over the limit, the machine stops at the end of the bridge and a **TOO HEAVY** banner tells you how much it can carry. For example, a dump truck can carry 18 t across.
+- Backing off the bridge always works.
+- Your crew knows the rule and only loads valley trucks up to what the bridge can take.
+
+## 3. Mud
+
+The river banks are soft, so machines slow down there. Wheeled machines (pickup, skid steer, loader, trucks) slow down a lot. In deep mud they show **Bogged** and crawl. Tracked machines (dozer, excavator) barely notice. Nothing ever gets stuck for good, you just go slowly.
+
+## 4. Rain
+
+Some days a rain shower rolls through. It lasts one to two minutes and you'll see it coming down, with the sky darkening and fog closing in. Rain soaks the ground:
+
+- The mud gets deeper and spreads, and low spots near the river flood into new mud.
+- The ground dries slowly after the rain stops, taking about three minutes.
+- The card shows the weather (Dry, Rain, Heavy rain or Wet ground). When you're in mud it also shows how much speed you're losing. Your first day is always dry.
+
+## 5. Silver and the wash plant
+
+- The river bars hold **silver** gravel, with a little gold gravel further south.
+- The **wash plant** ($38,000, buy it in the office under Machines once the valley is open) sits on the east bank. It pays **$420 a tonne for silver** and **$300 a tonne for gold gravel**, before the daily price moves.
+- The **rail loadout** at the valley camp takes ordinary ore at crusher prices, so valley copper doesn't need to cross the bridge.
+
+## 6. The same as Round 1
+
+- It's still phone only, with the same big thumb controls.
+- It works on the Z Fold cover and inner screens and adjusts as you fold and unfold.
+- Blasting is still a flat $750, once per face per day.
+
+---
+
 # Ridge Ore – Round 1 update: real controls and hands-on mining
 
 This round adds realistic machine controls, hands-on mining and ore prices that change every day. It's all on the map you already know. The River Valley map comes in Round 2.
@@ -28,7 +77,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 | Machine | Left stick | Right stick | Extra buttons |
 |---|---|---|---|
 | **Skid steer** | Up/down: left wheels. Sideways: arms up/down | Up/down: right wheels. Sideways: curl/dump the bucket | |
-| **Excavator** | Up/down: drive. Sideways: steer. Tap **Park** and this stick slews and works the dipper instead | Up: boom up. Down: boom down. Left: curl. Right: dump | **Park** locks the tracks so the left stick can run the house |
+| **Excavator** | Up/down: drive. Sideways: steer. Tap **Park** and this stick slews and works the dipper | Up: boom up. Down: boom down. Left: curl. Right: dump | **Park** locks the tracks |
 | **Payloader** | Up: gas. Down: brake. Sideways: steer | Up/down: arms. Sideways: curl/dump the bucket | **Gear ▲ / Gear ▼** |
 | **Bulldozer** | Up/down: left track. Sideways: blade up/down | Up/down: right track. Sideways: blade angle | |
 | **Dump truck / Heavy haul** | Up: gas. Down: brake. Sideways: steer | Up/down: raise/lower the bed | **Gear ▲ / Gear ▼** |

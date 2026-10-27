@@ -1,5 +1,6 @@
 import { createAudio } from "@/game/audio";
-import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
+import { CLAIMS, ORES, PADS, boundsFor, isVehicleId } from "@/game/catalog";
+import { BRIDGE, RIVER, areaOf } from "@/game/river";
 import { createWorld } from "@/game/render";
 import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { sticksToCommand, type Stick } from "@/game/controls";
@@ -7,6 +8,12 @@ import {
   buildHud,
   buyClaim,
   buySluicePlant,
+  buyWashPlant,
+  currentArea,
+  gateFor,
+  goOtherArea,
+  haulMachine,
+  padOpen,
   buyUpgrade,
   buyVehicle,
   drillTestHole,
@@ -155,12 +162,17 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     buy(id) {
       if (id === "sluice") buySluicePlant(state);
+      else if (id === "wash") {
+        const msg = buyWashPlant(state);
+        if (msg) state.log.unshift(msg);
+      }
       else if (isVehicleId(id)) buyVehicle(state, id);
       saveGame(books());
       push();
     },
     buyGround(id) {
-      buyClaim(state, id);
+      const msg = buyClaim(state, id);
+      if (msg) state.log.unshift(msg);
       saveGame(books());
       push();
     },
@@ -284,9 +296,34 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       audio.setMuted(state.muted);
       push();
     },
+    haul() {
+      const msg = haulMachine(state);
+      if (msg) state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      world.snap();
+      saveGame(books());
+      push();
+    },
+    goOther() {
+      const msg = goOtherArea(state);
+      if (msg) state.log.unshift(msg);
+      world.snap();
+      saveGame(books());
+      push();
+    },
     cycle(dir) {
       if (!state.vehicles.length) return;
-      const next = (state.active + dir + state.vehicles.length) % state.vehicles.length;
+      // Next only switches between machines in the area you're in.
+      const here = currentArea(state);
+      const n = state.vehicles.length;
+      let next = state.active;
+      for (let k = 1; k <= n; k++) {
+        const i = (state.active + dir * k + n * k) % n;
+        if (areaOf(state.vehicles[i].x) === here) {
+          next = i;
+          break;
+        }
+      }
       setActive(state, next);
       world.snap();
       push();
@@ -472,12 +509,24 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     ctx.fillRect(x0, y0, m, m);
     ctx.strokeStyle = "#3f382f";
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, m - 1, m - 1);
-    const sx = (x: number) => x0 + ((x - BOUNDS.minX) / (BOUNDS.maxX - BOUNDS.minX)) * m;
-    const sz = (z: number) => y0 + ((z - BOUNDS.minZ) / (BOUNDS.maxZ - BOUNDS.minZ)) * m;
+    const me = state.vehicles[state.active];
+    const area = me ? areaOf(me.x) : "ridge";
+    const B = boundsFor(me ? me.x : 0);
+    const here = (x: number) => areaOf(x) === area;
+    const sx = (x: number) => x0 + ((x - B.minX) / (B.maxX - B.minX)) * m;
+    const sz = (z: number) => y0 + ((z - B.minZ) / (B.maxZ - B.minZ)) * m;
+    if (area === "river") {
+      // River and bridge.
+      ctx.fillStyle = "#3d6b80";
+      ctx.fillRect(sx(RIVER.x - RIVER.halfWidth), sz(RIVER.minZ), Math.max(2, sx(RIVER.x + RIVER.halfWidth) - sx(RIVER.x - RIVER.halfWidth)), sz(RIVER.maxZ) - sz(RIVER.minZ));
+      ctx.fillStyle = "#c9b79a";
+      ctx.fillRect(sx(BRIDGE.x - BRIDGE.halfLength), sz(BRIDGE.z) - 1.5, sx(BRIDGE.x + BRIDGE.halfLength) - sx(BRIDGE.x - BRIDGE.halfLength), 3);
+    }
+    const gate = gateFor(me ? me.x : 0);
     ctx.fillStyle = "#e26a2c";
-    ctx.fillRect(sx(GATE.x) - 2, sz(GATE.z) - 2, 4, 4);
+    if (area === "ridge") ctx.fillRect(sx(gate.x) - 2, sz(gate.z) - 2, 4, 4);
     for (const pad of PADS) {
-      if (pad.kind === "sluice" && !state.sluice) continue;
+      if (!padOpen(state, pad.kind) || !here(pad.x)) continue;
       if (pad.kind === "crusher") continue;
       ctx.fillStyle = pad.kind === "reclaim" ? "#e6b325" : "#e26a2c";
       ctx.beginPath();
@@ -486,11 +535,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     }
     for (const d of state.deposits) {
       if (d.tons < 0.2 && d.regen <= 0) continue;
+      if (!here(d.x)) continue;
       ctx.fillStyle = state.claims.includes(d.claim) ? oreHex(d.ore) : "#4a463f";
       ctx.fillRect(sx(d.x) - 2, sz(d.z) - 2, 4, 4);
     }
     for (let i = 0; i < state.vehicles.length; i++) {
       const v = state.vehicles[i];
+      if (!here(v.x)) continue;
       ctx.fillStyle = i === state.active ? "#f4efe6" : "#a39888";
       ctx.beginPath();
       ctx.arc(sx(v.x), sz(v.z), i === state.active ? 3.5 : 2.2, 0, Math.PI * 2);

@@ -1,4 +1,5 @@
 import type { OreId, UpgradeKind, VehicleId } from "@/game/types";
+import { BRIDGE, RIVER, RIVER_BOUNDS, RIVER_SPAWNS, WASH_PLANT, X0, areaOf } from "@/game/river";
 
 export const HIRE_COST = 800;
 /** Share of a hired operator's sale that lands in the company box. The crew keeps the rest. */
@@ -9,11 +10,16 @@ export const BOUNDS = { minX: -96, maxX: 96, minZ: -72, maxZ: 68 };
 export const GATE = { x: -8, z: 20 };
 export const PIT = { x: -6, z: -22, rx: 46, rz: 32 };
 
+/** Play area for whichever side of the world (ridge or valley) a point is in. */
+export function boundsFor(x: number) {
+  return areaOf(x) === "river" ? RIVER_BOUNDS : BOUNDS;
+}
+
 export function inPit(x: number, z: number) {
   return x > -52 && x < 40 && z > -52 && z < 5;
 }
 
-export type BlockKind = "wall" | "building" | "rock";
+export type BlockKind = "wall" | "building" | "rock" | "water" | "cliff";
 
 export type Block = {
   id: string;
@@ -36,13 +42,27 @@ export const BLOCKS: Block[] = [
   { id: "rock-1", x: 28, z: -16, sx: 5, sy: 2.8, sz: 4, kind: "rock" },
   { id: "rock-2", x: -42, z: -8, sx: 5, sy: 2.4, sz: 4, kind: "rock" },
   { id: "rock-3", x: -28, z: -44, sx: 4, sy: 2.2, sz: 4, kind: "rock" },
+  // ---- River Valley (x around X0) ----
+  // The river: water you can't drive into, split by the bridge.
+  { id: "river-s", x: RIVER.x, z: (RIVER.minZ + BRIDGE.z - BRIDGE.halfWidth) / 2, sx: RIVER.halfWidth * 2, sy: 0.4, sz: BRIDGE.z - BRIDGE.halfWidth - RIVER.minZ, kind: "water" },
+  { id: "river-n", x: RIVER.x, z: (RIVER.maxZ + BRIDGE.z + BRIDGE.halfWidth) / 2, sx: RIVER.halfWidth * 2, sy: 0.4, sz: RIVER.maxZ - BRIDGE.z - BRIDGE.halfWidth, kind: "water" },
+  // Valley wall on the west side, with the quarry cut into it.
+  { id: "cliff-nw", x: X0 - 84, z: 36, sx: 10, sy: 14, sz: 64, kind: "cliff" },
+  { id: "cliff-sw", x: X0 - 84, z: -44, sx: 10, sy: 14, sz: 52, kind: "cliff" },
+  { id: "camp-shed", x: X0 + 70, z: 60, sx: 14, sy: 4.5, sz: 7, kind: "building" },
+  { id: "v-rock-1", x: X0 - 34, z: -2, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
+  { id: "v-rock-2", x: X0 + 34, z: 4, sx: 5, sy: 2.6, sz: 4, kind: "rock" },
 ];
 
 export const PADS = [
   { id: "crusher", name: "Crusher", x: 32, z: 30, r: 15, kind: "crusher" as const },
   { id: "reclaim", name: "Reclaim", x: 44, z: 46, r: 8, kind: "reclaim" as const },
   { id: "sluice", name: "Sluice", x: -80, z: 36, r: 8, kind: "sluice" as const },
+  { id: "loadout", name: "Rail loadout", x: X0 + 74, z: 30, r: 9, kind: "loadout" as const },
+  { id: "wash", name: "Wash plant", x: WASH_PLANT.x, z: WASH_PLANT.z, r: WASH_PLANT.r, kind: "wash" as const },
 ];
+
+export { RIVER_SPAWNS };
 
 export const SPAWNS = [
   { x: 0, z: 44 },
@@ -56,12 +76,14 @@ export const SPAWNS = [
 
 export const ORES: Record<
   OreId,
-  { name: string; crusher: number; reclaim: number; sluice: number; color: number }
+  { name: string; crusher: number; reclaim: number; sluice: number; wash: number; color: number }
 > = {
-  dirt: { name: "Dirt", crusher: 22, reclaim: 52, sluice: 22, color: 0x8d7044 },
-  iron: { name: "Iron", crusher: 74, reclaim: 28, sluice: 74, color: 0xa85a3e },
-  copper: { name: "Copper", crusher: 160, reclaim: 55, sluice: 190, color: 0x2f8f78 },
-  gold: { name: "Gold gravel", crusher: 140, reclaim: 48, sluice: 300, color: 0xd4a84a },
+  dirt: { name: "Dirt", crusher: 22, reclaim: 52, sluice: 22, wash: 0, color: 0x8d7044 },
+  iron: { name: "Iron", crusher: 74, reclaim: 28, sluice: 74, wash: 0, color: 0xa85a3e },
+  copper: { name: "Copper", crusher: 160, reclaim: 55, sluice: 190, wash: 0, color: 0x2f8f78 },
+  gold: { name: "Gold gravel", crusher: 140, reclaim: 48, sluice: 300, wash: 300, color: 0xd4a84a },
+  // River silver: worth little as plain rock, a lot once it's washed.
+  silver: { name: "River silver", crusher: 60, reclaim: 20, sluice: 60, wash: 420, color: 0xb9c3c9 },
 };
 
 export const BASE_DEPOSITS = [
@@ -211,6 +233,95 @@ export const BASE_DEPOSITS = [
     sign: "DEEP COPPER",
     purity: 1,
     overburden: 40,
+    grade: 0.9,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: true,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  // ---- River Valley ----
+  {
+    id: "silver-bar",
+    kind: "vein" as const,
+    ore: "silver" as const,
+    tons: 320,
+    max: 320,
+    x: X0 - 22,
+    z: -26,
+    regen: 0.6,
+    claim: 5,
+    radius: 8,
+    sign: "RIVER SILVER",
+    purity: 1,
+    overburden: 10,
+    grade: 0.9,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: false,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  {
+    id: "silver-north",
+    kind: "vein" as const,
+    ore: "silver" as const,
+    tons: 240,
+    max: 240,
+    x: X0 - 22,
+    z: 40,
+    regen: 0.45,
+    claim: 5,
+    radius: 7.5,
+    sign: "NORTH SILVER",
+    purity: 1,
+    overburden: 8,
+    grade: 0.86,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: false,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  {
+    id: "bar-gold",
+    kind: "vein" as const,
+    ore: "gold" as const,
+    tons: 160,
+    max: 160,
+    x: X0 + 22,
+    z: -46,
+    regen: 0.35,
+    claim: 5,
+    radius: 7,
+    sign: "BAR GOLD",
+    purity: 1,
+    overburden: 6,
+    grade: 0.82,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: false,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  {
+    id: "quarry",
+    kind: "vein" as const,
+    ore: "copper" as const,
+    tons: 620,
+    max: 620,
+    x: X0 - 72,
+    z: 0,
+    regen: 1.1,
+    claim: 6,
+    radius: 9,
+    sign: "VALLEY QUARRY",
+    purity: 1,
+    overburden: 34,
     grade: 0.9,
     stress: 0,
     bench: 1,
@@ -429,6 +540,18 @@ export const CLAIMS = [
     name: "Deep bench",
     price: 90000,
     blurb: "Bottom of the ridge. Heavy iron and copper for a full crew.",
+  },
+  {
+    id: 5,
+    name: "River bars",
+    price: 0,
+    blurb: "Silver and gold gravel bars along the river. Comes with River Valley.",
+  },
+  {
+    id: 6,
+    name: "Valley quarry",
+    price: 30000,
+    blurb: "Hard copper rock in the west valley wall. Blast it, haul it over the bridge.",
   },
 ];
 
