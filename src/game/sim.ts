@@ -578,21 +578,38 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const d = Math.hypot(dx, dz) || 0.0001;
   const desired = Math.atan2(-dx, -dz);
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
-  // Fast machines (the skid steer especially) were bang-bang steering around
-  // the target and drawing figure-eights. Scale the gain to the turn rate.
-  const steer = clamp(diff / Math.max(0.9, vehicleStats(v).turn * 0.5), -1, 1);
+  // Scale steering to machine turn rate; large misalignment should be solved
+  // before driving, otherwise skid-steers can swing past a work target.
+  let steer = clamp(diff / Math.max(0.9, vehicleStats(v).turn * 0.5), -1, 1);
   let throttle = 1;
   let brake = 0;
-  if (Math.abs(diff) > 0.7) {
+  if (Math.abs(diff) > 0.75) {
     throttle = 0;
-    brake = 0.7;
-  } else if (Math.abs(diff) > 0.32) {
+    brake = 1;
+  } else if (Math.abs(diff) > 0.35) {
     throttle = 0.25;
   }
-  if (d < arrive + 6) throttle = Math.min(throttle, 0.4);
+
+  // Final approach: rotate while braking if pointed away, but retain a slow
+  // crawl when aligned. Full braking across the entire approach band can leave
+  // a crew machine stopped just outside its work radius forever.
+  if (d < arrive + 5 && !via) {
+    if (Math.abs(diff) > 0.4) {
+      throttle = 0;
+      brake = 1;
+    } else {
+      throttle = 0.22;
+      brake = 0;
+    }
+  }
+
   if (d < arrive) {
-    if (via) return { throttle: 0.55, steer: clamp(diff, -1, 1), action: false, brake: 0 };
-    if (Math.abs(diff) > 1) return { throttle: 0, steer: clamp(diff, -1, 1), action: false, brake: 1 };
+    if (via) {
+      return { throttle: 0.55, steer: clamp(diff, -1, 1), action: false, brake: 0 };
+    }
+    if (Math.abs(diff) > 0.4) {
+      return { throttle: 0, steer: clamp(diff / 0.35, -1, 1), action: false, brake: 1 };
+    }
     return { throttle: 0, steer: 0, action: true, brake: 1 };
   }
   return { throttle, steer, action: false, brake };
