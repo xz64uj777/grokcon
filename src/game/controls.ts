@@ -44,7 +44,7 @@ export function machineKind(defId: string): MachineKind {
 /** Machines that use a forward / neutral / reverse shifter in realistic mode. */
 export function usesGears(defId: string) {
   const k = machineKind(defId);
-  return k === "loader" || k === "truck";
+  return k === "skid" || k === "loader" || k === "truck";
 }
 
 export function homeTool(defId: string): ToolState {
@@ -81,10 +81,12 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
   const k = machineKind(defId);
   switch (k) {
     case "skid":
-      // Two-stick skid steer: each stick's forward/back runs that side's wheels.
-      // Left stick sideways raises (right) or lowers (left) the arms.
-      // Right stick sideways curls (left) or dumps (right) the bucket.
-      return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: -R.x } };
+      // Loader-style controls: left stick drives and steers; right stick runs
+      // the lift arms and bucket. Forward/reverse is selected with the shifter.
+      return {
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
+      };
     case "dozer":
       // Left and right track levers. Left stick sideways = blade up/down, right = blade angle.
       return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: R.x } };
