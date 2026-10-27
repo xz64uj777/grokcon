@@ -59,11 +59,12 @@ export function faceOf(d: Deposit) {
   return { x: d.x + rx * along, z: d.z + rz * along, reach: 3.6, yaw: Math.atan2(-rx, -rz) };
 }
 
-function closestFace(state: GameState, x: number, z: number) {
+function closestFace(state: GameState, x: number, z: number, v?: VehicleState) {
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
     if (d.kind !== "vein" || d.tons < 0.08) continue;
+    if (v && !acceptsJob(state, v, d)) continue;
     const face = faceOf(d);
     const dist = distTo(x, z, face.x, face.z);
     if (dist <= face.reach && dist < bestD) {
@@ -72,6 +73,18 @@ function closestFace(state: GameState, x: number, z: number) {
     }
   }
   return best;
+}
+
+function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
+  if (v.workClaim != null && d.claim !== v.workClaim) return false;
+  if (d.id === "starter" && v.workClaim != null) return false;
+  if (v.workClaim == null && state.sluice && state.preferSluice && d.kind === "pile" && !prefersSluice(state, d.ore)) {
+    const washing = state.deposits.some(
+      (o) => o.kind === "vein" && o.tons > 1 && ownsClaim(state, o.claim) && prefersSluice(state, o.ore),
+    );
+    if (washing) return false;
+  }
+  return true;
 }
 
 function takeBite(v: VehicleState, dt: number, period: number) {
@@ -264,11 +277,13 @@ function closestDeposit(
   z: number,
   kind: "vein" | "pile" | "any",
   extra = 0,
+  v?: VehicleState,
 ) {
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
     if (kind !== "any" && d.kind !== kind) continue;
+    if (v && !acceptsJob(state, v, d)) continue;
     if (d.tons < 0.08 && d.regen <= 0) continue;
     const dist = distTo(x, z, d.x, d.z);
     const zone = d.radius + extra;
@@ -280,7 +295,7 @@ function closestDeposit(
   return best;
 }
 
-function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number) {
+function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1) {
   if (tons <= 0) return;
   let best: Deposit | null = null;
   let bestD = 16;
@@ -314,6 +329,7 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
     best.z = (best.z * best.tons + z * tons) / t;
     best.tons = t;
     best.max = Math.max(best.max, t);
+    if (best.id !== "starter" && claim !== 1) best.claim = claim;
     return;
   }
   state.pileSeq += 1;
@@ -326,7 +342,7 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
     x,
     z,
     regen: 0,
-    claim: 1,
+    claim,
     radius: 6,
     sign: ORES[ore].name.toUpperCase(),
   });
@@ -385,7 +401,7 @@ function bestPile(state: GameState, v: VehicleState) {
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.tons < 0.4) continue;
     if (!ownsClaim(state, d.claim)) continue;
-    if (v.workClaim != null && d.claim !== v.workClaim) continue;
+    if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
@@ -550,12 +566,13 @@ function aiControl(state: GameState, index: number): Control {
     }
     if (vein) {
       const cut = faceOf(vein);
+      const job = CLAIMS.find((c) => c.id === vein.claim)?.name ?? ORES[vein.ore].name;
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
-        v.status = `Digging a ${ORES[vein.ore].name} pile`;
+        v.status = `Working ${job}`;
         return held;
       }
-      v.status = `Staying on the ${ORES[vein.ore].name} face`;
+      v.status = `Heading to ${job}`;
       return seek(v, cut.x, cut.z, Math.max(3, cut.reach * 0.75));
     }
     if (v.cargo > 0.25 && v.cargoOre) haulTarget();
@@ -696,6 +713,7 @@ function materialInFront(state: GameState, v: VehicleState, reach: number) {
   let pileD = Infinity;
   for (const d of state.deposits) {
     if (d.tons < 0.2) continue;
+    if (!acceptsJob(state, v, d)) continue;
     const dx = d.x - v.x;
     const dz = d.z - v.z;
     const dist = Math.hypot(dx, dz);
@@ -757,7 +775,7 @@ function performAction(
   }
 
   if (def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
-    const vein = closestFace(state, v.x, v.z);
+    const vein = closestFace(state, v.x, v.z, v);
     if (vein) {
       if (!ownsClaim(state, vein.claim)) {
         if (player) v.status = "Unleased ground";
@@ -765,7 +783,7 @@ function performAction(
       }
       if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== vein.ore) {
         if (def.dig > 0) {
-          addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6);
+          addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6, v.workClaim ?? 1);
           v.cargo = 0;
           v.cargoOre = null;
         } else {
@@ -798,7 +816,7 @@ function performAction(
         const side = def.id === "excavator" ? 8 : 0;
         const toeX = vein.x + (dx / dist) * 4.2 + (-dz / dist) * side;
         const toeZ = vein.z + (dz / dist) * 4.2 + (dx / dist) * side;
-        if (spill > 0.04) addPile(state, vein.ore, spill, toeX, toeZ);
+        if (spill > 0.04) addPile(state, vein.ore, spill, toeX, toeZ, vein.claim);
         breaks.push({
           x: vein.x,
           z: vein.z,
@@ -816,11 +834,11 @@ function performAction(
   }
 
   if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
-    const pile = closestDeposit(state, v.x, v.z, "pile", 0);
-    const spot = !pile && v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
+    const pile = closestDeposit(state, v.x, v.z, "pile", 0, v);
+    const spot = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
     const cut = spot ? faceOf(spot) : null;
     const faceNear = spot && cut && distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
-    const source = pile && pile.tons > 0.05 ? pile : faceNear && spot ? spot : null;
+    const source = faceNear && spot ? spot : pile && pile.tons > 0.05 ? pile : null;
     if (source) {
       if (!ownsClaim(state, source.claim)) return null;
       if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== source.ore) {
@@ -846,13 +864,13 @@ function performAction(
 
   if (def.push > 0) {
     const src = materialInFront(state, v, def.range);
-    if (src && ownsClaim(state, src.claim)) {
+    if (src && ownsClaim(state, src.claim) && acceptsJob(state, v, src)) {
       const take = Math.min(src.tons, st.push * dt);
       if (take > 0) {
         src.tons -= take;
         const dropX = src.kind === "vein" ? src.x + fx * 6 : v.x + fx * (st.radius + 3.4);
         const dropZ = src.kind === "vein" ? src.z + fz * 6 : v.z + fz * (st.radius + 3.4);
-        addPile(state, src.ore, take, dropX, dropZ);
+        addPile(state, src.ore, take, dropX, dropZ, src.claim);
         if (takeBite(v, dt, 0.34)) breaks.push({ x: src.x, z: src.z, tx: dropX, tz: dropZ, ore: src.ore });
         v.busy = true;
         if (player) state.tutorial.loaded = true;
