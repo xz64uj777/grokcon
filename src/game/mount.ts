@@ -125,7 +125,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     // Phone only: realistic controls come from the two on-screen sticks.
     const cmd = sticksToCommand(v.defId, sticks.left, sticks.right, parked);
     if (steerOverride != null && cmd.drive.kind === "car") cmd.drive.steer = steerOverride;
-    return { throttle: cmd.drive.kind === "car" ? cmd.drive.throttle : (cmd.drive.left + cmd.drive.right) / 2, steer, action, cmd };
+    // The twin-stick command owns steering in realistic mode. The legacy single-stick
+    // variable above is not updated by TwinStick, so returning it here silently
+    // discarded the left joystick's horizontal input for skid steers and loaders.
+    const realisticSteer = cmd.drive.kind === "car" ? cmd.drive.steer : steer;
+    return { throttle: cmd.drive.kind === "car" ? cmd.drive.throttle : (cmd.drive.left + cmd.drive.right) / 2, steer: realisticSteer, action, cmd };
   }
 
   const api: GameApi = {
