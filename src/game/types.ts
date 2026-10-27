@@ -1,3 +1,6 @@
+import type { Command, ToolState } from "@/game/controls";
+import type { Market } from "@/game/market";
+
 export type OreId = "dirt" | "iron" | "copper" | "gold";
 
 export type VehicleId =
@@ -26,6 +29,17 @@ export type Deposit = {
   claim: number;
   radius: number;
   sign: string;
+  /** Pile purity, or for a face unused. 0..1. */
+  purity: number;
+  overburden: number;
+  grade: number;
+  stress: number;
+  bench: number;
+  benchProgress: number;
+  hard: boolean;
+  tested: boolean;
+  /** In-game day of the last blast here, or -1. */
+  lastBlastDay: number;
 };
 
 export type VehicleState = {
@@ -37,6 +51,11 @@ export type VehicleState = {
   speed: number;
   cargoOre: OreId | null;
   cargo: number;
+  cargoPurity: number;
+  damage: number;
+  tool: ToolState;
+  /** Transient: the player is working the tools by hand this frame. */
+  manual: boolean;
   upgrades: Record<UpgradeKind, number>;
   hired: boolean;
   operator: boolean;
@@ -61,8 +80,24 @@ export type Contract = {
   bonus: number;
 };
 
+export type ControlMode = "real" | "simple";
+
+export type Blast = {
+  deposit: string;
+  x: number;
+  z: number;
+  phase: "drill" | "fuse";
+  t: number;
+  /** Cash paid for this blast (0 when a free practice charge was used). */
+  paid: number;
+};
+
 export type GameState = {
-  version: 1;
+  version: 2;
+  controlMode: ControlMode;
+  market: Market;
+  explosives: number;
+  blast: Blast | null;
   company: string;
   cash: number;
   lifetime: number;
@@ -85,6 +120,8 @@ export type Input = {
   throttle: number;
   steer: number;
   action: boolean;
+  /** Realistic controls: the full stick/key command for the active machine. */
+  cmd?: Command;
 };
 
 export type MachineCard = {
@@ -117,6 +154,9 @@ export type CrewCard = {
   hireLabel: string;
   sellLabel: string | null;
   affordableHire: boolean;
+  repairLabel: string | null;
+  affordableRepair: boolean;
+  damageLabel: string;
   upgrades: UpgradeCard[];
 };
 
@@ -143,6 +183,8 @@ export type HudModel = {
   vehicleIndex: number;
   vehicleCount: number;
   speedLabel: string;
+  /** True while the active machine is rolling (the info card shrinks to one line). */
+  moving: boolean;
   cargoLabel: string;
   cargoFrac: number;
   muted: boolean;
@@ -155,9 +197,31 @@ export type HudModel = {
   hadSave: boolean;
   savedBlurb: string;
   contractLabel: string;
+  controlMode: ControlMode;
+  machineId: VehicleId | null;
+  gearLabel: string | null;
+  toolLabel: string;
+  purityLabel: string;
+  faceLabel: string;
+  help: { title: string; phoneLeft: string; phoneRight: string };
+  twoSticks: boolean;
+  prices: PriceRow[];
+  dayLabel: string;
+  explosives: number;
+  blastInfo: string;
+  canTest: boolean;
+  canBlast: boolean;
+  blastLabel: string;
+  practice: boolean;
 };
 
-export type ViewModel = HudModel & { mode: "title" | "play"; booksReady: boolean };
+export type PriceRow = {
+  ore: OreId;
+  name: string;
+  spots: { pad: PadKind; name: string; price: string; trend: "up" | "down" | "flat"; pct: number }[];
+};
+
+export type ViewModel = HudModel & { mode: "title" | "play"; booksReady: boolean; excDrive: boolean };
 
 export type GameApi = {
   start: (mode: "continue" | "fresh", company: string) => void;
@@ -172,6 +236,16 @@ export type GameApi = {
   sell: (index: number) => void;
   setStick: (steer: number, throttle: number) => void;
   setAction: (down: boolean) => void;
+  /** Release every stick and held button (used when the screen changes shape). */
+  releaseInput: () => void;
+  setSticks: (left: { x: number; y: number }, right: { x: number; y: number }) => void;
+  shift: (dir: number) => void;
+  setControlMode: (mode: ControlMode) => void;
+  toggleExcDrive: () => void;
+  testHole: () => void;
+  blast: () => void;
+  repair: (index: number) => void;
+  practice: (on: boolean) => void;
   loadTruck: () => void;
   toggleMute: () => void;
   cycle: (dir: number) => void;

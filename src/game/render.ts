@@ -1,4 +1,5 @@
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { buildBackdrop, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
@@ -23,6 +24,8 @@ type Rig = {
   beltCleats: THREE.Object3D[];
   beaconMat: THREE.MeshStandardMaterial | null;
   conveyor: THREE.Object3D | null;
+  stick: THREE.Object3D | null;
+  bucketY: number;
 };
 
 type DepositView = {
@@ -49,7 +52,10 @@ export type World = {
   zoom: (factor: number) => void;
   project: (x: number, y: number, z: number, w: number, h: number) => { x: number; y: number } | null;
   chip: (ore: string, x: number, z: number, tx: number, tz: number) => void;
+  blast: (x: number, z: number) => void;
   resize: () => void;
+  /** Draw calls and triangles of the last frame (QA/perf only). */
+  stats: () => { calls: number; triangles: number; dpr: number };
   dispose: () => void;
 };
 
@@ -64,21 +70,25 @@ export function createWorld(host: HTMLElement): World {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
   renderer.shadowMap.enabled = true;
-  renderer.setClearColor(0xc48462, 1);
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  const quality = qualityTier();
+  renderer.setClearColor(0xe2bd9a, 1);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xc48462);
-  scene.fog = new THREE.Fog(0xc49072, 70, 210);
+  scene.background = new THREE.Color(0xe2bd9a);
+  // Warm dusty haze; the hills sit inside it so they fade out softly.
+  scene.fog = new THREE.Fog(0xdcb594, 80, 260);
 
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.2, 320);
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.2, 420);
   camera.position.set(30, 24, 70);
 
-  const hemi = new THREE.HemisphereLight(0xffe0c4, 0x3a2e24, 1.35);
+  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x5a4434, 1.6);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffd7b0, 3.1);
+  const sun = new THREE.DirectionalLight(0xffcf9e, 2.6);
   sun.position.set(48, 72, 26);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(quality.shadowMap, quality.shadowMap);
+  sun.shadow.normalBias = 0.04;
   sun.shadow.camera.left = -90;
   sun.shadow.camera.right = 90;
   sun.shadow.camera.top = 90;
@@ -87,7 +97,7 @@ export function createWorld(host: HTMLElement): World {
   sun.shadow.camera.far = 180;
   sun.shadow.bias = -0.0004;
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x8fb4c8, 0.55);
+  const fill = new THREE.DirectionalLight(0xa9c2d4, 0.45);
   fill.position.set(-40, 30, -20);
   scene.add(fill);
 
@@ -124,6 +134,7 @@ export function createWorld(host: HTMLElement): World {
 
   const buckets = new Map<BlockKind, THREE.BufferGeometry[]>();
   for (const b of BLOCKS) {
+    if (b.kind === "wall") continue; // drawn as terraced rock by buildPitWalls
     const g = new THREE.BoxGeometry(b.sx, b.sy, b.sz);
     g.translate(b.x, b.sy / 2, b.z);
     const list = buckets.get(b.kind) ?? [];
@@ -141,13 +152,14 @@ export function createWorld(host: HTMLElement): World {
     scene.add(mesh);
   }
 
-  const groundTex = track(makeGroundTexture());
+  const groundTex = track(dirtTexture());
+  buildPitWalls(scene, track);
   const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340)), std(0xffffff, { map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const pitMat = std(0x3c342c, { roughness: 1 });
+  const pitMat = std(0xb8aa9a, { roughness: 1, map: track(gravelTexture()) });
   const pit = new THREE.Mesh(track(new THREE.CircleGeometry(1, 48)), pitMat);
   pit.rotation.x = -Math.PI / 2;
   pit.position.set(PIT.x, 0.025, PIT.z);
@@ -161,10 +173,10 @@ export function createWorld(host: HTMLElement): World {
   bench.receiveShadow = true;
   scene.add(bench);
 
-  const roadMat = std(0x3a342c, { roughness: 1 });
-  addRoad(scene, track, roadMat, 7, 34, -1, 34);
-  addRoad(scene, track, roadMat, 28, 12, 22, 30);
-  addRoad(scene, track, roadMat, 78, 8, -40, 22);
+  buildRoads(scene, track, ROADS);
+  buildPuddles(scene, track);
+  buildScatter(scene, track, ROADS, quality.rich);
+  const sky = buildBackdrop(scene, track);
 
   const wheelGeo = track(new THREE.CylinderGeometry(0.46, 0.46, 0.38, 12));
   const hubGeo = track(new THREE.CylinderGeometry(0.16, 0.16, 0.42, 8));
@@ -211,6 +223,7 @@ export function createWorld(host: HTMLElement): World {
     let beltCleats: THREE.Object3D[] = [];
     let beaconMat: THREE.MeshStandardMaterial | null = null;
     let conveyor: THREE.Object3D | null = null;
+    let stickArm: THREE.Object3D | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : paintDark;
 
@@ -298,6 +311,7 @@ export function createWorld(host: HTMLElement): World {
       boom.position.set(0, 0.9, -0.7);
       box(boom, 0.28, 0.28, 1.7, 0, 0.55, -0.7, paintDark);
       const stick = new THREE.Group();
+      stickArm = stick;
       stick.position.set(0, 0.7, -1.45);
       box(stick, 0.22, 0.22, 1.25, 0, -0.25, -0.45, steel);
       bucket = new THREE.Group();
@@ -336,7 +350,11 @@ export function createWorld(host: HTMLElement): World {
     shadow.position.y = 0.04;
     root.add(shadow);
     scene.add(root);
-    return { root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat, conveyor };
+    return {
+      root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat, conveyor,
+      stick: stickArm,
+      bucketY: bucket ? bucket.position.y : 0,
+    };
   }
 
   const rockGeometries = [
@@ -491,18 +509,16 @@ export function createWorld(host: HTMLElement): World {
   scene.add(gatePost);
 
   buildSluice(scene, track, box, steel, std);
-  buildRidges(scene, track, std);
-  buildTrees(scene, track, std);
   buildFence(scene, track, std);
 
-  const dustCount = 70;
+  const dustCount = quality.dust;
   const dustPos = new Float32Array(dustCount * 3);
   const dustLife = new Float32Array(dustCount);
   const dustGeo = track(new THREE.BufferGeometry());
   dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
   const dust = new THREE.Points(
     dustGeo,
-    track(new THREE.PointsMaterial({ color: 0xcbb8a0, size: 0.35, transparent: true, opacity: 0.45, depthWrite: false })),
+    track(new THREE.PointsMaterial({ color: 0xd8c6ad, size: 1.1, map: track(puffTexture()), transparent: true, opacity: 0.5, depthWrite: false })),
   );
   scene.add(dust);
 
@@ -585,18 +601,22 @@ export function createWorld(host: HTMLElement): World {
     }
     const v = state.vehicles[state.active];
     if (!v) return;
-    const dist = CAMS[camIdx] * camZoom;
+    // Bigger machines get the camera further back; squat/wide screens (unfolded Fold)
+    // need it a bit higher so the ground right behind the machine doesn't fill the view.
+    const size = Math.min(1.35, Math.max(1, DEFS[v.defId].radius / 1.8));
+    const dist = CAMS[camIdx] * camZoom * size;
+    const tall = camera.aspect < 0.75 ? 1 : 1.18;
     const yaw = v.yaw + orbitOffset;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
-    _desired.set(v.x - fx * dist, 2.2 + dist * 0.42, v.z - fz * dist);
+    _desired.set(v.x - fx * dist, 3 + dist * 0.5 * tall, v.z - fz * dist);
     if (snapNext) {
       camera.position.copy(_desired);
       snapNext = false;
     } else {
       camera.position.lerp(_desired, 1 - Math.exp(-3.4 * dt));
     }
-    _look.set(v.x + fx * 5, 1.6, v.z + fz * 5);
+    _look.set(v.x + fx * (8 + dist * 0.35), 1.2, v.z + fz * (8 + dist * 0.35));
     camera.lookAt(_look);
     if (shake > 0) {
       camera.position.x += (Math.random() - 0.5) * shake;
@@ -647,23 +667,48 @@ export function createWorld(host: HTMLElement): World {
         }
       }
       const k = 1 - Math.exp(-8 * dt);
-      if (rig.bucket) {
+      if (v.manual && v.tool) {
+        // Realistic controls: show exactly what the operator's sticks are doing.
+        const t = v.tool;
+        const kk = 1 - Math.exp(-14 * dt);
+        if (rig.house) rig.house.rotation.y += (t.swing - rig.house.rotation.y) * kk;
+        if (rig.boom) {
+          rig.boom.rotation.x += (0.35 - t.lift * 0.9 - rig.boom.rotation.x) * kk;
+          if (rig.stick) rig.stick.rotation.x += (0.9 - t.reach * 1.4 - rig.stick.rotation.x) * kk;
+          if (rig.bucket) rig.bucket.rotation.x += (t.tilt * 1.1 - rig.bucket.rotation.x) * kk;
+        } else if (rig.bucket) {
+          const y = rig.bucketY + t.lift * 1.7;
+          rig.bucket.position.y += (y - rig.bucket.position.y) * kk;
+          rig.bucket.rotation.x += (t.tilt * 0.9 - rig.bucket.rotation.x) * kk;
+        }
+        if (rig.blade) {
+          rig.blade.position.y += (0.2 + t.lift * 0.9 - rig.blade.position.y) * kk;
+          rig.blade.rotation.y += (t.tilt * 0.5 - rig.blade.rotation.y) * kk;
+        }
+        if (rig.bed) {
+          rig.dump += (t.lift * 0.9 - rig.dump) * kk;
+          rig.bed.rotation.x = rig.dump;
+        }
+      } else if (rig.bucket) {
+        rig.bucket.position.y += (rig.bucketY - rig.bucket.position.y) * k;
         const target = v.busy ? 0.7 : 0.05;
         rig.bucket.rotation.x += (target - rig.bucket.rotation.x) * k;
       }
-      if (rig.boom) {
+      if (!v.manual && rig.boom) {
+        if (rig.stick) rig.stick.rotation.x += (0 - rig.stick.rotation.x) * k;
         const target = -0.35 + (v.busy ? Math.sin(clock.t * 3.2) * 0.45 : 0);
         rig.boom.rotation.x += (target - rig.boom.rotation.x) * k;
       }
-      if (rig.house) {
+      if (!v.manual && rig.house) {
         const target = v.busy ? Math.sin(clock.t * 1.5) * 0.45 : 0;
         rig.house.rotation.y += (target - rig.house.rotation.y) * k;
       }
-      if (rig.blade) {
+      if (!v.manual && rig.blade) {
+        rig.blade.rotation.y += (0 - rig.blade.rotation.y) * k;
         const target = v.busy ? -0.15 : 0.2;
         rig.blade.position.y += (0.45 + target - rig.blade.position.y) * k;
       }
-      if (rig.bed) {
+      if (!v.manual && rig.bed) {
         const target = v.busy && DEFS[v.defId].receives ? 0.62 : 0;
         rig.dump += (target - rig.dump) * k;
         rig.bed.rotation.x = rig.dump;
@@ -722,22 +767,30 @@ export function createWorld(host: HTMLElement): World {
       const dist = player ? Math.hypot(player.x - d.x, player.z - d.z) : 999;
       const fade = Math.min(1, Math.max(0, (dist - d.radius - 3) / 12));
       const loose = d.id.startsWith("pile-");
-      view.sign.visible = !loose && fade > 0.04 && view.group.visible;
+      // Hide signs that would be cut off at the screen edge.
+      _proj.set(d.x, 3.4 + fullness * 2.4, d.z).project(camera);
+      const onScreen = Math.abs(_proj.x) < 0.78 && _proj.z < 1;
+      view.sign.visible = !loose && onScreen && fade > 0.04 && view.group.visible;
       view.sign.scale.set(7.2 * fade, 3.4 * fade, 1);
       view.sign.position.set(d.x, 3.4 + fullness * 2.4, d.z);
     }
-    if (player && Math.abs(player.speed) > 2.5) {
-      const fx = -Math.sin(player.yaw);
-      const fz = -Math.cos(player.yaw);
-      for (let i = 0; i < 3; i++) {
-        const idx = (Math.floor(clock.t * 30) + i) % dustCount;
+    // Dust trails behind every moving machine (pooled; the player kicks up the most).
+    state.vehicles.forEach((v, vi) => {
+      const sp = Math.abs(v.speed);
+      if (sp < 2.2) return;
+      const fx = -Math.sin(v.yaw);
+      const fz = -Math.cos(v.yaw);
+      const n = v === player ? 3 : 1;
+      const back = DEFS[v.defId].radius * 1.1;
+      for (let i = 0; i < n; i++) {
+        const idx = (Math.floor(clock.t * 40) * 3 + vi * 5 + i) % dustCount;
         if (dustLife[idx] > 0) continue;
-        dustPos[idx * 3] = player.x - fx * 1.8 + (Math.random() - 0.5);
-        dustPos[idx * 3 + 1] = 0.3;
-        dustPos[idx * 3 + 2] = player.z - fz * 1.8 + (Math.random() - 0.5);
-        dustLife[idx] = 0.6;
+        dustPos[idx * 3] = v.x - fx * back * Math.sign(v.speed) + (Math.random() - 0.5) * 1.4;
+        dustPos[idx * 3 + 1] = 0.3 + Math.random() * 0.3;
+        dustPos[idx * 3 + 2] = v.z - fz * back * Math.sign(v.speed) + (Math.random() - 0.5) * 1.4;
+        dustLife[idx] = 0.7 + Math.min(0.6, sp * 0.04);
       }
-    }
+    });
 
     // Give active digging and scooping visible ground-contact feedback without
     // changing the mining simulation or adding work to the save data.
@@ -777,13 +830,14 @@ export function createWorld(host: HTMLElement): World {
       if (c.life <= 0) c.mesh.visible = false;
     }
     frameCamera(state, dt, follow);
+    sky.position.set(camera.position.x, 0, camera.position.z);
     renderer.render(scene, camera);
   }
 
   function resize() {
     const w = host.clientWidth || 1;
     const h = host.clientHeight || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, w > 1400 ? 1.25 : 1.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, w > 1400 ? 1.25 : Math.min(w, h) >= 600 ? Math.min(quality.dprCap, 1.75) : quality.dprCap);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
@@ -793,6 +847,7 @@ export function createWorld(host: HTMLElement): World {
   resize();
 
   return {
+    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio() }),
     sync,
     orbit(dt: number) {
       if (bound) sync(bound, dt, false);
@@ -822,6 +877,21 @@ export function createWorld(host: HTMLElement): World {
       return { x: (_proj.x * 0.5 + 0.5) * w, y: (-_proj.y * 0.5 + 0.5) * h };
     },
     chip,
+    blast(x: number, z: number) {
+      shake = Math.min(1.2, shake + 1.1);
+      const ores = ["dirt", "iron", "dirt", "copper"];
+      for (let i = 0; i < chips.length; i++) {
+        const a = (i / chips.length) * Math.PI * 2;
+        const r = 6 + (i % 5) * 2.2;
+        chip(ores[i % ores.length], x, z, x + Math.cos(a) * r, z + Math.sin(a) * r);
+      }
+      for (let i = 0; i < dustCount; i++) {
+        dustPos[i * 3] = x + (Math.random() - 0.5) * 14;
+        dustPos[i * 3 + 1] = 0.4 + Math.random() * 3;
+        dustPos[i * 3 + 2] = z + (Math.random() - 0.5) * 14;
+        dustLife[i] = 0.8 + Math.random() * 0.9;
+      }
+    },
     resize,
     dispose() {
       renderer.dispose();
@@ -831,22 +901,11 @@ export function createWorld(host: HTMLElement): World {
   };
 }
 
-function addRoad(
-  scene: THREE.Scene,
-  track: <T extends { dispose: () => void }>(g: T) => T,
-  mat: THREE.Material,
-  w: number,
-  h: number,
-  x: number,
-  z: number,
-) {
-  const geo = track(new THREE.PlaneGeometry(w, h));
-  geo.rotateX(-Math.PI / 2);
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, 0.04, z);
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-}
+const ROADS = [
+  { w: 7, h: 34, x: -1, z: 34 },
+  { w: 28, h: 12, x: 22, z: 30 },
+  { w: 78, h: 8, x: -40, z: 22 },
+];
 
 function textTexture(text: string, accent: string) {
   const c = document.createElement("canvas");
@@ -863,33 +922,23 @@ function textTexture(text: string, accent: string) {
   g.lineWidth = 10;
   g.strokeRect(8, 8, 496, 204);
   g.fillStyle = "#f4efe6";
-  g.font = "700 64px sans-serif";
   g.textAlign = "center";
   g.textBaseline = "middle";
-  const label = text.length > 18 ? text.slice(0, 18) : text;
-  g.fillText(label, 256, 110);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function makeGroundTexture() {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
-  const g = c.getContext("2d");
-  if (g) {
-    g.fillStyle = "#6a5d4c";
-    g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 1800; i++) {
-      g.fillStyle = i % 2 ? "#5b4f40" : "#7a6c58";
-      g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
-    }
+  // "NAME  LEASE" draws as the name with a small LEASE tag underneath.
+  const [name, tag] = text.split(/\s{2,}/);
+  let px = 64;
+  g.font = `700 ${px}px sans-serif`;
+  while (px > 30 && g.measureText(name).width > 460) {
+    px -= 2;
+    g.font = `700 ${px}px sans-serif`;
+  }
+  g.fillText(name, 256, tag ? 88 : 110);
+  if (tag) {
+    g.fillStyle = accent;
+    g.font = "700 40px sans-serif";
+    g.fillText(tag, 256, 160);
   }
   const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(28, 28);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -1009,42 +1058,6 @@ function buildCrusherDressing(
     }
   });
   return { rollers, flywheel, flyHub: flywheelHub, beltCleats, beaconMat, conveyor };
-}
-
-function buildRidges(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {
-  const mat = std(0x5a4638, { roughness: 1 });
-  const spots: [number, number, number][] = [
-    [-70, -8, 18],
-    [8, -4, 22],
-    [78, -2, 16],
-    [-110, 8, 14],
-    [120, 12, 20],
-  ];
-  for (const [x, z, h] of spots) {
-    const mesh = new THREE.Mesh(track(new THREE.BoxGeometry(30, h, 16)), mat);
-    mesh.position.set(x, h / 2 - 4, z);
-    scene.add(mesh);
-  }
-}
-
-function buildTrees(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {
-  const trunk = std(0x5a4634, { roughness: 0.9 });
-  const leaf = std(0x3d4a3a, { roughness: 0.9 });
-  const spots: [number, number][] = [
-    [-30, 64],
-    [8, 66],
-    [48, 64],
-    [78, -58],
-    [-78, -62],
-    [36, -66],
-  ];
-  for (const [x, z] of spots) {
-    const t = new THREE.Mesh(track(new THREE.CylinderGeometry(0.22, 0.38, 2.2, 5)), trunk);
-    t.position.set(x, 1.1, z);
-    const c = new THREE.Mesh(track(new THREE.ConeGeometry(1.5, 3.4, 6)), leaf);
-    c.position.set(x, 3.3, z);
-    scene.add(t, c);
-  }
 }
 
 function buildFence(scene: THREE.Scene, track: <T extends { dispose: () => void }>(g: T) => T, std: (color: number, opts?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial) {

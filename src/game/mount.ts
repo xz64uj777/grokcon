@@ -2,8 +2,47 @@ import { createAudio } from "@/game/audio";
 import { BOUNDS, CLAIMS, GATE, ORES, PADS, isVehicleId } from "@/game/catalog";
 import { createWorld } from "@/game/render";
 import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
-import { buildHud, buyClaim, buySluicePlant, buyUpgrade, buyVehicle, freshGame, loadTruck, sellVehicle, setActive, step, toggleCrew } from "@/game/sim";
-import type { GameApi, Input, ViewModel } from "@/game/types";
+import { sticksToCommand, type Stick } from "@/game/controls";
+import {
+  buildHud,
+  buyClaim,
+  buySluicePlant,
+  buyUpgrade,
+  buyVehicle,
+  drillTestHole,
+  freshGame,
+  loadTruck,
+  repairVehicle,
+  sellVehicle,
+  setActive,
+  setControlMode,
+  shiftGear,
+  startBlast,
+  step,
+  toggleCrew,
+} from "@/game/sim";
+import type { GameApi, GameState, Input, VehicleId, ViewModel } from "@/game/types";
+
+const PRACTICE_FLEET: VehicleId[] = ["skid", "loader", "excavator", "dozer", "truck"];
+
+/** A throwaway yard with one of every machine. Nothing here is saved. */
+function practiceYard(real: GameState): GameState {
+  const yard = freshGame("Practice yard");
+  yard.cash = 0;
+  yard.controlMode = real.controlMode;
+  yard.muted = real.muted;
+  yard.claims = [1, 2, 3, 4];
+  yard.tutorial = { loaded: true, dumped: true, bought: true };
+  yard.explosives = 3;
+  for (const id of PRACTICE_FLEET) {
+    yard.cash += 1_000_000;
+    buyVehicle(yard, id);
+  }
+  yard.cash = 0;
+  yard.active = yard.vehicles.findIndex((v) => v.defId === "skid");
+  yard.log = ["Practice yard. Try every machine. Nothing here counts or saves."];
+  return yard;
+}
 
 type Floater = { x: number; y: number; z: number; text: string; life: number };
 
@@ -30,6 +69,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   let pinchDistance = 0;
   let lastCameraTap = { time: 0, x: 0, y: 0 };
   let actionBtn = false;
+  const sticks: { left: Stick; right: Stick } = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
+  let excDrive = false;
+  /** While practicing, the real books wait here untouched. */
+  let practiceBack: GameState | null = null;
+  const books = () => practiceBack ?? state;
 
   const world = createWorld(host);
   const audio = createAudio();
@@ -48,7 +92,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function push() {
     if (dead) return;
-    hooks.onHud({ ...buildHud(state, hadSave), mode: running ? "play" : "title", booksReady });
+    hooks.onHud({ ...buildHud(state, hadSave, excDrive), practice: practiceBack != null, mode: running ? "play" : "title", booksReady, excDrive });
   }
 
   function held(code: string) {
@@ -66,13 +110,24 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     if (steerOverride != null) steer = steerOverride;
     throttle = Math.max(-1, Math.min(1, throttle));
     steer = Math.max(-1, Math.min(1, steer));
-    const action = held("Space") || held("KeyE") || actionBtn;
-    return { throttle, steer, action };
+    const v = state.vehicles[state.active];
+    const realMode = state.controlMode === "real";
+    // E is the excavator's swing key in realistic mode, so it only works the tool in simple mode.
+    const action = held("Space") || (!realMode && held("KeyE")) || actionBtn;
+    if (!realMode || !v) return { throttle, steer, action };
+    // Phone only: realistic controls come from the two on-screen sticks.
+    const cmd = sticksToCommand(v.defId, sticks.left, sticks.right, excDrive);
+    if (steerOverride != null && cmd.drive.kind === "car") cmd.drive.steer = steerOverride;
+    return { throttle: cmd.drive.kind === "car" ? cmd.drive.throttle : (cmd.drive.left + cmd.drive.right) / 2, steer, action, cmd };
   }
 
   const api: GameApi = {
     start(mode, company) {
       if (!booksReady) return;
+      if (practiceBack) {
+        state = practiceBack;
+        practiceBack = null;
+      }
       const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
       if (mode === "fresh") {
         state = freshGame(name);
@@ -80,14 +135,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         saveGame(state, true);
       } else if (!hadSave) {
         state = freshGame(name);
-        if (!saveGame(state)) {
+        if (!saveGame(books())) {
           const kept = loadGame();
           if (kept) state = kept;
         }
         hadSave = true;
       } else {
         state.company = name;
-        saveGame(state);
+        saveGame(books());
       }
       running = true;
       keys.clear();
@@ -101,22 +156,22 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     buy(id) {
       if (id === "sluice") buySluicePlant(state);
       else if (isVehicleId(id)) buyVehicle(state, id);
-      saveGame(state);
+      saveGame(books());
       push();
     },
     buyGround(id) {
       buyClaim(state, id);
-      saveGame(state);
+      saveGame(books());
       push();
     },
     upgrade(index, kind) {
       buyUpgrade(state, index, kind);
-      saveGame(state);
+      saveGame(books());
       push();
     },
     crew(index) {
       toggleCrew(state, index);
-      saveGame(state);
+      saveGame(books());
       push();
     },
     assignSource(index, claim) {
@@ -124,14 +179,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (!v || (index !== state.active && !v.operator)) return;
       v.workClaim = claim != null && state.claims.includes(claim) ? claim : null;
       v.status = claim == null ? "Assigned to any leased source" : `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
-      saveGame(state);
+      saveGame(books());
       push();
     },
     setHaulSluice(on) {
       state.preferSluice = on && state.sluice;
       state.log.unshift(on ? "Copper and gold haul to the sluice." : "Crew may sell at the crusher.");
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(state);
+      saveGame(books());
       push();
     },
     drive(index) {
@@ -143,21 +198,83 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const wasActive = index === state.active;
       sellVehicle(state, index);
       if (wasActive) world.snap();
-      saveGame(state);
+      saveGame(books());
       push();
     },
     setStick(steer, throttle) {
       stick.steer = steer;
       stick.throttle = throttle;
+      // The single drive stick also feeds realistic mode for the claim truck and crusher.
+      sticks.left = { x: -steer, y: throttle };
+      sticks.right = { x: 0, y: 0 };
     },
     setAction(down) {
       actionBtn = down;
+    },
+    releaseInput() {
+      // Screen changed shape (fold/unfold/rotate): let go of everything cleanly.
+      // A drill in progress keeps going as long as the machine sits still.
+      stick.steer = 0;
+      stick.throttle = 0;
+      sticks.left = { x: 0, y: 0 };
+      sticks.right = { x: 0, y: 0 };
+      actionBtn = false;
+    },
+    setSticks(left, right) {
+      sticks.left = left;
+      sticks.right = right;
+    },
+    shift(dir) {
+      const msg = shiftGear(state, dir);
+      if (msg) state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      push();
+    },
+    setControlMode(mode) {
+      setControlMode(state, mode);
+      if (practiceBack) practiceBack.controlMode = mode;
+      saveGame(books());
+      push();
+    },
+    toggleExcDrive() {
+      excDrive = !excDrive;
+      push();
+    },
+    testHole() {
+      const msg = drillTestHole(state);
+      if (msg) state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      saveGame(books());
+      push();
+    },
+    blast() {
+      const msg = startBlast(state);
+      if (msg) state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      push();
+    },
+    repair(index) {
+      repairVehicle(state, index);
+      saveGame(books());
+      push();
+    },
+    practice(on) {
+      if (on && !practiceBack) {
+        saveGame(state);
+        practiceBack = state;
+        state = practiceYard(state);
+      } else if (!on && practiceBack) {
+        state = practiceBack;
+        practiceBack = null;
+      }
+      world.snap();
+      push();
     },
     loadTruck() {
       const msg = loadTruck(state);
       state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(state);
+      saveGame(books());
       push();
     },
     toggleMute() {
@@ -173,7 +290,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
     },
     downloadBooks() {
-      saveGame(state);
+      saveGame(books());
       const text = currentSaveText();
       if (!text) return;
       const file = new Blob([text], { type: "application/json" });
@@ -187,10 +304,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     importBooks(text) {
       const next = readSaveText(text);
       if (!next) return false;
+      practiceBack = null;
       state = next;
       hadSave = true;
       running = false;
-      saveGame(state);
+      saveGame(books());
       world.snap();
       push();
       return true;
@@ -202,6 +320,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     window.__controlsTest = {
       getYaw: () => state.vehicles[state.active]?.yaw ?? 0,
       getSpeed: () => state.vehicles[state.active]?.speed ?? 0,
+      getState: () => state,
+      renderStats: () => world.stats(),
+      setSticks(left: Stick, right: Stick) {
+        sticks.left = left;
+        sticks.right = right;
+      },
       setSteer(v: number) {
         steerOverride = v;
       },
@@ -259,6 +383,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     if (e.code === "KeyC") world.cycleCam();
     if (e.code === "KeyM") api.toggleMute();
     if (e.code === "KeyL") api.loadTruck();
+
   }
   function onKeyUp(e: KeyboardEvent) {
     keys.delete(e.code);
@@ -268,16 +393,18 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     actionBtn = false;
     stick.steer = 0;
     stick.throttle = 0;
+    sticks.left = { x: 0, y: 0 };
+    sticks.right = { x: 0, y: 0 };
   }
   function onHide() {
     if (document.hidden) {
       keys.clear();
-      if (running || hadSave) saveGame(state);
+      if (running || hadSave) saveGame(books());
       audio.setMuted(true);
     } else if (!state.muted) audio.setMuted(false);
   }
   function onPageHide() {
-    if (running || hadSave) saveGame(state);
+    if (running || hadSave) saveGame(books());
   }
 
   host.addEventListener("pointerdown", onCameraPointerDown, { passive: false });
@@ -298,7 +425,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state = backup;
         hadSave = true;
         if (running) world.snap();
-        saveGame(state);
+        saveGame(books());
       }
     }
     booksReady = true;
@@ -314,6 +441,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     sizeOverlay();
   };
   window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", resize);
+  window.visualViewport?.addEventListener("resize", resize);
   const observer = new ResizeObserver(resize);
   observer.observe(host);
 
@@ -415,6 +544,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         }
         if (fx.sales.length) sold = true;
         for (const b of fx.breaks) world.chip(b.ore, b.x, b.z, b.tx, b.tz);
+        for (const b of fx.blasts) {
+          world.blast(b.x, b.z);
+          audio.dig();
+          sold = true;
+        }
         if (fx.dig) digPulse = true;
         acc -= 1 / 60;
         guard++;
@@ -423,13 +557,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         audio.dig();
         digCool = 0.16;
       }
-      if (sold) saveGame(state);
+      if (sold) saveGame(books());
       digCool = Math.max(0, digCool - dt);
       const v = state.vehicles[state.active];
       audio.engine(v?.speed ?? 0, panelOpen ? 0 : input.throttle);
       saveT += dt;
       if (saveT > 4) {
-        saveGame(state);
+        saveGame(books());
         saveT = 0;
       }
     }
@@ -450,7 +584,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   return () => {
     dead = true;
     cancelAnimationFrame(raf);
-    if (running) saveGame(state);
+    if (running) saveGame(books());
     host.removeEventListener("pointerdown", onCameraPointerDown);
     host.removeEventListener("pointermove", onCameraPointerMove);
     host.removeEventListener("pointerup", onCameraPointerEnd);
@@ -459,6 +593,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("resize", resize);
+    window.removeEventListener("orientationchange", resize);
+    window.visualViewport?.removeEventListener("resize", resize);
     document.removeEventListener("visibilitychange", onHide);
     window.removeEventListener("pagehide", onPageHide);
     observer.disconnect();
@@ -479,6 +615,9 @@ declare global {
     __controlsTest?: {
       getYaw: () => number;
       getSpeed: () => number;
+      getState?: () => GameState;
+      renderStats?: () => { calls: number; triangles: number; dpr: number };
+      setSticks?: (left: Stick, right: Stick) => void;
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;
     };

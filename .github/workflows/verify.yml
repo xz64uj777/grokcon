@@ -45,6 +45,9 @@ jobs:
           src/lib/auth/gate-identity.test.ts
           src/lib/auth/sign-in-gate.test.ts
           src/lib/preview-path-prefix.test.ts
+          src/game/controls.test.ts
+          src/game/mining.test.ts
+          src/game/market.test.ts
 
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts

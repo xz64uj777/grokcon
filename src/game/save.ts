@@ -1,6 +1,11 @@
 import { BOUNDS, isOreId, isVehicleId } from "@/game/catalog";
-import { freshGame } from "@/game/sim";
+import { homeTool, type ToolState } from "@/game/controls";
+import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
+import { MARKET_KEYS, freshGame } from "@/game/sim";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
+
+/** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
+export const SAVE_VERSION = 2;
 
 const KEY = "ridge-ore.save";
 const BAK = "ridge-ore.save.bak";
@@ -14,7 +19,8 @@ function num(v: unknown, fallback: number, min: number, max: number) {
 function sanitize(raw: unknown): GameState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (o.version !== 1) return null;
+  if (o.version !== 1 && o.version !== 2) return null;
+  const v2 = o.version === 2;
   const company = typeof o.company === "string" && o.company.trim() ? o.company.trim().slice(0, 24) : "Ridge Ore Co.";
   const state = freshGame(company);
   state.cash = num(o.cash, state.cash, 0, 1e12);
@@ -24,6 +30,9 @@ function sanitize(raw: unknown): GameState | null {
   state.preferSluice = o.preferSluice !== false;
   state.muted = o.muted === true;
   state.pileSeq = Math.round(num(o.pileSeq, 1, 1, 1e7));
+  state.controlMode = o.controlMode === "simple" ? "simple" : "real";
+  state.explosives = Math.round(num(o.explosives, 0, 0, 99));
+  state.market = readMarket(o.market, state.seconds);
   if (Array.isArray(o.claims)) {
     const claims = o.claims.filter((c) => c === 1 || c === 2 || c === 3 || c === 4) as number[];
     state.claims = Array.from(new Set([1, ...claims]));
@@ -52,6 +61,10 @@ function sanitize(raw: unknown): GameState | null {
       vehicles.push({
         uid: typeof v.uid === "string" ? v.uid.slice(0, 40) : `${v.defId}-${vehicles.length}`,
         defId: v.defId,
+        cargoPurity: num(v.cargoPurity, 1, 0.3, 1),
+        damage: num(v.damage, 0, 0, 1),
+        tool: readTool(v.tool, v.defId),
+        manual: false,
         x: num(v.x, 0, BOUNDS.minX, BOUNDS.maxX),
         z: num(v.z, 40, BOUNDS.minZ, BOUNDS.maxZ),
         yaw: num(v.yaw, 0, -20, 20),
@@ -79,6 +92,10 @@ function sanitize(raw: unknown): GameState | null {
         speed: 0,
         cargoOre: null,
         cargo: 0,
+        cargoPurity: 1,
+        damage: 0,
+        tool: homeTool("crusher"),
+        manual: false,
         upgrades: { engine: 0, body: 0, hydro: 0 },
         hired: false,
         operator: false,
@@ -108,6 +125,18 @@ function sanitize(raw: unknown): GameState | null {
       d.tons = num(s.tons, d.tons, 0, Math.max(d.max * 3, 2000));
       d.x = num(s.x, d.x, BOUNDS.minX, BOUNDS.maxX);
       d.z = num(s.z, d.z, BOUNDS.minZ, BOUNDS.maxZ);
+      d.purity = num(s.purity, d.purity, 0.3, 1);
+      if (v2) {
+        d.overburden = num(s.overburden, d.overburden, 0, 500);
+        d.stress = num(s.stress, 0, 0, 0.99);
+        d.bench = Math.round(num(s.bench, 1, 1, 999));
+        d.benchProgress = num(s.benchProgress, 0, 0, 1000);
+        d.tested = s.tested === true;
+        d.lastBlastDay = Math.round(num(s.lastBlastDay, -1, -1, 1e7));
+      } else if (d.kind === "vein") {
+        // Old books: these faces were already opened up, so the top is clear.
+        d.overburden = 0;
+      }
     }
     for (const s of saved.values()) {
       if (typeof s.id !== "string") continue;
@@ -126,6 +155,15 @@ function sanitize(raw: unknown): GameState | null {
         claim: 1,
         radius: 6,
         sign: "PILE",
+        purity: num(s.purity, 1, 0.3, 1),
+        overburden: 0,
+        grade: 1,
+        stress: 0,
+        bench: 1,
+        benchProgress: 0,
+        hard: false,
+        tested: true,
+        lastBlastDay: -1,
       };
       if (pile.tons >= 0.2) state.deposits.push(pile);
     }
@@ -164,6 +202,46 @@ function sanitize(raw: unknown): GameState | null {
   }
   if (!state.vehicles.length) return null;
   return state;
+}
+
+function readTool(raw: unknown, defId: string): ToolState {
+  const home = homeTool(defId);
+  if (!raw || typeof raw !== "object") return home;
+  const t = raw as Record<string, unknown>;
+  const gear = t.gear === -1 || t.gear === 0 || t.gear === 1 ? t.gear : home.gear;
+  return {
+    lift: num(t.lift, home.lift, 0, 1),
+    tilt: num(t.tilt, home.tilt, -1, 1),
+    swing: num(t.swing, home.swing, -Math.PI, Math.PI),
+    reach: num(t.reach, home.reach, 0, 1),
+    gear,
+  };
+}
+
+function readMarket(raw: unknown, seconds: number): Market {
+  const day = Math.floor(seconds / DAY_SECONDS);
+  const fallback = () => {
+    const m = freshMarket(Math.floor(Math.random() * 0xffffffff), MARKET_KEYS);
+    // Start the board on today so an old save does not replay a pile of days at once.
+    m.day = day;
+    return m;
+  };
+  if (!raw || typeof raw !== "object") return fallback();
+  const m = raw as Record<string, unknown>;
+  if (typeof m.seed !== "number") return fallback();
+  const out = freshMarket(m.seed, MARKET_KEYS);
+  out.day = Math.round(num(m.day, day, 0, 1e7));
+  const copy = (src: unknown, dst: Record<string, number>, lo: number, hi: number) => {
+    if (!src || typeof src !== "object") return;
+    for (const k of MARKET_KEYS) {
+      const val = (src as Record<string, unknown>)[k];
+      if (typeof val === "number" && Number.isFinite(val)) dst[k] = Math.min(hi, Math.max(lo, val));
+    }
+  };
+  copy(m.mult, out.mult, 0.5, 2);
+  copy(m.prev, out.prev, 0.5, 2);
+  copy(m.glut, out.glut, 0, 0.25);
+  return out;
 }
 
 export function bookWorth(state: GameState) {
@@ -241,8 +319,15 @@ export function saveGame(state: GameState, force = false) {
 function snapshot(state: GameState): GameState {
   return {
     ...state,
-    vehicles: state.vehicles.map((v) => ({ ...v, speed: 0, busy: false, stuck: 0, unstick: 0 })),
-    deposits: state.deposits.map((d) => ({ ...d })),
+    version: SAVE_VERSION,
+    // A blast in progress is not saved. Its charge goes back in the box.
+    blast: null,
+    // Paid blasts in progress are refunded in the saved books.
+    explosives: state.explosives + (state.blast && state.blast.paid === 0 ? 1 : 0),
+    cash: state.cash + (state.blast ? state.blast.paid : 0),
+    market: { ...state.market, mult: { ...state.market.mult }, prev: { ...state.market.prev }, glut: { ...state.market.glut } },
+    vehicles: state.vehicles.map((v) => ({ ...v, tool: { ...v.tool }, speed: 0, busy: false, stuck: 0, unstick: 0, manual: false })),
+    deposits: state.deposits.map((d) => ({ ...d, lastBlastDay: state.blast && state.blast.deposit === d.id ? -1 : d.lastBlastDay })),
     tutorial: { ...state.tutorial },
     contract: { ...state.contract },
     log: state.log.slice(0, 5),

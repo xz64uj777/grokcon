@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleDollarSign, Gauge, Mountain, Pickaxe, Users, Volume2, VolumeX, X } from "lucide-react";
+import { CircleDollarSign, Gauge, Mountain, Pickaxe, TrendingDown, TrendingUp, Minus, Users, Volume2, VolumeX, X } from "lucide-react";
 import type { GameApi, UpgradeKind, ViewModel } from "@/game/types";
 
 export function MineScreen() {
@@ -7,11 +7,47 @@ export function MineScreen() {
   const apiRef = useRef<GameApi | null>(null);
   const bridges = useRef({ toggle: () => {}, close: () => {} });
   const [hud, setHud] = useState<ViewModel | null>(null);
-  const [panel, setPanel] = useState<null | "machines" | "ground" | "crew">(null);
+  const [panel, setPanel] = useState<null | "machines" | "ground" | "crew" | "prices">(null);
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
   const [booksNote, setBooksNote] = useState("");
   const [wipe, setWipe] = useState(false);
+  const twin = useRef({ left: { x: 0, y: 0 }, right: { x: 0, y: 0 } });
+  const padRef = useRef<HTMLDivElement>(null);
+  const [padH, setPadH] = useState(0);
+  const twoSticks = hud?.twoSticks ?? false;
+  const screen = useScreenShape();
+  // Info card: one compact line while driving; full card when stopped or tapped open.
+  const [cardOpen, setCardOpen] = useState(false);
+  const [settled, setSettled] = useState(true);
+  const moving = hud?.moving ?? false;
+  useEffect(() => {
+    // Small delay so the card doesn't flicker on every tiny stop/start.
+    const t = window.setTimeout(() => setSettled(!moving), moving ? 250 : 700);
+    return () => window.clearTimeout(t);
+  }, [moving]);
+  useEffect(() => {
+    if (moving) return;
+    setCardOpen(false);
+  }, [moving]);
+  const compact = !settled && !cardOpen;
+  useEffect(() => {
+    // Folding, unfolding or rotating swaps the whole control layout. Let go of
+    // every stick and button so nothing stays stuck "held" in the new layout.
+    apiRef.current?.releaseInput();
+    twin.current = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
+  }, [screen]);
+  const playingNow = hud?.mode === "play";
+  useEffect(() => {
+    // Keep the machine card just above the sticks and buttons, whatever their height.
+    const el = padRef.current;
+    if (!el) return;
+    const measure = () => setPadH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [twoSticks, playingNow, screen]);
 
   bridges.current.toggle = () => setPanel((p) => (p ? null : "machines"));
   bridges.current.close = () => setPanel(null);
@@ -54,7 +90,7 @@ export function MineScreen() {
   const playing = hud?.mode === "play";
 
   return (
-    <main className="game-shell fixed inset-0 bg-bg text-fg">
+    <main className={`game-shell fixed inset-0 bg-bg text-fg ${hud?.twoSticks ? "twin-sticks" : ""}`} data-screen={screen} style={{ ["--pad-h" as string]: `${padH}px` }}>
       <div ref={worldRef} className="absolute inset-0" />
       {!playing && (
         <section className="pointer-events-auto absolute top-4 right-4 bottom-4 left-4 overflow-y-auto border border-border bg-surface p-5 md:right-auto md:bottom-auto md:left-10 md:w-96 md:p-8">
@@ -139,13 +175,13 @@ export function MineScreen() {
             </button>
           )}
           <p className="key-hint mt-4 text-sm leading-relaxed text-muted">
-            WASD drives. Hold Space to dig or dump. The books save on this phone. Download a copy before you switch devices.
+            The books save on this phone. Download a copy before you switch devices.
           </p>
         </section>
       )}
       {playing && hud && (
         <>
-          <header className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 md:p-4">
+          <header className="hud-top pointer-events-none absolute inset-x-0 top-0 z-10 p-3 md:p-4">
             <div className="flex items-center gap-2">
               <div className="pointer-events-auto border border-border bg-surface px-3 py-2">
                 <div className="flex items-center gap-2">
@@ -167,7 +203,29 @@ export function MineScreen() {
               </div>
               <button
                 type="button"
-                className="pointer-events-auto ml-auto inline-flex h-11 items-center gap-2 border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg"
+                className="desk-only pointer-events-auto ml-auto inline-flex h-11 items-center border border-border bg-surface px-3 font-display text-base uppercase tracking-wide text-fg"
+                aria-label="Switch controls"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  apiRef.current?.setControlMode(hud.controlMode === "real" ? "simple" : "real");
+                }}
+              >
+                {hud.controlMode === "real" ? "Realistic" : "Simple"}
+              </button>
+              <button
+                type="button"
+                className={`desk-only pointer-events-auto inline-flex h-11 items-center border px-3 font-display text-base uppercase tracking-wide ${hud.practice ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  setPanel(null);
+                  apiRef.current?.practice(!hud.practice);
+                }}
+              >
+                {hud.practice ? "Leave practice" : "Practice"}
+              </button>
+              <button
+                type="button"
+                className="pointer-events-auto ml-auto inline-flex h-11 items-center gap-2 border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg min-[821px]:ml-0"
                 onClick={() => setPanel((p) => (p ? null : "machines"))}
               >
                 <Mountain className="size-4" aria-hidden />
@@ -191,58 +249,135 @@ export function MineScreen() {
               </button>
             </div>
           </header>
-          <footer className="hud-foot pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 md:p-4">
-            <div className="max-w-md border border-border bg-surface px-3 py-2 md:py-3">
+          {(hud.practice || hud.blastLabel) && (
+            <div className="hud-banner pointer-events-none absolute inset-x-0 top-16 z-10 flex flex-col items-center gap-2 px-3 md:top-20">
+              {hud.practice && (
+                <p className="border border-primary bg-surface px-3 py-1 font-display text-base uppercase tracking-wide text-primary">Practice yard · nothing here counts or saves</p>
+              )}
+              {hud.blastLabel && (
+                <p className="border border-red-500 bg-red-950/90 px-3 py-2 text-center font-display text-lg uppercase tracking-wide text-red-100">{hud.blastLabel}</p>
+              )}
+            </div>
+          )}
+          <footer className={`hud-foot pointer-events-none absolute inset-x-0 z-10 px-3 py-2 ${compact ? "is-compact" : ""}`}>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={!compact}
+              aria-label={compact ? "Show machine details" : "Machine details"}
+              className="hud-card pointer-events-auto max-w-md border border-border bg-surface/95 px-3 py-2"
+              onPointerUp={() => setCardOpen((o) => !o)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setCardOpen((o) => !o);
+              }}
+            >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-display text-lg uppercase leading-none tracking-wide text-fg md:text-xl">{hud.vehicleName}</p>
-                <p className="flex items-center gap-1 text-sm text-muted">
-                  <Gauge className="size-4" aria-hidden />
+                <p className="font-display text-lg uppercase leading-none tracking-wide text-fg">{hud.vehicleName}</p>
+                {compact && (
+                  <p className="min-w-0 flex-1 truncate text-xs text-fg">
+                    {hud.cargoLabel.replace(/^Empty · /, "0 / ")}
+                    {hud.purityLabel && <span className="text-cash"> · {hud.purityLabel}</span>}
+                  </p>
+                )}
+                <p className="flex shrink-0 items-center gap-1 text-sm text-muted">
+                  {hud.gearLabel && <span className="font-display text-base text-fg">{hud.gearLabel.replace(/^Gear /, "").slice(0, 1)} ·</span>}
+                  {!compact && <Gauge className="size-4" aria-hidden />}
                   {hud.speedLabel}
                 </p>
               </div>
-              <p className="mt-1 text-sm text-fg">{hud.cargoLabel}</p>
-              <div className="mt-1 h-2 bg-bg md:mt-2">
+              {!compact && (
+              <div>
+              <p className="mt-0.5 text-sm text-fg">
+                {hud.cargoLabel}
+                {hud.purityLabel && <span className="text-cash"> · {hud.purityLabel}</span>}
+              </p>
+              {hud.toolLabel && <p className="text-xs text-muted">{hud.toolLabel}</p>}
+              {hud.faceLabel && <p className="text-xs text-fg">{hud.faceLabel}</p>}
+              <div className="mt-1 h-1.5 bg-bg">
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
-              <p className="desk-only mt-2 text-sm leading-relaxed text-muted">{hud.hint}</p>
-              {hud.log[0] && <p className="mt-1 truncate text-sm text-cash">{hud.log[0]}</p>}
+              <p className="hud-hint mt-1 text-xs leading-snug text-muted">{hud.hint}</p>
+              {hud.log[0] && <p className="hud-hint mt-0.5 truncate text-xs text-cash">{hud.log[0]}</p>}
+              {hud.blastInfo && (
+                <p className={`mt-1 border px-2 py-0.5 text-xs ${hud.canBlast ? "border-red-500 text-red-200" : "border-border text-muted"}`}>{hud.blastInfo}</p>
+              )}
+              </div>
+              )}
             </div>
-            <p className="key-hint mt-2 text-sm text-muted">Space works the tool · V next machine · View changes camera · drag to orbit · pinch to zoom · Tab office</p>
           </footer>
-          <div className="touch-ui pointer-events-none absolute inset-x-0 bottom-0 z-10 items-end justify-between p-4 pb-6">
-            <Joystick onChange={(steer, throttle) => apiRef.current?.setStick(steer, throttle)} />
-            <div className="pointer-events-auto flex flex-col items-end gap-3">
-              <button
-                type="button"
-                className="h-12 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
-                onClick={() => apiRef.current?.cycle(1)}
-              >
-                Next
-              </button>
-              <button
-                type="button"
-                className="h-14 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
-                onClick={() => apiRef.current?.loadTruck()}
-              >
-                Load
-              </button>
-              <button
-                type="button"
-                className="flex h-20 w-20 items-center justify-center bg-primary font-display text-xl uppercase tracking-wide text-primary-fg"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  apiRef.current?.setAction(true);
-                }}
-                onPointerUp={() => apiRef.current?.setAction(false)}
-                onPointerCancel={() => apiRef.current?.setAction(false)}
-              >
-                Dig
-              </button>
+          {hud.twoSticks ? (
+            <div ref={padRef} key={`twin-${screen}`} className="twin-pad pointer-events-none absolute inset-x-0 bottom-0 z-10 gap-2 p-3 pb-4">
+              <div className="twin-btns pointer-events-auto flex flex-wrap content-end justify-center gap-2">
+                <SmallBtn onClick={() => apiRef.current?.cycle(1)}>Next</SmallBtn>
+                <SmallBtn onClick={() => apiRef.current?.loadTruck()}>Load</SmallBtn>
+                {hud.gearLabel && (
+                  <>
+                    <SmallBtn label="Shift up" onClick={() => apiRef.current?.shift(1)}>Gear ▲</SmallBtn>
+                    <SmallBtn label="Shift down" onClick={() => apiRef.current?.shift(-1)}>Gear ▼</SmallBtn>
+                  </>
+                )}
+                {hud.machineId === "excavator" && (
+                  <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Sticks: tracks" : "Sticks: dig"}</SmallBtn>
+                )}
+                {hud.canTest && <SmallBtn onClick={() => apiRef.current?.testHole()}>Test hole</SmallBtn>}
+                {hud.canBlast && <SmallBtn danger onClick={() => apiRef.current?.blast()}>Blast</SmallBtn>}
+                <button
+                  type="button"
+                  className="h-11 min-w-16 bg-primary px-4 font-display text-lg uppercase tracking-wide text-primary-fg"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    apiRef.current?.setAction(true);
+                  }}
+                  onPointerUp={() => apiRef.current?.setAction(false)}
+                  onPointerCancel={() => apiRef.current?.setAction(false)}
+                >
+                  Auto
+                </button>
+              </div>
+              <div className="twin-l">
+                <TwinStick label={hud.help.phoneLeft} onChange={(x, y) => { twin.current.left = { x, y }; apiRef.current?.setSticks(twin.current.left, twin.current.right); }} />
+              </div>
+              <div className="twin-r">
+                <TwinStick label={hud.help.phoneRight} onChange={(x, y) => { twin.current.right = { x, y }; apiRef.current?.setSticks(twin.current.left, twin.current.right); }} />
+              </div>
             </div>
-          </div>
+          ) : (
+          <div ref={padRef} key={`one-${screen}`} className="touch-ui pointer-events-none absolute inset-x-0 bottom-0 z-10 items-end justify-between p-4 pb-6">
+              <Joystick onChange={(steer, throttle) => apiRef.current?.setStick(steer, throttle)} />
+              <div className="pointer-events-auto flex flex-col items-end gap-3">
+                <button
+                  type="button"
+                  className="h-12 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
+                  onClick={() => apiRef.current?.cycle(1)}
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  className="h-14 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
+                  onClick={() => apiRef.current?.loadTruck()}
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  className="flex h-20 w-20 items-center justify-center bg-primary font-display text-xl uppercase tracking-wide text-primary-fg"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    apiRef.current?.setAction(true);
+                  }}
+                  onPointerUp={() => apiRef.current?.setAction(false)}
+                  onPointerCancel={() => apiRef.current?.setAction(false)}
+                >
+                  Dig
+                </button>
+              </div>
+            </div>
+          )}
           {panel && (
-            <aside className="absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-border bg-surface">
+            <aside className="office-panel absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-border bg-surface">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div>
                   <p className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Yard office</p>
@@ -263,18 +398,38 @@ export function MineScreen() {
                     ["machines", "Machines", Pickaxe],
                     ["ground", "Ground", Mountain],
                     ["crew", "Crew", Users],
+                    ["prices", "Prices", CircleDollarSign],
                   ] as const
                 ).map(([id, label, Icon]) => (
                   <button
                     key={id}
                     type="button"
-                    className={`inline-flex h-12 flex-1 items-center justify-center gap-2 font-display text-lg uppercase tracking-wide ${panel === id ? "bg-primary text-primary-fg" : "text-muted"}`}
+                    className={`inline-flex h-12 flex-1 items-center justify-center gap-1 font-display text-base uppercase tracking-wide md:gap-2 md:text-lg ${panel === id ? "bg-primary text-primary-fg" : "text-muted"}`}
                     onClick={() => setPanel(id)}
                   >
                     <Icon className="size-4" aria-hidden />
                     {label}
                   </button>
                 ))}
+              </div>
+              <div className="flex gap-2 border-b border-border px-4 py-2">
+                <button
+                  type="button"
+                  className="h-11 flex-1 border border-border px-2 font-display text-base uppercase tracking-wide text-fg"
+                  onClick={() => apiRef.current?.setControlMode(hud.controlMode === "real" ? "simple" : "real")}
+                >
+                  Controls: {hud.controlMode === "real" ? "Realistic" : "Simple"}
+                </button>
+                <button
+                  type="button"
+                  className={`h-11 flex-1 border px-2 font-display text-base uppercase tracking-wide ${hud.practice ? "border-primary bg-primary text-primary-fg" : "border-border text-fg"}`}
+                  onClick={() => {
+                    setPanel(null);
+                    apiRef.current?.practice(!hud.practice);
+                  }}
+                >
+                  {hud.practice ? "Leave practice" : "Practice yard"}
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {panel === "crew" && (
@@ -295,6 +450,39 @@ export function MineScreen() {
                   </div>
                 )}
 
+                {panel === "prices" && (
+                  <div className="py-3">
+                    <p className="text-sm text-cash">{hud.dayLabel}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-muted">Prices move every day, from half to double the normal price. Clean ore pays its purity: 90% pure gets 90% of the price. Selling a lot in one spot on one day dips that price a little.</p>
+                    {hud.prices.map((row) => (
+                      <article key={row.ore} className="border-b border-border py-3">
+                        <h2 className="font-display text-xl uppercase leading-none tracking-wide text-fg">{row.name}</h2>
+                        <ul className="mt-2 space-y-1">
+                          {row.spots.map((spot) => (
+                            <li key={spot.pad} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="text-muted">{spot.name}</span>
+                              <span className="flex items-center gap-2 text-fg">
+                                {spot.price}
+                                <span className={`inline-flex items-center gap-1 ${spot.trend === "up" ? "text-emerald-400" : spot.trend === "down" ? "text-red-400" : "text-muted"}`}>
+                                  {spot.trend === "up" ? <TrendingUp className="size-4" aria-label="rising" /> : spot.trend === "down" ? <TrendingDown className="size-4" aria-label="falling" /> : <Minus className="size-4" aria-label="steady" />}
+                                  {spot.pct}%
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {panel === "machines" && (
+                  <article className="border-b border-border py-4">
+                    <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Blasting</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-muted">
+                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts (you get it back if you drive off before the charges are set). Each face can be blasted once a day. Hold still 10 seconds while the holes are drilled, then get every machine 22 m back.
+                    </p>
+                  </article>
+                )}
                 {panel === "machines" &&
                   hud.machines.map((m) => (
                     <article key={m.id} className="border-b border-border py-4">
@@ -343,6 +531,7 @@ export function MineScreen() {
                         <p className="text-sm text-muted">{c.cargo}</p>
                       </div>
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
+                      {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
                         Work source
                         <select
@@ -376,6 +565,16 @@ export function MineScreen() {
                         >
                           {c.hireLabel}
                         </button>
+                        {c.repairLabel && (
+                          <button
+                            type="button"
+                            disabled={!c.affordableRepair}
+                            className="h-11 border border-red-500 px-3 font-display text-lg uppercase tracking-wide text-fg disabled:opacity-40"
+                            onClick={() => apiRef.current?.repair(c.index)}
+                          >
+                            {c.repairLabel}
+                          </button>
+                        )}
                         {c.sellLabel && (
                           <button
                             type="button"
@@ -435,7 +634,7 @@ function Joystick({ onChange }: { onChange: (steer: number, throttle: number) =>
   return (
     <div
       ref={ref}
-      className="pointer-events-auto relative h-32 w-32 rounded-full border border-border bg-surface"
+      className="drive-stick pointer-events-auto relative rounded-full border border-border bg-surface"
       aria-label="Drive"
       onPointerDown={(e) => {
         e.preventDefault();
@@ -454,4 +653,100 @@ function Joystick({ onChange }: { onChange: (steer: number, throttle: number) =>
       <span className="absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary" />
     </div>
   );
+}
+
+function SmallBtn({ children, onClick, active = false, danger = false, label }: { children: React.ReactNode; onClick: () => void; active?: boolean; danger?: boolean; label?: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={`h-11 min-w-14 border px-3 font-display text-base uppercase tracking-wide ${active ? "border-primary bg-primary text-primary-fg" : danger ? "border-red-500 bg-red-950/90 text-red-100" : "border-border bg-surface text-fg"}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A big free-moving thumb stick. Reports x (right +) and y (forward +). */
+function TwinStick({ label, onChange }: { label: string; onChange: (x: number, y: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  function fromEvent(e: React.PointerEvent) {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    let dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    const mag = Math.hypot(dx, dy);
+    if (mag > 1) {
+      dx /= mag;
+      dy /= mag;
+    }
+    setKnob({ x: dx, y: dy });
+    onChange(dx, -dy);
+  }
+  function release() {
+    setKnob({ x: 0, y: 0 });
+    onChange(0, 0);
+  }
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        ref={ref}
+        className="twin-stick pointer-events-auto relative touch-none rounded-full border border-border bg-surface/90"
+        aria-label={label}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          fromEvent(e);
+        }}
+        onPointerMove={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) fromEvent(e);
+        }}
+        onPointerUp={(e) => {
+          release();
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerCancel={release}
+      >
+        <span className="absolute inset-x-1/2 top-2 bottom-2 w-px bg-border" />
+        <span className="absolute inset-y-1/2 left-2 right-2 h-px bg-border" />
+        <span
+          className="absolute h-[34%] w-[34%] rounded-full bg-primary"
+          style={{ left: `${50 + knob.x * 33}%`, top: `${50 + knob.y * 33}%`, transform: "translate(-50%, -50%)" }}
+        />
+      </div>
+      <p className="max-w-40 rounded bg-surface/80 px-1 text-center text-xs text-fg">{label}</p>
+    </div>
+  );
+}
+
+export type ScreenShape = "cover" | "phone-land" | "inner" | "inner-land";
+
+/** Which screen we are on: folded cover (narrow), phone sideways, or the big unfolded inner screen. */
+function readShape(): ScreenShape {
+  if (typeof window === "undefined") return "cover";
+  const vv = window.visualViewport;
+  const w = vv?.width ?? window.innerWidth;
+  const h = vv?.height ?? window.innerHeight;
+  const short = Math.min(w, h);
+  if (short >= 600) return w > h ? "inner-land" : "inner";
+  return w > h ? "phone-land" : "cover";
+}
+
+function useScreenShape() {
+  const [shape, setShape] = useState<ScreenShape>(readShape);
+  useEffect(() => {
+    const update = () => setShape(readShape());
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
+  }, []);
+  return shape;
 }

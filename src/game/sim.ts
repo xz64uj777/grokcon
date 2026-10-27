@@ -18,7 +18,38 @@ import {
   tierInfo,
   upgradeCost,
 } from "@/game/catalog";
+import {
+  bladeDrag,
+  bucketPoint,
+  controlHelp,
+  gearedThrottle,
+  homeTool,
+  machineKind,
+  readGesture,
+  stepTool,
+  tankMotion,
+  usesGears,
+  type Gesture,
+} from "@/game/controls";
+import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
+import {
+  BLAST_RADIUS,
+  BLAST_COST,
+  canBlastToday,
+  DRILL_SECONDS,
+  FUSE_SECONDS,
+  TEST_HOLE_COST,
+  blastDamage,
+  blastYield,
+  cutFace,
+  damageFactor,
+  digRate,
+  mixPurity,
+  purityFactor,
+  repairCost,
+} from "@/game/mining";
 import type {
+  ControlMode,
   Deposit,
   GameState,
   HudModel,
@@ -39,9 +70,23 @@ export type Control = {
 
 export type StepFX = {
   dig: boolean;
+  blasts: { x: number; z: number }[];
   sales: { x: number; z: number; text: string; player: boolean }[];
   breaks: { x: number; z: number; tx: number; tz: number; ore: OreId }[];
 };
+
+/** How the action key/gesture is being used this frame. */
+export type WorkOpts = {
+  phase: "auto" | "fill" | "dump";
+  cut: "auto" | "top" | "toe";
+  quality: number;
+};
+
+const AUTO_PLAYER: WorkOpts = { phase: "auto", cut: "auto", quality: 0.8 };
+const AUTO_CREW: WorkOpts = { phase: "auto", cut: "auto", quality: 0.85 };
+
+export const MARKET_PADS = ["crusher", "reclaim", "sluice"] as const;
+export const MARKET_KEYS = MARKET_PADS.flatMap((pad) => (Object.keys(ORES) as OreId[]).map((ore) => marketKey(pad, ore)));
 
 const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
 const saleAcc = new WeakMap<VehicleState, number>();
@@ -107,7 +152,8 @@ function hypot(x: number, z: number) {
 
 export function vehicleStats(v: VehicleState) {
   const d = DEFS[v.defId];
-  const eng = 1 + v.upgrades.engine * 0.18;
+  const hurt = damageFactor(v.damage ?? 0);
+  const eng = (1 + v.upgrades.engine * 0.18) * hurt;
   const body = 1 + v.upgrades.body * 0.28;
   const hydro = 1 + v.upgrades.hydro * 0.3;
   const capacity = d.capacity === 0 ? 0 : d.capacity * body;
@@ -117,14 +163,19 @@ export function vehicleStats(v: VehicleState) {
     accel: d.accel * eng,
     turn: d.turn,
     capacity,
-    dig: d.dig * hydro,
-    scoop: d.scoop * hydro,
-    push,
+    dig: d.dig * hydro * hurt,
+    scoop: d.scoop * hydro * hurt,
+    push: push * hurt,
     radius: d.radius,
   };
 }
 
-export function unitPrice(ore: OreId, pad: PadKind, sluice: boolean) {
+/** Today's price per ton at a selling spot (normal price × the day's market move). */
+export function unitPrice(ore: OreId, pad: PadKind, sluice: boolean, market?: GameState["market"]) {
+  return basePrice(ore, pad, sluice) * priceMult(market, pad, ore);
+}
+
+export function basePrice(ore: OreId, pad: PadKind, sluice: boolean) {
   const o = ORES[ore];
   if (pad === "reclaim") return ore === "dirt" ? o.reclaim : Math.round(o.crusher * 0.4);
   if (pad === "sluice") {
@@ -176,7 +227,11 @@ function fillContract(state: GameState, ore: OreId, tons: number) {
 export function freshGame(company: string): GameState {
   const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
   return {
-    version: 1,
+    version: 2,
+    controlMode: "real",
+    market: freshMarket(Math.floor(Math.random() * 0xffffffff), MARKET_KEYS),
+    explosives: 0,
+    blast: null,
     company: name,
     cash: START_CASH,
     lifetime: 0,
@@ -214,6 +269,10 @@ function makeVehicle(id: VehicleId, slot: number): VehicleState {
     speed: 0,
     cargoOre: null,
     cargo: 0,
+    cargoPurity: 1,
+    damage: 0,
+    tool: homeTool(id),
+    manual: false,
     upgrades: { engine: 0, body: 0, hydro: 0 },
     hired: false,
     operator: false,
@@ -295,7 +354,7 @@ function closestDeposit(
   return best;
 }
 
-function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1) {
+function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1, purity = 1) {
   if (tons <= 0) return;
   let best: Deposit | null = null;
   let bestD = 16;
@@ -325,6 +384,7 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
   }
   if (best) {
     const t = best.tons + tons;
+    best.purity = mixPurity(best.tons, best.purity ?? 1, tons, purity);
     best.x = (best.x * best.tons + x * tons) / t;
     best.z = (best.z * best.tons + z * tons) / t;
     best.tons = t;
@@ -345,6 +405,15 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
     claim,
     radius: 6,
     sign: ORES[ore].name.toUpperCase(),
+    purity,
+    overburden: 0,
+    grade: purity,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: false,
+    tested: true,
+    lastBlastDay: -1,
   });
 }
 
@@ -362,7 +431,7 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number) {
   let score = -Infinity;
   for (const pad of livePads(state)) {
     if (pad.kind === "sluice" && !state.sluice) continue;
-    const unit = unitPrice(ore, pad.kind, state.sluice);
+    const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
     const d = distTo(x, z, pad.x, pad.z);
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
@@ -731,11 +800,57 @@ function materialInFront(state: GameState, v: VehicleState, reach: number) {
   return vein ?? pile;
 }
 
+function cargoInto(v: VehicleState, ore: OreId, tons: number, purity: number) {
+  if (tons <= 0) return;
+  v.cargoPurity = v.cargo > 0.05 && v.cargoOre === ore ? mixPurity(v.cargo, v.cargoPurity ?? 1, tons, purity) : purity;
+  v.cargo += tons;
+  v.cargoOre = ore;
+}
+
+function emptyCargo(v: VehicleState) {
+  v.cargo = 0;
+  v.cargoOre = null;
+  v.cargoPurity = 1;
+}
+
+/** What a bite of this face will produce, before cutting it. */
+function faceOutput(d: Deposit, cut: WorkOpts["cut"]): OreId {
+  if (d.ore === "dirt") return "dirt";
+  const top = cut === "top" || cut === "auto";
+  return top && d.overburden > 0.05 ? "dirt" : d.ore;
+}
+
+function cutLog(state: GameState, d: Deposit, res: ReturnType<typeof cutFace>, player: boolean) {
+  if (res.slide) log(state, `Wall slide at ${d.sign}! Dirt fell back on the ore. Strip the top before digging the bottom.`);
+  else if (res.benched && player) log(state, `${d.sign} is down to bench ${d.bench}. Strip the next layer of dirt off the top.`);
+}
+
+function dropInFront(state: GameState, v: VehicleState, x: number, z: number) {
+  if (!v.cargoOre || v.cargo < 0.05) return;
+  addPile(state, v.cargoOre, v.cargo, x, z, v.workClaim ?? 1, v.cargoPurity ?? 1);
+  emptyCargo(v);
+}
+
+function truckNear(state: GameState, v: VehicleState, x: number, z: number, reach: number) {
+  let best: VehicleState | null = null;
+  let bestD = reach;
+  for (const o of state.vehicles) {
+    if (o === v || !DEFS[o.defId].receives) continue;
+    const d = distTo(x, z, o.x, o.z);
+    if (d <= bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
 function performAction(
   state: GameState,
   index: number,
   dt: number,
   breaks: StepFX["breaks"],
+  opts: WorkOpts,
 ): StepFX["sales"][number] | null {
   const v = state.vehicles[index];
   const def = DEFS[v.defId];
@@ -743,90 +858,137 @@ function performAction(
   const fx = -Math.sin(v.yaw);
   const fz = -Math.cos(v.yaw);
   const player = index === state.active;
+  const manual = opts.phase !== "auto";
+  const kind = machineKind(v.defId);
 
-  const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
-  const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
-  const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
-  const crewShort = !player && st.capacity > 0 && v.cargo < st.capacity * 0.9;
-  const reclaimWaste = precious && pad?.kind === "reclaim";
-  if ((holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
-    if (player && holdForSluice) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
-  } else if (v.cargo > 0.04 && v.cargoOre && pad) {
-    const unit = unitPrice(v.cargoOre, pad.kind, state.sluice);
-    const sold = v.cargo;
-    const soldOre = v.cargoOre;
-    const gross = sold * unit;
-    const net = gross * (player ? 1 : CREW_KEEP);
-    const oreName = ORES[soldOre].name;
-    const bonus = fillContract(state, soldOre, sold);
-    state.cash += net;
-    state.lifetime += net;
-    v.cargo = 0;
-    v.cargoOre = null;
-    saleAcc.set(v, 0);
-    v.busy = true;
-    if (player) state.tutorial.dumped = true;
-    if (pad.kind === "crusher") {
-      const plant = state.vehicles.find((o) => o.defId === "crusher");
-      if (plant) plant.busy = true;
+  if (opts.phase !== "fill") {
+    const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
+    const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
+    const holdForSluice = !!v.cargoOre && !!pad && prefersSluice(state, v.cargoOre) && pad.kind !== "sluice";
+    const crewShort = !player && st.capacity > 0 && v.cargo < st.capacity * 0.9;
+    const reclaimWaste = precious && pad?.kind === "reclaim";
+    // A hand-worked excavator dumps where the bucket is, not where the tracks are.
+    const excavatorHand = manual && kind === "excavator";
+    if (!excavatorHand && (holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
+      if (player && holdForSluice) v.status = `${ORES[v.cargoOre].name} pays at the sluice`;
+    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
+      const unit = unitPrice(v.cargoOre, pad.kind, state.sluice, state.market);
+      const sold = v.cargo;
+      const soldOre = v.cargoOre;
+      const purity = purityFactor(soldOre, v.cargoPurity ?? 1);
+      const gross = sold * unit * purity;
+      const net = gross * (player ? 1 : CREW_KEEP);
+      const oreName = ORES[soldOre].name;
+      const bonus = fillContract(state, soldOre, sold);
+      recordSale(state.market, pad.kind, soldOre, sold);
+      state.cash += net;
+      state.lifetime += net;
+      emptyCargo(v);
+      saleAcc.set(v, 0);
+      v.busy = true;
+      if (player) state.tutorial.dumped = true;
+      if (pad.kind === "crusher") {
+        const plant = state.vehicles.find((o) => o.defId === "crusher");
+        if (plant) plant.busy = true;
+      }
+      const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
+      const pure = soldOre === "dirt" ? "" : ` ${Math.round(purity * 100)}%`;
+      return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName} ${sold.toFixed(1)}t${pure}${extra}`, player };
     }
-    const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
-    return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName} ${sold.toFixed(1)}t${extra}`, player };
+    if (manual && opts.phase === "dump" && v.cargo > 0.04 && v.cargoOre) {
+      // Hand dumping: into a truck if one is under the bucket, otherwise onto the ground.
+      if (kind === "excavator") {
+        const tip = bucketPoint(v.x, v.z, v.yaw, v.tool);
+        const truck = truckNear(state, v, tip.x, tip.z, 5.5);
+        if (truck) {
+          const msg = loadTruck(state, index, 99, truck);
+          if (player) log(state, msg);
+        } else {
+          dropInFront(state, v, tip.x, tip.z);
+          if (player) v.status = "Dumped on the ground";
+        }
+        v.busy = true;
+        return null;
+      }
+      if (kind === "skid" || kind === "loader") {
+        const truck = truckNear(state, v, v.x + fx * 3, v.z + fz * 3, 6.5);
+        if (truck) {
+          const msg = loadTruck(state, index, 99, truck);
+          if (player) log(state, msg);
+        } else {
+          dropInFront(state, v, v.x + fx * (st.radius + 2.6), v.z + fz * (st.radius + 2.6));
+          if (player) v.status = "Dumped on the ground";
+        }
+        v.busy = true;
+        return null;
+      }
+      if (kind === "truck") {
+        dropInFront(state, v, v.x - fx * (st.radius + 3), v.z - fz * (st.radius + 3));
+        if (player) v.status = "Dumped on the ground. Back up to the crusher to get paid.";
+        v.busy = true;
+        return null;
+      }
+    }
+    if (opts.phase === "dump") return null;
   }
 
   if (def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
-    const vein = closestFace(state, v.x, v.z, v);
+    const tip = manual && kind === "excavator" ? bucketPoint(v.x, v.z, v.yaw, v.tool) : { x: v.x, z: v.z };
+    const vein = closestFace(state, tip.x, tip.z, v);
     if (vein) {
       if (!ownsClaim(state, vein.claim)) {
         if (player) v.status = "Unleased ground";
         return null;
       }
-      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== vein.ore) {
-        if (def.dig > 0) {
-          addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6, v.workClaim ?? 1);
-          v.cargo = 0;
-          v.cargoOre = null;
-        } else {
-          if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
+      const output = faceOutput(vein, opts.cut);
+      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== output) {
+        if (manual) {
+          if (player) v.status = `Dump the ${ORES[v.cargoOre].name.toLowerCase()} first`;
           return null;
         }
+        addPile(state, v.cargoOre, v.cargo, v.x + fx * 6, v.z + fz * 6, v.workClaim ?? 1, v.cargoPurity ?? 1);
+        emptyCargo(v);
       }
       v.busy = true;
       if (!takeBite(v, dt, 0.5)) {
-        if (player) v.status = `Breaking ${ORES[vein.ore].name}`;
+        if (player) v.status = `Breaking ${ORES[output].name}`;
         return null;
       }
-      const bite = Math.min(vein.tons, st.dig * 0.5);
+      const want = Math.min(vein.ore === "dirt" || output === "dirt" ? Infinity : vein.tons, st.dig * 0.5 * digRate(vein));
+      const res = vein.ore === "dirt"
+        ? { ore: true, tons: Math.min(vein.tons, want), purity: 1, slide: false, benched: false }
+        : cutFace(vein, want, opts.cut, opts.quality);
+      const bite = res.tons;
+      if (res.ore) vein.tons -= bite;
+      cutLog(state, vein, res, player);
       if (bite > 0) {
         const room = st.capacity - v.cargo;
-        const precious = vein.ore === "gold" || vein.ore === "copper";
+        const precious = output === "gold" || output === "copper";
         const truckBeside = state.vehicles.some(
           (o) => o !== v && DEFS[o.defId].receives && vehicleStats(o).capacity - o.cargo > 0.4 && distTo(v.x, v.z, o.x, o.z) < 16,
         );
-        const intoBucket = def.id === "excavator" ? Math.min(room, truckBeside ? bite : bite * 0.2) : Math.min(room, precious ? bite : bite * 0.62);
+        let intoBucket: number;
+        if (manual) intoBucket = Math.min(room, bite * (0.45 + 0.55 * opts.quality));
+        else intoBucket = def.id === "excavator" ? Math.min(room, truckBeside ? bite : bite * 0.2) : Math.min(room, precious ? bite : bite * 0.62);
         const spill = bite - intoBucket;
-        vein.tons -= bite;
-        if (intoBucket > 0.01) {
-          v.cargo += intoBucket;
-          v.cargoOre = vein.ore;
-        }
+        if (intoBucket > 0.01) cargoInto(v, output, intoBucket, res.purity);
         const dx = v.x - vein.x;
         const dz = v.z - vein.z;
         const dist = Math.hypot(dx, dz) || 1;
         const side = def.id === "excavator" ? 8 : 0;
         const toeX = vein.x + (dx / dist) * 4.2 + (-dz / dist) * side;
         const toeZ = vein.z + (dz / dist) * 4.2 + (dx / dist) * side;
-        if (spill > 0.04) addPile(state, vein.ore, spill, toeX, toeZ, vein.claim);
+        if (spill > 0.04) addPile(state, output, spill, toeX, toeZ, vein.claim, res.purity);
         breaks.push({
           x: vein.x,
           z: vein.z,
           tx: spill > intoBucket ? toeX : v.x,
           tz: spill > intoBucket ? toeZ : v.z,
-          ore: vein.ore,
+          ore: output,
         });
         if (player) {
           state.tutorial.loaded = true;
-          v.status = `Broke ${bite.toFixed(1)} t of ${ORES[vein.ore].name}`;
+          v.status = output === "dirt" && vein.ore !== "dirt" ? `Stripped ${bite.toFixed(1)} t of dirt off the top` : `Broke ${bite.toFixed(1)} t of ${ORES[output].name}`;
         }
       }
       return null;
@@ -841,23 +1003,34 @@ function performAction(
     const source = faceNear && spot ? spot : pile && pile.tons > 0.05 ? pile : null;
     if (source) {
       if (!ownsClaim(state, source.claim)) return null;
-      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== source.ore) {
+      const output = source.kind === "vein" ? faceOutput(source, opts.cut) : source.ore;
+      if (v.cargo > 0.08 && v.cargoOre && v.cargoOre !== output) {
         if (player) v.status = `Dump ${ORES[v.cargoOre].name} first`;
         return null;
       }
       v.busy = true;
       if (!takeBite(v, dt, 0.42)) {
-        if (player) v.status = `Scooping ${ORES[source.ore].name}`;
+        if (player) v.status = `Scooping ${ORES[output].name}`;
         return null;
       }
-      const take = Math.min(source.tons, st.capacity - v.cargo, st.scoop * 0.42);
-      if (take > 0) {
-        source.tons -= take;
-        v.cargo += take;
-        v.cargoOre = source.ore;
-        breaks.push({ x: source.x, z: source.z, tx: v.x, tz: v.z, ore: source.ore });
-        if (player) state.tutorial.loaded = true;
+      const want = Math.min(st.capacity - v.cargo, st.scoop * 0.42);
+      if (source.kind === "vein" && source.ore !== "dirt") {
+        const res = cutFace(source, Math.min(want * digRate(source), output === "dirt" ? want : source.tons), opts.cut, opts.quality);
+        if (res.ore) source.tons -= res.tons;
+        cutLog(state, source, res, player);
+        if (res.tons > 0) cargoInto(v, output, res.tons, res.purity);
+      } else {
+        const take = Math.min(source.tons, want);
+        if (take > 0) {
+          source.tons -= take;
+          // A sloppy, fast scoop picks up ground dirt with the pile.
+          const keep = manual ? take * (0.5 + 0.5 * opts.quality) : take;
+          if (keep < take - 0.01) addPile(state, source.ore, take - keep, v.x + fx * 2.5, v.z + fz * 2.5, source.claim, source.purity ?? 1);
+          cargoInto(v, source.ore, keep, (source.purity ?? 1) * (0.85 + 0.15 * opts.quality));
+        }
       }
+      breaks.push({ x: source.x, z: source.z, tx: v.x, tz: v.z, ore: output });
+      if (player) state.tutorial.loaded = true;
       return null;
     }
   }
@@ -865,13 +1038,26 @@ function performAction(
   if (def.push > 0) {
     const src = materialInFront(state, v, def.range);
     if (src && ownsClaim(state, src.claim) && acceptsJob(state, v, src)) {
-      const take = Math.min(src.tons, st.push * dt);
-      if (take > 0) {
+      const want = st.push * dt * (src.kind === "vein" ? digRate(src) : 1) * (manual ? 1.6 - v.tool.lift * 2 : 1);
+      const dropX = src.kind === "vein" ? src.x + fx * 6 : v.x + fx * (st.radius + 3.4);
+      const dropZ = src.kind === "vein" ? src.z + fz * 6 : v.z + fz * (st.radius + 3.4);
+      let ore = src.ore;
+      let take = 0;
+      let purity = src.purity ?? 1;
+      if (src.kind === "vein" && src.ore !== "dirt") {
+        ore = faceOutput(src, opts.cut);
+        const res = cutFace(src, ore === "dirt" ? want : Math.min(src.tons, want), opts.cut, opts.quality);
+        if (res.ore) src.tons -= res.tons;
+        cutLog(state, src, res, player);
+        take = res.tons;
+        purity = res.purity;
+      } else {
+        take = Math.min(src.tons, want);
         src.tons -= take;
-        const dropX = src.kind === "vein" ? src.x + fx * 6 : v.x + fx * (st.radius + 3.4);
-        const dropZ = src.kind === "vein" ? src.z + fz * 6 : v.z + fz * (st.radius + 3.4);
-        addPile(state, src.ore, take, dropX, dropZ, src.claim);
-        if (takeBite(v, dt, 0.34)) breaks.push({ x: src.x, z: src.z, tx: dropX, tz: dropZ, ore: src.ore });
+      }
+      if (take > 0) {
+        addPile(state, ore, take, dropX, dropZ, src.claim, purity);
+        if (takeBite(v, dt, 0.34)) breaks.push({ x: src.x, z: src.z, tx: dropX, tz: dropZ, ore });
         v.busy = true;
         if (player) state.tutorial.loaded = true;
       }
@@ -881,6 +1067,21 @@ function performAction(
 
   if (player && v.cargo > 0.04 && v.cargoOre) v.status = `${ORES[v.cargoOre].name} stays in the bucket`;
   return null;
+}
+
+function integrateTank(v: VehicleState, left: number, right: number, dt: number, drag: number) {
+  const st = vehicleStats(v);
+  const m = tankMotion(left, right);
+  const target = (m.forward >= 0 ? m.forward : m.forward * 0.6) * st.maxSpeed * drag;
+  const opposing = Math.sign(target) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.25;
+  const accel = st.accel * (opposing ? 1.75 : 1);
+  if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
+  else v.speed = Math.max(target, v.speed - accel * dt);
+  if (Math.abs(v.speed) < 0.05 && Math.abs(m.forward) < 0.05) v.speed = 0;
+  // Counter-rotating sides spin the machine in place.
+  v.yaw += m.turn * st.turn * 1.1 * dt;
+  v.x += -Math.sin(v.yaw) * v.speed * dt;
+  v.z += -Math.cos(v.yaw) * v.speed * dt;
 }
 
 function integrate(v: VehicleState, c: Control, dt: number) {
@@ -912,8 +1113,8 @@ function resolveCircle(v: VehicleState, radius: number) {
     const maxZ = b.z + hz;
     const cx = clamp(v.x, minX, maxX);
     const cz = clamp(v.z, minZ, maxZ);
-    let dx = v.x - cx;
-    let dz = v.z - cz;
+    const dx = v.x - cx;
+    const dz = v.z - cz;
     const d2 = dx * dx + dz * dz;
     if (d2 >= radius * radius) continue;
     if (d2 < 1e-8) {
@@ -989,15 +1190,15 @@ function regen(state: GameState, dt: number) {
   }
 }
 
-export function loadTruck(state: GameState, index = state.active, maxDist = 32): string {
+export function loadTruck(state: GameState, index = state.active, maxDist = 32, forced: VehicleState | null = null): string {
   const v = state.vehicles[index];
   if (!v) return "No machine.";
   const def = DEFS[v.defId];
   if (def.receives || def.capacity <= 0) return "This machine can't load a truck.";
   if (v.cargo < 0.08 || !v.cargoOre) return "Bucket is empty.";
-  let truck: VehicleState | null = null;
+  let truck: VehicleState | null = forced;
   let bestD = maxDist;
-  for (const o of state.vehicles) {
+  for (const o of forced ? [] : state.vehicles) {
     if (o === v || !DEFS[o.defId].receives) continue;
     const d = distTo(v.x, v.z, o.x, o.z);
     if (d <= bestD) {
@@ -1010,18 +1211,13 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32):
   if (room < 0.2) return "Dump truck is full.";
   if (truck.cargoOre && truck.cargoOre !== v.cargoOre) {
     if (truck.cargo > 1.5) return `Truck is loaded with ${ORES[truck.cargoOre].name}.`;
-    truck.cargo = 0;
-    truck.cargoOre = null;
+    emptyCargo(truck);
   }
   const move = Math.min(v.cargo, room);
   const ore = v.cargoOre;
-  if (truck.cargo < 0.05) truck.cargoOre = ore;
-  truck.cargo += move;
+  cargoInto(truck, ore, move, v.cargoPurity ?? 1);
   v.cargo -= move;
-  if (v.cargo <= 0.08) {
-    v.cargo = 0;
-    v.cargoOre = null;
-  }
+  if (v.cargo <= 0.08) emptyCargo(v);
   v.busy = true;
   const msg = `Loaded ${move.toFixed(1)} t of ${ORES[ore].name} into the ${DEFS[truck.defId].name}.`;
   v.status = msg;
@@ -1032,18 +1228,129 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32):
 function pourIntoTrucks(state: GameState) {
   state.vehicles.forEach((v, index) => {
     if (v.defId !== "loader" && v.defId !== "excavator") return;
+    // Hand-worked machines dump into the truck themselves.
+    if (v.manual) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
     loadTruck(state, index, v.defId === "excavator" ? 16 : 22);
   });
 }
 
+function faceNearPlayer(state: GameState, v: VehicleState, extra = 4) {
+  const tip = v.defId === "excavator" ? bucketPoint(v.x, v.z, v.yaw, v.tool) : { x: v.x, z: v.z };
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (d.kind !== "vein" || d.ore === "dirt") continue;
+    const f = faceOf(d);
+    const dist = Math.min(distTo(tip.x, tip.z, f.x, f.z), distTo(v.x, v.z, f.x, f.z));
+    if (dist <= f.reach + extra && dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
+  const b = state.blast;
+  if (!b) return;
+  const d = state.deposits.find((o) => o.id === b.deposit);
+  if (!d) {
+    state.blast = null;
+    return;
+  }
+  if (b.phase === "drill") {
+    const v = state.vehicles[state.active];
+    const f = faceOf(d);
+    if (!v || distTo(v.x, v.z, f.x, f.z) > f.reach + 8) {
+      state.blast = null;
+      refundBlast(state, b, d);
+      log(state, "Drilling stopped. The blast is called off and you got your money back.");
+      return;
+    }
+    if (Math.abs(v.speed) < 0.5) b.t += dt;
+    if (b.t >= DRILL_SECONDS) {
+      b.phase = "fuse";
+      b.t = FUSE_SECONDS;
+      log(state, `Charges set in ${d.sign}. Get every machine back ${BLAST_RADIUS} m!`);
+    }
+    return;
+  }
+  b.t -= dt;
+  if (b.t > 0) return;
+  const f = faceOf(d);
+  const loose = blastYield(d.tons);
+  const dirt = Math.min(d.overburden, 30);
+  d.tons -= loose;
+  d.overburden -= dirt;
+  d.stress = 0;
+  const dx = GATE.x - f.x;
+  const dz = GATE.z - f.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const px = f.x + (dx / len) * 6;
+  const pz = f.z + (dz / len) * 6;
+  if (loose > 0.1) addPile(state, d.ore, loose, px, pz, d.claim, d.grade * 0.95);
+  if (dirt > 0.1) addPile(state, "dirt", dirt, px + (-dz / len) * 7, pz + (dx / len) * 7, d.claim, 1);
+  let hurt = 0;
+  for (const v of state.vehicles) {
+    const dmg = blastDamage(distTo(v.x, v.z, f.x, f.z));
+    if (dmg > 0) {
+      v.damage = Math.min(1, (v.damage ?? 0) + dmg);
+      hurt += 1;
+    }
+  }
+  blasts.push({ x: f.x, z: f.z });
+  state.blast = null;
+  log(state, hurt > 0
+    ? `BOOM. ${loose.toFixed(0)} t of loose ${ORES[d.ore].name.toLowerCase()}. ${hurt} machine${hurt > 1 ? "s were" : " was"} too close and needs repair.`
+    : `BOOM. ${loose.toFixed(0)} t of loose ${ORES[d.ore].name.toLowerCase()} is ready to scoop.`);
+}
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   regen(state, dt);
+  if (advanceMarket(state.market, state.seconds, MARKET_KEYS)) log(state, "New day. Ore prices moved. Check the price board.");
   const controls: Control[] = [];
+  const work: WorkOpts[] = [];
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
     v.busy = false;
+    v.manual = false;
     let c: Control;
+    let w: WorkOpts = i === state.active ? AUTO_PLAYER : AUTO_CREW;
+    if (i === state.active && playerEnabled && state.controlMode === "real" && input.cmd) {
+      const cmd = input.cmd;
+      const prev = v.tool;
+      v.tool = stepTool(prev, cmd.axes, dt, v.defId);
+      v.manual = machineKind(v.defId) !== "car";
+      let gesture: Gesture = { phase: "none", cut: "top", quality: 0 };
+      if (cmd.drive.kind === "tank") {
+        const drag = v.defId === "dozer" ? bladeDrag(v.tool.lift) : 1;
+        integrateTank(v, cmd.drive.left, cmd.drive.right, dt, drag);
+        gesture = readGesture(v.defId, prev, v.tool, v.speed);
+        c = { throttle: 0, steer: 0, action: false, brake: 0 };
+      } else {
+        const throttle = usesGears(v.defId) ? gearedThrottle(cmd.drive.throttle, v.tool.gear) : cmd.drive.throttle;
+        c = { throttle, steer: cmd.drive.steer, action: false, brake: cmd.drive.brake > 0.1 ? 1 : 0 };
+        integrate(v, c, dt);
+        gesture = readGesture(v.defId, prev, v.tool, v.speed);
+        // Driving with the bed up throws the load off the back.
+        if (machineKind(v.defId) === "truck" && v.tool.lift > 0.5 && Math.abs(v.speed) > 5 && v.cargo > 0.5) {
+          const fx = -Math.sin(v.yaw);
+          const fz = -Math.cos(v.yaw);
+          dropInFront(state, v, v.x - fx * 6, v.z - fz * 6);
+          log(state, "The load slid off the back. Lower the bed before you drive.");
+        }
+      }
+      if (gesture.phase !== "none") {
+        w = { phase: gesture.phase, cut: gesture.cut, quality: gesture.quality };
+        c = { ...c, action: true };
+      } else if (input.action) {
+        c = { ...c, action: true };
+      }
+      controls.push(c);
+      work.push(w);
+      continue;
+    }
     if (i === state.active) {
       c = playerEnabled
         ? {
@@ -1060,6 +1367,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       v.status = "Parked";
     }
     controls.push(c);
+    work.push(w);
     integrate(v, c, dt);
   }
   for (let n = 0; n < 2; n++) {
@@ -1069,6 +1377,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   pourIntoTrucks(state);
   const sales: StepFX["sales"] = [];
   const breaks: StepFX["breaks"] = [];
+  const blasts: StepFX["blasts"] = [];
   let dig = false;
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
@@ -1098,16 +1407,92 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     }
     if (i === state.active) v.status = "";
     const before = v.cargo;
-    const sale = performAction(state, i, dt, breaks);
+    const sale = performAction(state, i, dt, breaks, work[i]);
     if (sale) sales.push(sale);
     if (i === state.active && v.busy && v.cargo >= before - 1e-6 && !sale) dig = true;
   }
+  updateBlast(state, dt, blasts);
   const player = state.vehicles[state.active];
   if (player && !player.status) {
     player.status = player.busy ? "Working" : "In your seat";
   }
   state.seconds += dt;
-  return { dig, sales, breaks };
+  return { dig, sales, breaks, blasts };
+}
+
+export function setControlMode(state: GameState, mode: ControlMode) {
+  state.controlMode = mode;
+  log(state, mode === "real" ? "Realistic controls on. Work the arms and bucket by hand." : "Simple controls on. Hold Space or DIG to work.");
+}
+
+export function shiftGear(state: GameState, dir: number) {
+  const v = state.vehicles[state.active];
+  if (!v || !usesGears(v.defId)) return "";
+  if (Math.abs(v.speed) > 1.5) {
+    v.status = "Stop before you shift";
+    return "Stop before you shift.";
+  }
+  const next = Math.max(-1, Math.min(1, v.tool.gear + (dir > 0 ? 1 : -1))) as -1 | 0 | 1;
+  v.tool = { ...v.tool, gear: next };
+  v.status = `Gear ${gearName(next)}`;
+  return "";
+}
+
+function gearName(g: number) {
+  return g > 0 ? "F (forward)" : g < 0 ? "R (reverse)" : "N (neutral)";
+}
+
+export function drillTestHole(state: GameState) {
+  const v = state.vehicles[state.active];
+  if (!v) return "No machine.";
+  const d = faceNearPlayer(state, v);
+  if (!d) return "Pull up to a face first.";
+  if (d.tested) return `${d.sign} is already tested.`;
+  if (!ownsClaim(state, d.claim)) return "Lease the ground first.";
+  if (!spend(state, TEST_HOLE_COST, `Test hole in ${d.sign}: seam ${Math.round(d.grade * 100)}% clean, ${d.overburden.toFixed(0)} t of dirt on top${d.hard ? ", hard rock" : ""}.`)) return "Not enough cash.";
+  d.tested = true;
+  return "";
+}
+
+function refundBlast(state: GameState, b: NonNullable<GameState["blast"]>, d: Deposit | undefined) {
+  if (b.paid > 0) state.cash += b.paid;
+  else state.explosives += 1;
+  if (d) d.lastBlastDay = -1;
+}
+
+export function blastPrice() {
+  return BLAST_COST;
+}
+
+export function startBlast(state: GameState) {
+  if (state.blast) return "A blast is already set.";
+  const v = state.vehicles[state.active];
+  if (!v) return "No machine.";
+  const d = faceNearPlayer(state, v);
+  if (!d) return "Pull up to a face first.";
+  if (!ownsClaim(state, d.claim)) return "Lease the ground first.";
+  if (d.tons < 1) return "Nothing left to blast here.";
+  if (!canBlastToday(d.lastBlastDay, state.market.day)) return `${d.sign} was already blasted today. Try again tomorrow.`;
+  let paid = 0;
+  if (state.explosives > 0) state.explosives -= 1;
+  else {
+    paid = blastPrice();
+    if (!spend(state, paid, `Blast crew paid ${formatMoney(paid)} for ${d.sign}.`)) return `A blast here costs ${formatMoney(paid)}.`;
+  }
+  d.lastBlastDay = state.market.day;
+  const f = faceOf(d);
+  state.blast = { deposit: d.id, x: f.x, z: f.z, phase: "drill", t: 0, paid };
+  log(state, `Drilling blast holes in ${d.sign}. Hold still for ${DRILL_SECONDS} seconds.`);
+  return "";
+}
+
+export function repairVehicle(state: GameState, index: number) {
+  const v = state.vehicles[index];
+  if (!v || (v.damage ?? 0) <= 0.001) return "Nothing to fix.";
+  const cost = repairCost(DEFS[v.defId].price, v.damage);
+  if (!spend(state, cost, `${DEFS[v.defId].name} is fixed for ${formatMoney(cost)}.`)) return "Not enough cash.";
+  v.damage = 0;
+  return "";
 }
 
 function spend(state: GameState, cost: number, msg: string) {
@@ -1269,7 +1654,7 @@ function hint(state: GameState) {
   if (def.dig > 0) {
     const vein = closestDeposit(state, v.x, v.z, "vein", extra);
     if (vein && ownsClaim(state, vein.claim)) return `Hold DIG to break ${ORES[vein.ore].name.toLowerCase()} off the face. The loose rock falls in front.`;
-    return "Find a face inside the gate. V switches machines.";
+    return "Find a face inside the gate. Next switches machines.";
   }
   if (def.scoop > 0) {
     const pile = closestDeposit(state, v.x, v.z, "pile", 0);
@@ -1280,10 +1665,105 @@ function hint(state: GameState) {
     if (v.cargo < 0.1) return "Park beside a payloader or excavator and let them fill you.";
     return "Hold DIG beside the track crusher to dump.";
   }
-  return "WASD drive. Hold DIG to work. V next machine.";
+  return "Drive with the stick. Hold DIG to work. Next switches machines.";
 }
 
-export function buildHud(state: GameState, hadSave: boolean): HudModel {
+function realHint(state: GameState): string | null {
+  const v = state.vehicles[state.active];
+  if (!v || state.controlMode !== "real") return null;
+  const k = machineKind(v.defId);
+  const t = v.tool;
+  const pad = nearestPad(state, v.x, v.z);
+  const full = vehicleStats(v).capacity > 0 && v.cargo >= vehicleStats(v).capacity * 0.92;
+  const face = faceNearPlayer(state, v, 2);
+  if (face && face.stress > 0.5) return `The ${face.sign} wall is getting steep! Lift the bucket halfway and strip the dirt off the top first.`;
+  if (k === "skid" || k === "loader") {
+    const arms = k === "skid" ? "left stick right" : "right stick up";
+    const curl = "right stick left";
+    if (v.cargo > 0.08 && (pad || truckNear(state, v, v.x, v.z, 9))) {
+      if (t.lift < 0.45) return `Raise the arms (${arms}), then dump (right stick right).`;
+      return "Dump the bucket: right stick right.";
+    }
+    if (full) return "Bucket full. Lift it a little and drive to a truck, the crusher or the waste pile.";
+    if (t.lift > 0.5) return `Lower the arms to the ground (${k === "skid" ? "left stick left" : "right stick down"}).`;
+    return `Roll in slowly with the bucket low, then curl it back (${curl}). Too fast spills.`;
+  }
+  if (k === "excavator") {
+    const tip = bucketPoint(v.x, v.z, v.yaw, t);
+    if (v.cargo > 0.08) {
+      const truck = truckNear(state, v, tip.x, tip.z, 5.5);
+      if (truck) return t.lift < 0.35 ? "Bucket is over the truck. Boom up (right stick back), then dump (right stick right)." : "Dump it: right stick right.";
+      return "Swing (left stick sideways) until the bucket is over a truck, boom up and dump.";
+    }
+    if (closestFace(state, tip.x, tip.z, v)) return "Boom down (right stick forward), arm out (left stick forward), curl slowly (right stick left). Don't swing while curling.";
+    return "Tap Sticks: tracks to drive. Swing and reach the bucket into a face.";
+  }
+  if (k === "dozer") {
+    if (t.lift < 0.08) return "Blade is buried and stalling. Lift it a little (left stick right).";
+    if (t.lift >= 0.3) return "Lower the blade (left stick left) and drive into a face or pile.";
+    return "Blade on the ground. Push both sticks forward into the face.";
+  }
+  if (k === "truck") {
+    if (v.cargo > 0.08 && pad) return t.lift < 0.6 ? `At the ${pad.name.toLowerCase()}. Raise the bed (right stick up).` : "Dumping…";
+    if (t.lift > 0.2) return "Lower the bed (right stick down) before you drive.";
+    if (v.tool.gear === 0) return "In neutral. Tap Gear ▲ to drive forward.";
+  }
+  return null;
+}
+
+function toolLabel(v: VehicleState, mode: ControlMode) {
+  if (mode !== "real") return "";
+  const k = machineKind(v.defId);
+  const t = v.tool;
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const bucket = t.tilt > 0.5 ? "curled" : t.tilt < -0.3 ? "dumped" : "level";
+  if (k === "skid" || k === "loader") return `Arms ${pct(t.lift)} · bucket ${bucket}`;
+  if (k === "excavator") {
+    const deg = Math.round((t.swing * 180) / Math.PI);
+    return `Boom ${pct(t.lift)} · arm ${pct(t.reach)} · swing ${Math.abs(deg)}°${deg > 0 ? " L" : deg < 0 ? " R" : ""} · bucket ${bucket}`;
+  }
+  if (k === "dozer") return `Blade ${t.lift < 0.08 ? "buried" : t.lift < 0.3 ? "on the ground" : "raised"} · angle ${Math.round(t.tilt * 30)}°`;
+  if (k === "truck") return `Bed ${t.lift > 0.6 ? "up" : t.lift > 0.05 ? "rising" : "down"}`;
+  return "";
+}
+
+function faceLabel(state: GameState, v: VehicleState) {
+  const d = faceNearPlayer(state, v, 10);
+  if (!d) return "";
+  const wall = d.stress > 0.5 ? " · WALL STEEP" : "";
+  const hard = d.hard ? " · hard rock" : "";
+  if (!d.tested) return `${d.sign} · bench ${d.bench} · not tested${hard}${wall}`;
+  return `${d.sign} · seam ${Math.round(d.grade * 100)}% · ${d.overburden.toFixed(0)} t dirt on top · bench ${d.bench}${hard}${wall}`;
+}
+
+function priceRows(state: GameState): HudModel["prices"] {
+  const pads = PADS.filter((p) => p.kind !== "sluice" || state.sluice);
+  return (Object.keys(ORES) as OreId[]).map((ore) => ({
+    ore,
+    name: ORES[ore].name,
+    spots: pads.map((p) => {
+      const mult = priceMult(state.market, p.kind, ore);
+      return {
+        pad: p.kind,
+        name: p.name,
+        price: `${formatMoney(unitPrice(ore, p.kind, state.sluice, state.market))}/t`,
+        trend: trend(state.market, p.kind, ore),
+        pct: Math.round(mult * 100),
+      };
+    }),
+  }));
+}
+
+function blastLabel(state: GameState) {
+  const b = state.blast;
+  if (!b) return "";
+  if (b.phase === "drill") return `Drilling blast holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`;
+  const v = state.vehicles[state.active];
+  const far = v ? distTo(v.x, v.z, b.x, b.z) : 99;
+  return `BLAST IN ${Math.ceil(b.t)} · you are ${far.toFixed(0)} m away${far < BLAST_RADIUS ? ` · GET BACK ${BLAST_RADIUS} m!` : " · safe"}`;
+}
+
+export function buildHud(state: GameState, hadSave: boolean, excDrive = false): HudModel {
   const v = state.vehicles[state.active];
   const info = tierInfo(state.lifetime);
   const st = v ? vehicleStats(v) : null;
@@ -1334,6 +1814,9 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
       sellLabel: state.vehicles.length > 1 ? `Sell · ${formatMoney(resale(veh))}` : null,
       affordableHire: veh.hired || state.cash >= HIRE_COST,
+      repairLabel: (veh.damage ?? 0) > 0.001 ? `Repair · ${formatMoney(repairCost(def.price, veh.damage))}` : null,
+      affordableRepair: state.cash >= repairCost(def.price, veh.damage ?? 0),
+      damageLabel: (veh.damage ?? 0) > 0.001 ? `Damaged ${Math.round(veh.damage * 100)}%` : "",
       upgrades: kinds.map((k) => {
         const cost = upgradeCost(veh.defId, k.kind, veh.upgrades[k.kind]);
         return {
@@ -1369,12 +1852,13 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
     tierProgress: info.progress,
     tierDetail: info.nextAt != null ? `${formatMoney(state.lifetime)} earned · ${formatMoney(info.nextAt)} to ${info.next}` : "The books are closed on a full company.",
     shift: `Shift ${mm}:${ss.toString().padStart(2, "0")}`,
-    hint: hint(state),
+    hint: realHint(state) ?? hint(state),
     objective: objective(state),
     vehicleName: v ? DEFS[v.defId].name : "—",
     vehicleIndex: state.active,
     vehicleCount: state.vehicles.length,
     speedLabel: `${Math.round(Math.abs(v?.speed ?? 0) * 2.15)} mph`,
+    moving: Math.abs(v?.speed ?? 0) > 0.6,
     cargoLabel: v ? cargoLine(v) : "",
     cargoFrac: st && st.capacity > 0 && v ? clamp(v.cargo / st.capacity, 0, 1) : 0,
     muted: state.muted,
@@ -1387,5 +1871,37 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
     hadSave,
     savedBlurb,
     contractLabel,
+    controlMode: state.controlMode,
+    machineId: v ? v.defId : null,
+    gearLabel: v && state.controlMode === "real" && usesGears(v.defId) ? `Gear ${gearName(v.tool.gear)}` : null,
+    toolLabel: v ? toolLabel(v, state.controlMode) : "",
+    purityLabel: v && v.cargo > 0.05 && v.cargoOre && v.cargoOre !== "dirt" ? `Purity ${Math.round((v.cargoPurity ?? 1) * 100)}%` : "",
+    faceLabel: v ? faceLabel(state, v) : "",
+    help: controlHelp(v?.defId ?? "pickup", excDrive),
+    twoSticks: state.controlMode === "real" && !!v && machineKind(v.defId) !== "car",
+    prices: priceRows(state),
+    dayLabel: (() => {
+      const left = Math.max(0, DAY_SECONDS - (state.seconds % DAY_SECONDS));
+      return `Day ${state.market.day + 1} · new prices in ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
+    })(),
+    explosives: state.explosives,
+    blastInfo: (() => {
+      const d = v ? faceNearPlayer(state, v) : null;
+      if (!d || state.blast) return "";
+      if (!ownsClaim(state, d.claim) || d.tons < 1) return "";
+      if (!canBlastToday(d.lastBlastDay, state.market.day)) return `${d.sign} already blasted today · next blast tomorrow`;
+      if (state.explosives > 0) return `Blast ${d.sign} · free practice charge (${state.explosives} left)`;
+      return `Blast ${d.sign} · ${formatMoney(blastPrice())} for ~${blastYield(d.tons).toFixed(0)} t loose`;
+    })(),
+    canTest: !!v && (() => {
+      const d = faceNearPlayer(state, v);
+      return !!d && !d.tested && ownsClaim(state, d.claim);
+    })(),
+    canBlast: !!v && !state.blast && (() => {
+      const d = faceNearPlayer(state, v);
+      return !!d && ownsClaim(state, d.claim) && d.tons >= 1 && canBlastToday(d.lastBlastDay, state.market.day) && (state.explosives > 0 || state.cash >= blastPrice());
+    })(),
+    blastLabel: blastLabel(state),
+    practice: false,
   };
 }

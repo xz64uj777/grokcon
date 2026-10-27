@@ -45,24 +45,133 @@
   touch-action: manipulation;
 }
 
+/* Ridge Ore is a phone game: the touch controls are always on. */
 .touch-ui {
-  display: none;
+  display: flex;
 }
 
 .key-hint {
-  display: block;
+  display: none;
+}
+
+.twin-pad {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "btn btn btn"
+    "l . r";
+  align-items: end;
+}
+.twin-btns {
+  grid-area: btn;
+}
+.twin-l {
+  grid-area: l;
+}
+.twin-r {
+  grid-area: r;
 }
 
 @media (pointer: coarse), (max-width: 820px) {
-  .touch-ui {
-    display: flex;
-  }
-  .key-hint,
   .desk-only {
     display: none;
   }
+}
+
+/* Stick sizes. Cover screen / phone: thumb-sized. Unfolded inner screen: a bit
+   bigger, lifted off the bottom edge and tucked into the lower corners. */
+.game-shell {
+  --stick: 9rem;
+  --drive: 8.5rem;
+  --sa-t: env(safe-area-inset-top, 0px);
+  --sa-r: env(safe-area-inset-right, 0px);
+  --sa-b: env(safe-area-inset-bottom, 0px);
+  --sa-l: env(safe-area-inset-left, 0px);
+}
+.twin-stick {
+  width: var(--stick);
+  height: var(--stick);
+}
+.drive-stick {
+  width: var(--drive);
+  height: var(--drive);
+}
+.hud-top {
+  padding-top: calc(0.75rem + var(--sa-t));
+  padding-left: calc(0.75rem + var(--sa-l));
+  padding-right: calc(0.75rem + var(--sa-r));
+}
+.twin-pad,
+.touch-ui {
+  padding-left: calc(0.75rem + var(--sa-l));
+  padding-right: calc(0.75rem + var(--sa-r));
+  padding-bottom: calc(1rem + var(--sa-b));
+}
+.hud-foot {
+  bottom: var(--pad-h, 0px);
+  padding-left: calc(0.75rem + var(--sa-l));
+  padding-right: calc(0.75rem + var(--sa-r));
+}
+.office-panel {
+  padding-top: var(--sa-t);
+  padding-bottom: var(--sa-b);
+  padding-right: var(--sa-r);
+}
+
+/* Unfolded inner screen (portrait ~880x960 or landscape ~960x880). */
+.game-shell[data-screen="inner"],
+.game-shell[data-screen="inner-land"] {
+  --stick: 10.5rem;
+  --drive: 10rem;
+}
+.game-shell[data-screen="inner"] .twin-pad,
+.game-shell[data-screen="inner-land"] .twin-pad {
+  /* Sticks in the lower corners, the buttons in a row between them. */
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "l btn r";
+  padding-left: calc(1.75rem + var(--sa-l));
+  padding-right: calc(1.75rem + var(--sa-r));
+  padding-bottom: calc(2rem + var(--sa-b));
+  column-gap: 1.5rem;
+}
+.game-shell[data-screen="inner"] .twin-btns,
+.game-shell[data-screen="inner-land"] .twin-btns {
+  max-width: 26rem;
+  justify-self: center;
+  align-self: end;
+}
+.game-shell[data-screen="inner"] .touch-ui,
+.game-shell[data-screen="inner-land"] .touch-ui {
+  padding-left: calc(1.75rem + var(--sa-l));
+  padding-right: calc(1.75rem + var(--sa-r));
+  padding-bottom: calc(2rem + var(--sa-b));
+}
+.game-shell[data-screen="inner"] .hud-foot,
+.game-shell[data-screen="inner-land"] .hud-foot {
+  /* Machine card sits centred above the controls instead of full width. */
+  left: 50%;
+  right: auto;
+  width: min(30rem, 60vw);
+  transform: translateX(-50%);
+}
+
+/* Phone held sideways: sticks on the edges, buttons between them, card up top. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .game-shell {
+    --stick: 8.25rem;
+    --drive: 8rem;
+  }
+  .twin-pad {
+    grid-template-areas: "l btn r";
+  }
   .hud-foot {
-    bottom: 11rem;
+    top: calc(3.75rem + var(--sa-t));
+    bottom: auto !important;
+    right: auto;
+    width: min(22rem, 42vw);
+  }
+  .hud-hint {
+    display: none;
   }
 }
 
@@ -70,4 +179,26 @@
   .game-shell * {
     transition: none !important;
   }
+}
+
+/* Folded cover screen: drop warnings below the mini-map so they never cover it. */
+.game-shell[data-screen="cover"] .hud-banner {
+  top: calc(9rem + var(--sa-t));
+}
+
+/* Folded cover screen: the machine card sits up top (left of the mini-map),
+   out of the way of the road ahead. */
+.game-shell[data-screen="cover"] .hud-foot {
+  top: calc(3.6rem + var(--sa-t));
+  bottom: auto;
+  right: 8.75rem;
+}
+.game-shell[data-screen="cover"] .hud-banner {
+  /* the card lives up top here, so warnings sit just above the controls */
+  top: auto;
+  bottom: calc(var(--pad-h, 0px) + 0.5rem);
+}
+.hud-card {
+  cursor: pointer;
+  min-height: 44px;
 }
