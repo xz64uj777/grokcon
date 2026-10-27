@@ -18,7 +18,7 @@ export type ToolState = {
   swing: number;
   /** Excavator arm reach. 0 = tucked in, 1 = all the way out. */
   reach: number;
-  /** Loader and truck shifter: 1 forward, 0 neutral, -1 reverse. */
+  /** Skid steer, loader and truck shifter: 1 forward, 0 neutral, -1 reverse. */
   gear: Gear;
 };
 
@@ -236,7 +236,7 @@ export type HelpCard = { title: string; phoneLeft: string; phoneRight: string };
 export function controlHelp(defId: string, parked = false): HelpCard {
   switch (machineKind(defId)) {
     case "skid":
-      return { title: "Skid steer", phoneLeft: "Left wheels ↕ · arms ↔", phoneRight: "Right wheels ↕ · bucket ↔" };
+      return { title: "Skid steer", phoneLeft: "Gas ↑ brake ↓ · steer ↔", phoneRight: "Arms ↕ · bucket ↔" };
     case "excavator":
       return parked
         ? { title: "Excavator · park on", phoneLeft: "Slew ↔ · dipper ↕", phoneRight: "Boom up ↑ · curl ← dump →" }
