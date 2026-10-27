@@ -336,9 +336,17 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   } else if (Math.abs(diff) > 0.45) {
     throttle = 0.38;
   }
+  // In the final approach zone, turn in place when misaligned but keep a
+  // gentle crawl when pointed at the target. Hard-braking throughout the
+  // whole zone can leave a crew machine parked just outside its work radius.
   if (d < arrive + 5) {
-    throttle = 0;
-    brake = 1;
+    if (Math.abs(diff) > 0.4) {
+      throttle = 0;
+      brake = 1;
+    } else {
+      throttle = 0.22;
+      brake = 0;
+    }
   }
   if (d < arrive) {
     throttle = 0;
