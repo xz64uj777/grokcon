@@ -819,7 +819,13 @@ export function createWorld(host: HTMLElement): World {
       } else {
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = 0;
-        const s = 0.62 + fullness * 0.42;
+        // Loose material piles must scale with actual tonnage, not fullness.
+        // New piles have max === tons, so fullness is always 1 and made every
+        // dump look like the same tiny pile regardless of how much was unloaded.
+        const loosePile = d.kind === "pile";
+        const s = loosePile
+          ? Math.max(0.42, Math.min(2.6, 0.42 + Math.sqrt(Math.max(0, d.tons)) * 0.24))
+          : 0.62 + fullness * 0.42;
         view.group.scale.setScalar(s);
         view.group.children.forEach((child) => {
           child.visible = true;
