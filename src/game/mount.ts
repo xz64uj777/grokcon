@@ -70,7 +70,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   let lastCameraTap = { time: 0, x: 0, y: 0 };
   let actionBtn = false;
   const sticks: { left: Stick; right: Stick } = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
-  let excDrive = false;
+  let parked = false;
   /** While practicing, the real books wait here untouched. */
   let practiceBack: GameState | null = null;
   const books = () => practiceBack ?? state;
@@ -92,7 +92,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function push() {
     if (dead) return;
-    hooks.onHud({ ...buildHud(state, hadSave, excDrive), practice: practiceBack != null, mode: running ? "play" : "title", booksReady, excDrive });
+    hooks.onHud({ ...buildHud(state, hadSave, parked), practice: practiceBack != null, mode: running ? "play" : "title", booksReady, excDrive: parked });
   }
 
   function held(code: string) {
@@ -116,7 +116,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     const action = held("Space") || (!realMode && held("KeyE")) || actionBtn;
     if (!realMode || !v) return { throttle, steer, action };
     // Phone only: realistic controls come from the two on-screen sticks.
-    const cmd = sticksToCommand(v.defId, sticks.left, sticks.right, excDrive);
+    const cmd = sticksToCommand(v.defId, sticks.left, sticks.right, parked);
     if (steerOverride != null && cmd.drive.kind === "car") cmd.drive.steer = steerOverride;
     return { throttle: cmd.drive.kind === "car" ? cmd.drive.throttle : (cmd.drive.left + cmd.drive.right) / 2, steer, action, cmd };
   }
@@ -237,7 +237,9 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
     },
     toggleExcDrive() {
-      excDrive = !excDrive;
+      parked = !parked;
+      state.log.unshift(parked ? "Parking brake on. Left stick slews and works the dipper." : "Parking brake off. Left stick drives.");
+      if (state.log.length > 5) state.log.length = 5;
       push();
     },
     testHole() {

@@ -683,9 +683,10 @@ export function createWorld(host: HTMLElement): World {
         const kk = 1 - Math.exp(-14 * dt);
         if (rig.house) rig.house.rotation.y += (t.swing - rig.house.rotation.y) * kk;
         if (rig.boom) {
-          rig.boom.rotation.x += (0.35 - t.lift * 0.9 - rig.boom.rotation.x) * kk;
+          rig.boom.rotation.x += (0.35 + t.lift * 0.9 - rig.boom.rotation.x) * kk;
           if (rig.stick) rig.stick.rotation.x += (0.9 - t.reach * 1.4 - rig.stick.rotation.x) * kk;
-          if (rig.bucket) rig.bucket.rotation.x += (t.tilt * 1.1 - rig.bucket.rotation.x) * kk;
+          // Negative tilt rotation curls the mouth up toward the cab. Positive dumps.
+          if (rig.bucket) rig.bucket.rotation.x += (-t.tilt * 1.1 - rig.bucket.rotation.x) * kk;
         } else if (rig.bucket) {
           const y = rig.bucketY + t.lift * 1.7;
           rig.bucket.position.y += (y - rig.bucket.position.y) * kk;

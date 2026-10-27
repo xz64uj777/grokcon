@@ -56,18 +56,29 @@ describe("two-stick skid steer", () => {
 });
 
 describe("excavator operator layout", () => {
-  it("left stick swings and reaches, right stick booms and curls", () => {
-    const cmd = sticksToCommand("excavator", { x: 1, y: 1 }, { x: -1, y: 1 });
-    assert.ok(cmd.axes.swing < 0, "left stick right swings right");
-    assert.ok(cmd.axes.reach > 0, "left stick forward = arm out");
-    assert.ok(cmd.axes.lift < 0, "right stick forward = boom down");
-    assert.ok(cmd.axes.tilt > 0, "right stick left = curl");
-  });
-  it("track mode drives with both sticks and freezes the arm", () => {
-    const cmd = sticksToCommand("excavator", { x: 1, y: 1 }, { x: 0, y: 1 }, true);
+  it("brake off: left stick drives, right stick still runs the boom and bucket", () => {
+    const cmd = sticksToCommand("excavator", { x: 0, y: 1 }, { x: -1, y: 1 }, false);
     assert.equal(cmd.axes.swing, 0);
+    assert.ok(cmd.axes.lift > 0, "right stick up raises the boom");
+    assert.ok(cmd.axes.tilt > 0, "right stick left curls the bucket");
     if (cmd.drive.kind !== "tank") throw new Error("tank");
-    assert.equal(tankMotion(cmd.drive.left, cmd.drive.right).forward, 1);
+    const m = tankMotion(cmd.drive.left, cmd.drive.right);
+    assert.equal(m.forward, 1);
+    assert.equal(m.turn, 0);
+  });
+  it("left stick sideways steers when the brake is off", () => {
+    const cmd = sticksToCommand("excavator", { x: 1, y: 0 }, { x: 0, y: 0 }, false);
+    if (cmd.drive.kind !== "tank") throw new Error("tank");
+    assert.ok(tankMotion(cmd.drive.left, cmd.drive.right).turn < 0, "stick right turns right");
+  });
+  it("brake on: left stick slews and crowds, tracks stay planted", () => {
+    const cmd = sticksToCommand("excavator", { x: 1, y: 1 }, { x: -1, y: 1 }, true);
+    assert.ok(cmd.axes.swing < 0, "left stick right slews right");
+    assert.ok(cmd.axes.reach > 0, "left stick forward crowds the dipper");
+    assert.ok(cmd.axes.tilt > 0);
+    if (cmd.drive.kind !== "tank") throw new Error("tank");
+    assert.equal(cmd.drive.left, 0);
+    assert.equal(cmd.drive.right, 0);
   });
   it("swing wraps all the way around", () => {
     let t = homeTool("excavator");

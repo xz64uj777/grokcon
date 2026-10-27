@@ -71,9 +71,11 @@ function dead(n: number, zone = 0.12) {
 
 /**
  * Phone sticks to a machine command.
- * excDrive: excavator only. true = both sticks drive the tracks, false = dig layout.
+ * parked: excavator parking brake. Off = the left stick drives and steers.
+ * On = that same stick slews the house and crowds the dipper.
+ * The right stick always runs the boom and bucket.
  */
-export function sticksToCommand(defId: string, left: Stick, right: Stick, excDrive = false): Command {
+export function sticksToCommand(defId: string, left: Stick, right: Stick, parked = false): Command {
   const L = { x: dead(left.x), y: dead(left.y) };
   const R = { x: dead(right.x), y: dead(right.y) };
   const k = machineKind(defId);
@@ -86,15 +88,15 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, excDri
     case "dozer":
       // Left and right track levers. Left stick sideways = blade up/down, right = blade angle.
       return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: R.x } };
-    case "excavator":
-      if (excDrive) return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES } };
-      // Standard operator layout:
-      // Left stick: swing (sideways), arm out/in (forward/back).
-      // Right stick: boom down/up (forward/back), bucket curl/dump (left/right).
-      return {
-        drive: { kind: "tank", left: 0, right: 0 },
-        axes: { lift: -R.y, tilt: -R.x, swing: -L.x, reach: L.y },
-      };
+    case "excavator": {
+      // Right stick always: up raises the boom, left curls the bucket, right dumps it.
+      const axes: ToolAxes = { ...NO_AXES, lift: R.y, tilt: -R.x };
+      if (!parked) {
+        // One left stick, like the chatdemo excavator: forward drives, sideways steers.
+        return { drive: { kind: "tank", left: c1(L.y + L.x), right: c1(L.y - L.x) }, axes };
+      }
+      return { drive: { kind: "tank", left: 0, right: 0 }, axes: { ...axes, swing: -L.x, reach: L.y } };
+    }
     case "loader":
       return {
         drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
@@ -229,14 +231,14 @@ export function bucketPoint(x: number, z: number, yaw: number, tool: ToolState) 
 
 export type HelpCard = { title: string; phoneLeft: string; phoneRight: string };
 
-export function controlHelp(defId: string, excDrive = false): HelpCard {
+export function controlHelp(defId: string, parked = false): HelpCard {
   switch (machineKind(defId)) {
     case "skid":
       return { title: "Skid steer", phoneLeft: "Left wheels ↕ · arms ↔", phoneRight: "Right wheels ↕ · bucket ↔" };
     case "excavator":
-      return excDrive
-        ? { title: "Excavator", phoneLeft: "Left track ↕", phoneRight: "Right track ↕" }
-        : { title: "Excavator", phoneLeft: "Swing ↔ · arm out/in ↕", phoneRight: "Boom ↕ · bucket ↔" };
+      return parked
+        ? { title: "Excavator · park on", phoneLeft: "Slew ↔ · dipper ↕", phoneRight: "Boom up ↑ · curl ← dump →" }
+        : { title: "Excavator", phoneLeft: "Drive ↕ · steer ↔", phoneRight: "Boom up ↑ · curl ← dump →" };
     case "loader":
       return { title: "Payloader", phoneLeft: "Gas ↑ brake ↓ · steer ↔", phoneRight: "Arms ↕ · bucket ↔" };
     case "dozer":

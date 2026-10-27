@@ -28,8 +28,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 | Machine | Left stick | Right stick | Extra buttons |
 |---|---|---|---|
 | **Skid steer** | Up/down: left wheels. Sideways: arms up/down | Up/down: right wheels. Sideways: curl/dump the bucket | |
-| **Excavator** (digging) | Sideways: swing the cab. Up/down: arm out/in | Up/down: boom down/up. Sideways: curl/dump the bucket | **Sticks: dig** switches to driving |
-| **Excavator** (driving) | Up/down: left track | Up/down: right track | **Sticks: tracks** switches back to digging |
+| **Excavator** | Up/down: drive. Sideways: steer. Tap **Park** and this stick slews and works the dipper instead | Up: boom up. Down: boom down. Left: curl. Right: dump | **Park** locks the tracks so the left stick can run the house |
 | **Payloader** | Up: gas. Down: brake. Sideways: steer | Up/down: arms. Sideways: curl/dump the bucket | **Gear ▲ / Gear ▼** |
 | **Bulldozer** | Up/down: left track. Sideways: blade up/down | Up/down: right track. Sideways: blade angle | |
 | **Dump truck / Heavy haul** | Up: gas. Down: brake. Sideways: steer | Up/down: raise/lower the bed | **Gear ▲ / Gear ▼** |

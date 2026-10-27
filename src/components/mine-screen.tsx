@@ -317,7 +317,7 @@ export function MineScreen() {
                   </>
                 )}
                 {hud.machineId === "excavator" && (
-                  <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Sticks: tracks" : "Sticks: dig"}</SmallBtn>
+                  <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Park on" : "Park"}</SmallBtn>
                 )}
                 {hud.canTest && <SmallBtn onClick={() => apiRef.current?.testHole()}>Test hole</SmallBtn>}
                 {hud.canBlast && <SmallBtn danger onClick={() => apiRef.current?.blast()}>Blast</SmallBtn>}
