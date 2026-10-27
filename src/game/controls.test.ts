@@ -12,49 +12,38 @@ import {
 } from "./controls.ts";
 
 
-describe("two-stick skid steer", () => {
-  it("both sticks forward drives straight", () => {
-    const cmd = sticksToCommand("skid", { x: 0, y: 1 }, { x: 0, y: 1 });
-    assert.equal(cmd.drive.kind, "tank");
-    if (cmd.drive.kind !== "tank") return;
-    const m = tankMotion(cmd.drive.left, cmd.drive.right);
-    assert.equal(m.forward, 1);
-    assert.equal(m.turn, 0);
+describe("loader-style skid steer controls", () => {
+  it("left stick drives and steers like the payloader", () => {
+    const forward = sticksToCommand("skid", { x: 0, y: 1 }, { x: 0, y: 0 });
+    assert.equal(forward.drive.kind, "car");
+    if (forward.drive.kind !== "car") return;
+    assert.equal(forward.drive.throttle, 1);
+    assert.equal(forward.drive.steer, 0);
+    assert.equal(forward.drive.brake, 0);
+
+    const right = sticksToCommand("skid", { x: 1, y: 0 }, { x: 0, y: 0 });
+    if (right.drive.kind !== "car") return;
+    assert.equal(right.drive.steer, -1);
   });
-  it("one stick forward turns toward the other side", () => {
-    const cmd = sticksToCommand("skid", { x: 0, y: 1 }, { x: 0, y: 0 });
-    if (cmd.drive.kind !== "tank") throw new Error("tank");
-    const m = tankMotion(cmd.drive.left, cmd.drive.right);
-    assert.ok(m.forward > 0);
-    assert.ok(m.turn < 0, "left wheels only = turn right (yaw goes down)");
+  it("right stick operates arms and bucket like the payloader", () => {
+    const cmd = sticksToCommand("skid", { x: 0, y: 0 }, { x: -1, y: 1 });
+    assert.ok(cmd.axes.lift > 0.9, "right stick up raises the arms");
+    assert.ok(cmd.axes.tilt > 0.9, "right stick left curls the bucket");
   });
-  it("opposite sticks spin in place", () => {
-    const cmd = sticksToCommand("skid", { x: 0, y: -1 }, { x: 0, y: 1 });
-    if (cmd.drive.kind !== "tank") throw new Error("tank");
-    const m = tankMotion(cmd.drive.left, cmd.drive.right);
-    assert.equal(m.forward, 0);
-    assert.equal(m.turn, 1);
+  it("left stick back brakes; reverse is selected with the shifter", () => {
+    const cmd = sticksToCommand("skid", { x: 0, y: -1 }, { x: 0, y: 0 });
+    if (cmd.drive.kind !== "car") throw new Error("car");
+    assert.equal(cmd.drive.throttle, 0);
+    assert.equal(cmd.drive.brake, 1);
   });
-  it("right stick alone turns left (yaw up), left stick alone turns right", () => {
-    const l = sticksToCommand("skid", { x: 0, y: 0 }, { x: 0, y: 1 });
-    const r = sticksToCommand("skid", { x: 0, y: 1 }, { x: 0, y: 0 });
-    if (l.drive.kind !== "tank" || r.drive.kind !== "tank") throw new Error("tank");
-    assert.ok(tankMotion(l.drive.left, l.drive.right).turn > 0);
-    assert.ok(tankMotion(r.drive.left, r.drive.right).turn < 0);
-  });
-  it("a tiny wobble near the middle of a stick does nothing", () => {
-    const c = sticksToCommand("skid", { x: 0.05, y: 0.08 }, { x: -0.05, y: 0 });
-    if (c.drive.kind !== "tank") throw new Error("tank");
-    assert.equal(c.drive.left, 0);
-    assert.equal(c.axes.lift, 0);
-  });
-  it("arms and bucket have their own controls", () => {
-    const cmd = sticksToCommand("skid", { x: 1, y: 0 }, { x: -1, y: 0 });
-    assert.ok(cmd.axes.lift > 0.9, "left stick right raises arms");
-    assert.ok(cmd.axes.tilt > 0.9, "right stick left curls bucket");
+  it("small stick wobble is ignored", () => {
+    const cmd = sticksToCommand("skid", { x: 0.05, y: 0.08 }, { x: -0.05, y: 0 });
+    if (cmd.drive.kind !== "car") throw new Error("car");
+    assert.equal(cmd.drive.throttle, 0);
+    assert.equal(cmd.drive.steer, 0);
+    assert.equal(cmd.axes.lift, 0);
   });
 });
-
 describe("excavator operator layout", () => {
   it("brake off: left stick drives, right stick still runs the boom and bucket", () => {
     const cmd = sticksToCommand("excavator", { x: 0, y: 1 }, { x: -1, y: 1 }, false);
