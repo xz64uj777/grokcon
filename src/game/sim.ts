@@ -486,13 +486,12 @@ function aiControl(state: GameState, index: number): Control {
     const dx = digger.x - v.x;
     const dz = digger.z - v.z;
     const dist = Math.hypot(dx, dz) || 1;
-    // A moving digger is usually driving here to dump. Chasing it makes a figure-8.
-    if (dist < 22 || Math.abs(digger.speed) > 1.1) {
+    if (dist < 18) {
       v.status = "Plant set";
       return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
     v.status = "Tracking the face";
-    return seek(v, digger.x - (dx / dist) * 16, digger.z - (dz / dist) * 16, 6);
+    return seek(v, digger.x - (dx / dist) * 14, digger.z - (dz / dist) * 14, 6);
   }
 
   const haulTarget = () => {
@@ -509,11 +508,6 @@ function aiControl(state: GameState, index: number): Control {
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z);
     if (pad) {
-      const washing = pad.kind === "sluice" && prefersSluice(state, v.cargoOre);
-      if (distTo(v.x, v.z, pad.x, pad.z) > 36 && !washing) {
-        label = "Staying. Bring the crusher here";
-        return;
-      }
       target = pad;
       arrive = Math.max(5, pad.r * 0.62);
       label = `Hauling to ${pad.name}`;
@@ -561,6 +555,11 @@ function aiControl(state: GameState, index: number): Control {
     }
     if (v.cargo > 0.25 && v.cargoOre) haulTarget();
     else {
+      const pile = bestPile(state, v);
+      if (pile) {
+        v.status = `Scooping ${ORES[pile.ore].name}`;
+        return seek(v, pile.x, pile.z, Math.max(3.5, pile.radius * 0.72));
+      }
       v.status = "Face is dug out";
       return { ...ZERO };
     }
