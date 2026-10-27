@@ -1075,6 +1075,13 @@ function performAction(
   }
 
   if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
+    // In realistic mode, a skid steer / loader must lower its bucket into the pile
+    // before material can enter the bucket. Simple controls and crew AI keep their
+    // existing assisted behavior.
+    if (v.manual && (kind === "skid" || kind === "loader") && v.tool.lift > 0.35) {
+      if (player) v.status = "Lower the bucket into the pile to scoop";
+      return null;
+    }
     const pile = closestDeposit(state, v.x, v.z, "pile", 0, v);
     const spot = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
     const cut = spot ? faceOf(spot) : null;
