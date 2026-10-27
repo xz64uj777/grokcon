@@ -336,6 +336,11 @@ function prefersSluice(state: GameState, ore: OreId) {
   return state.sluice && state.preferSluice && ORES[ore].sluice > ORES[ore].crusher;
 }
 
+function washScore(state: GameState, ore: OreId) {
+  if (!state.sluice || !state.preferSluice) return 0;
+  return Math.max(0, ORES[ore].sluice - ORES[ore].crusher) * 40;
+}
+
 function bestPad(state: GameState, ore: OreId, x: number, z: number) {
   let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
@@ -363,9 +368,9 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (!ownsClaim(state, d.claim)) continue;
     if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (ore && d.ore !== ore) continue;
-    const unit = ORES[d.ore].crusher;
+    const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000);
+    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000) + washScore(state, d.ore);
     if (s > score) {
       score = s;
       best = d;
@@ -382,9 +387,9 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!ownsClaim(state, d.claim)) continue;
     if (v.workClaim != null && d.claim !== v.workClaim) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
-    const unit = ORES[d.ore].crusher;
+    const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0);
+    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore);
     if (s > score) {
       score = s;
       best = d;
@@ -531,30 +536,18 @@ function aiControl(state: GameState, index: number): Control {
       return seek(v, digHaul.x, digHaul.z, arrive);
     }
     let vein: Deposit | null = null;
-    let veinD = Infinity;
-    let near: Deposit | null = null;
-    let nearD = 42;
-    let paying: Deposit | null = null;
-    let payingD = Infinity;
+    let veinS = -Infinity;
     for (const d of state.deposits) {
       if (d.kind !== "vein" || d.tons < 0.35) continue;
       if (!ownsClaim(state, d.claim)) continue;
       if (v.workClaim != null && d.claim !== v.workClaim) continue;
       const dist = distTo(v.x, v.z, d.x, d.z);
-      if (dist < veinD) {
-        veinD = dist;
+      const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+      if (s > veinS) {
+        veinS = s;
         vein = d;
       }
-      if (dist < nearD) {
-        nearD = dist;
-        near = d;
-      }
-      if (d.ore !== "dirt" && dist < payingD) {
-        payingD = dist;
-        paying = d;
-      }
     }
-    vein = paying ?? near ?? vein;
     if (vein) {
       const cut = faceOf(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -635,7 +628,9 @@ function aiControl(state: GameState, index: number): Control {
     const pileD = pile ? distTo(v.x, v.z, pile.x, pile.z) : Infinity;
     const veinD = vein ? distTo(v.x, v.z, vein.x, vein.z) : Infinity;
     // The iron pile sits on the gate. Take it when it is closer than a face.
-    const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD;
+    const washVein = vein != null && prefersSluice(state, vein.ore);
+    const washPile = pile != null && prefersSluice(state, pile.ore);
+    const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD && (!washVein || washPile);
     if (takePile && pile) {
       const held = workHere(v, pile.x, pile.z, pile.radius * 0.9);
       if (held) {
