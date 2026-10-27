@@ -365,7 +365,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (ore && d.ore !== ore) continue;
     const unit = ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0);
+    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000);
     if (s > score) {
       score = s;
       best = d;
@@ -524,10 +524,18 @@ function aiControl(state: GameState, index: number): Control {
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
   } else if (def.dig > 0) {
+    if (full && v.cargoOre) haulTarget();
+    const digHaul = target as { x: number; z: number } | null;
+    if (digHaul) {
+      v.status = label;
+      return seek(v, digHaul.x, digHaul.z, arrive);
+    }
     let vein: Deposit | null = null;
     let veinD = Infinity;
     let near: Deposit | null = null;
     let nearD = 42;
+    let paying: Deposit | null = null;
+    let payingD = Infinity;
     for (const d of state.deposits) {
       if (d.kind !== "vein" || d.tons < 0.35) continue;
       if (!ownsClaim(state, d.claim)) continue;
@@ -541,8 +549,12 @@ function aiControl(state: GameState, index: number): Control {
         nearD = dist;
         near = d;
       }
+      if (d.ore !== "dirt" && dist < payingD) {
+        payingD = dist;
+        paying = d;
+      }
     }
-    vein = near ?? vein;
+    vein = paying ?? near ?? vein;
     if (vein) {
       const cut = faceOf(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -574,6 +586,7 @@ function aiControl(state: GameState, index: number): Control {
         const o = state.vehicles[i];
         if (!(o.operator || i === state.active)) continue;
         if (o.defId !== "loader" && o.defId !== "excavator") continue;
+        if (o.cargo < 0.4) continue;
         const d = distTo(v.x, v.z, o.x, o.z);
         if (d < diggerD) {
           diggerD = d;
@@ -589,6 +602,14 @@ function aiControl(state: GameState, index: number): Control {
         return seek(v, digger.x, digger.z, 6);
       }
       v.status = "Needs a payloader";
+      if (v.cargoOre && v.cargo >= cap * 0.35) haulTarget();
+      const truckHaul = target as { x: number; z: number } | null;
+      if (truckHaul) {
+        v.status = label;
+        return seek(v, truckHaul.x, truckHaul.z, arrive);
+      }
+      const pile = bestPile(state, v);
+      if (pile) return seek(v, pile.x, pile.z, Math.max(4, pile.radius * 0.5));
       return { ...ZERO };
     }
   } else if (waitingTruck) {
@@ -647,7 +668,15 @@ function aiControl(state: GameState, index: number): Control {
         arrive = cut.reach * 0.75;
         label = `Working ${ORES[spot.ore].name} face`;
       } else label = "No material at assigned source";
-    } else label = def.scoop > 0 ? "Looking for a pile" : "No face in reach";
+    } else if (def.scoop > 0) {
+      const spot = bestVein(state, v, null);
+      const cut = spot ? faceOf(spot) : null;
+      if (spot && cut) {
+        target = cut;
+        arrive = 8;
+        label = `Heading to the ${ORES[spot.ore].name} face`;
+      } else label = "Looking for a pile";
+    } else label = "No face in reach";
   }
 
   v.status = label;
