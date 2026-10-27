@@ -785,7 +785,11 @@ export function createWorld(host: HTMLElement): World {
         const cap = vehicleStats(v).capacity;
         const f = cap > 0 ? v.cargo / cap : 0;
         rig.load.visible = f > 0.04;
-        rig.load.scale.y = Math.max(0.55, Math.sqrt(f));
+        // Scale the visible pile in all three dimensions so a small scoop looks
+        // like a small load instead of a nearly full bucket of floating rocks.
+        const fill = Math.sqrt(Math.max(0, Math.min(1, f)));
+        const footprint = 0.35 + 0.65 * fill;
+        rig.load.scale.set(footprint, Math.max(0.12, fill), footprint);
         const material = oreMaterials[v.cargoOre ?? "iron"];
         rig.load.traverse((part) => {
           if (part instanceof THREE.Mesh) part.material = material;
