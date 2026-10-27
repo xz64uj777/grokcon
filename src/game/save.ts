@@ -21,6 +21,7 @@ function sanitize(raw: unknown): GameState | null {
   state.lifetime = num(o.lifetime, 0, 0, 1e12);
   state.seconds = num(o.seconds, 0, 0, 1e9);
   state.sluice = o.sluice === true;
+  state.preferSluice = o.preferSluice !== false;
   state.muted = o.muted === true;
   state.pileSeq = Math.round(num(o.pileSeq, 1, 1, 1e7));
   if (Array.isArray(o.claims)) {

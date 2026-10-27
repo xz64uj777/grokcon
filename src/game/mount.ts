@@ -127,6 +127,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       saveGame(state);
       push();
     },
+    setHaulSluice(on) {
+      state.preferSluice = on && state.sluice;
+      state.log.unshift(on ? "Copper and gold haul to the sluice." : "Crew may sell at the crusher.");
+      if (state.log.length > 5) state.log.length = 5;
+      saveGame(state);
+      push();
+    },
     drive(index) {
       setActive(state, index);
       world.snap();

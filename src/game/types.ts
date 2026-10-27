@@ -69,6 +69,7 @@ export type GameState = {
   seconds: number;
   claims: number[];
   sluice: boolean;
+  preferSluice: boolean;
   muted: boolean;
   vehicles: VehicleState[];
   active: number;
@@ -145,6 +146,8 @@ export type HudModel = {
   cargoLabel: string;
   cargoFrac: number;
   muted: boolean;
+  sluice: boolean;
+  preferSluice: boolean;
   log: string[];
   machines: MachineCard[];
   crew: CrewCard[];
@@ -164,6 +167,7 @@ export type GameApi = {
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
   assignSource: (index: number, claim: number | null) => void;
+  setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;
   sell: (index: number) => void;
   setStick: (steer: number, throttle: number) => void;

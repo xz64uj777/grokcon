@@ -277,7 +277,23 @@ export function MineScreen() {
                 ))}
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-2">
-                {panel === "crew" && <p className="border-b border-border py-3 text-sm leading-relaxed text-muted">Hire an operator for each machine you want running. Set Work source to Any leased source or choose a specific leased claim, such as Copper Bench.</p>}
+                {panel === "crew" && (
+                  <div className="border-b border-border py-3">
+                    <p className="text-sm leading-relaxed text-muted">Hire an operator for each machine you want running. Set Work source to Any leased source or choose a specific leased claim, such as Copper Bench.</p>
+                    {hud.sluice && (
+                      <button
+                        type="button"
+                        className={`mt-3 h-11 px-3 font-display text-lg uppercase tracking-wide ${hud.preferSluice ? "bg-primary text-primary-fg" : "border border-border text-fg"}`}
+                        onClick={() => apiRef.current?.setHaulSluice(!hud.preferSluice)}
+                      >
+                        {hud.preferSluice ? "Sluice haul on" : "Sluice haul off"}
+                      </button>
+                    )}
+                    {hud.sluice && (
+                      <p className="mt-2 text-sm leading-relaxed text-muted">On: copper and gold always go to the sluice. They pay more there. Iron stays on the crusher.</p>
+                    )}
+                  </div>
+                )}
 
                 {panel === "machines" &&
                   hud.machines.map((m) => (

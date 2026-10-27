@@ -170,6 +170,7 @@ export function freshGame(company: string): GameState {
     seconds: 0,
     claims: [1],
     sluice: false,
+    preferSluice: true,
     muted: false,
     vehicles: (() => {
       const pickup = makeVehicle("pickup", 0);
@@ -332,7 +333,7 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
 }
 
 function prefersSluice(state: GameState, ore: OreId) {
-  return state.sluice && (ore === "copper" || ore === "gold");
+  return state.sluice && state.preferSluice && ORES[ore].sluice > ORES[ore].crusher;
 }
 
 function bestPad(state: GameState, ore: OreId, x: number, z: number) {
@@ -344,9 +345,7 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number) {
     const d = distTo(x, z, pad.x, pad.z);
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
-    if (pad.kind === "sluice" && state.sluice && (ore === "copper" || ore === "gold")) {
-      return pad;
-    }
+    if (pad.kind === "sluice" && prefersSluice(state, ore)) return pad;
     const s = unit - d * 0.55;
     if (s > score) {
       score = s;
@@ -497,7 +496,8 @@ function aiControl(state: GameState, index: number): Control {
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z);
     if (pad) {
-      if (distTo(v.x, v.z, pad.x, pad.z) > 36) {
+      const washing = pad.kind === "sluice" && prefersSluice(state, v.cargoOre);
+      if (distTo(v.x, v.z, pad.x, pad.z) > 36 && !washing) {
         label = "Staying. Bring the crusher here";
         return;
       }
@@ -1206,6 +1206,7 @@ function hint(state: GameState) {
   const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 28, false) : null;
   if (truck) return `Tap LOAD to put this bucket in the ${DEFS[truck.defId].name.toLowerCase()}.`;
   if (st.capacity > 0 && v.cargo >= st.capacity * 0.92) {
+    if (v.cargoOre && prefersSluice(state, v.cargoOre)) return "Full. Haul it to the sluice. It pays more.";
     return def.receives ? "Bed full. Dump beside the track crusher." : "Full. Haul it out, or pull up to a dump truck.";
   }
   const locked = state.deposits.find((d) => !ownsClaim(state, d.claim) && distTo(v.x, v.z, d.x, d.z) < d.radius + 3);
@@ -1323,6 +1324,8 @@ export function buildHud(state: GameState, hadSave: boolean): HudModel {
     cargoLabel: v ? cargoLine(v) : "",
     cargoFrac: st && st.capacity > 0 && v ? clamp(v.cargo / st.capacity, 0, 1) : 0,
     muted: state.muted,
+    sluice: state.sluice,
+    preferSluice: state.preferSluice,
     log: state.log.slice(0, 4),
     machines,
     crew,
