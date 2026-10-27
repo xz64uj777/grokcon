@@ -50,7 +50,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 ### Folding phones (like the Galaxy Z Fold)
 
 - **Folded (front screen):** the sticks sit at the bottom corners with the buttons just above them. The machine card is at the top and warnings show just above the buttons.
-- **Unfolded (big screen):** the sticks get a bit bigger and move into the lower corners where your thumbs rest. The buttons sit in a row between them, and the machine card sits in the middle, so nothing stretches across the whole screen.
+- **Unfolded (big screen):** the sticks get a bit bigger and move into the lower corners where your thumbs rest. The buttons sit in a row between them, and the machine card sits at the top left, so it never covers your machine or the road.
 - **Sideways:** same idea. Sticks go on the edges and the buttons go between them.
 - **You can fold or unfold in the middle of a game.** The game doesn't reload. The controls rearrange themselves straight away, and every stick and button is let go, so your machine won't run away. A blast that's drilling keeps drilling as long as the machine stays still.
 - Controls stay clear of the camera hole, the rounded corners and the gesture bar at the bottom.

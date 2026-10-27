@@ -55,7 +55,7 @@ export type World = {
   blast: (x: number, z: number) => void;
   resize: () => void;
   /** Draw calls and triangles of the last frame (QA/perf only). */
-  stats: () => { calls: number; triangles: number; dpr: number };
+  stats: () => { calls: number; triangles: number; dpr: number; cam: [number, number] };
   dispose: () => void;
 };
 
@@ -556,6 +556,7 @@ export function createWorld(host: HTMLElement): World {
   let bound: GameState | null = null;
   const clock = { t: 0 };
 
+  const rigKind = new Map<string, string>();
   function ensure(state: GameState) {
     const live = new Set(state.vehicles.map((v) => v.uid));
     for (const [uid, rig] of rigs) {
@@ -565,7 +566,16 @@ export function createWorld(host: HTMLElement): World {
       }
     }
     for (const v of state.vehicles) {
-      if (!rigs.has(v.uid)) rigs.set(v.uid, buildRig(v.defId, v.uid));
+      // Rebuild if this id now belongs to a different kind of machine (guards against reused ids).
+      const have = rigs.get(v.uid);
+      if (have && rigKind.get(v.uid) !== v.defId) {
+        scene.remove(have.root);
+        rigs.delete(v.uid);
+      }
+      if (!rigs.has(v.uid)) {
+        rigs.set(v.uid, buildRig(v.defId, v.uid));
+        rigKind.set(v.uid, v.defId);
+      }
     }
     const dlive = new Set(state.deposits.map((d) => d.id));
     for (const [id, view] of depositViews) {
@@ -847,7 +857,7 @@ export function createWorld(host: HTMLElement): World {
   resize();
 
   return {
-    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio() }),
+    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), cam: [camera.position.x, camera.position.z] as [number, number] }),
     sync,
     orbit(dt: number) {
       if (bound) sync(bound, dt, false);

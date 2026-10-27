@@ -148,11 +148,20 @@
 }
 .game-shell[data-screen="inner"] .hud-foot,
 .game-shell[data-screen="inner-land"] .hud-foot {
-  /* Machine card sits centred above the controls instead of full width. */
-  left: 50%;
+  /* Big screen: card at the top left so it never sits over your own machine. */
+  top: calc(3.75rem + var(--sa-t));
+  bottom: auto;
   right: auto;
-  width: min(30rem, 60vw);
-  transform: translateX(-50%);
+  width: min(26rem, 46vw);
+}
+.game-shell[data-screen="inner"] .hud-banner,
+.game-shell[data-screen="inner-land"] .hud-banner {
+  /* Warnings go in the free space between the sticks, just above the buttons,
+     so they don't cover the machine in the middle of the screen. */
+  top: auto;
+  bottom: calc(5.5rem + var(--sa-b));
+  left: calc(var(--stick) + 3rem);
+  right: calc(var(--stick) + 3rem);
 }
 
 /* Phone held sideways: sticks on the edges, buttons between them, card up top. */
