@@ -463,9 +463,22 @@ function aiControl(state: GameState, index: number): Control {
   }
 
   if (def.id === "crusher") {
-    const digger = state.vehicles.find(
-      (o, i) => i !== index && (o.operator || i === state.active) && (DEFS[o.defId].dig > 0 || DEFS[o.defId].scoop > 0),
-    );
+    let digger: VehicleState | null = null;
+    let best = Infinity;
+    for (let i = 0; i < state.vehicles.length; i++) {
+      if (i === index) continue;
+      const o = state.vehicles[i];
+      if (o.defId === "pickup") continue;
+      const od = DEFS[o.defId];
+      if (od.dig <= 0 && o.defId !== "loader") continue;
+      if (!(o.operator || i === state.active)) continue;
+      const d = distTo(v.x, v.z, o.x, o.z);
+      const score = d - (od.dig > 0 ? 40 : 0);
+      if (score < best) {
+        best = score;
+        digger = o;
+      }
+    }
     if (!digger) {
       v.status = "Plant parked";
       return { ...ZERO };
