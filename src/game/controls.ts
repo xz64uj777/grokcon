@@ -18,7 +18,7 @@ export type ToolState = {
   swing: number;
   /** Excavator arm reach. 0 = tucked in, 1 = all the way out. */
   reach: number;
-  /** Loader and truck shifter: 1 forward, 0 neutral, -1 reverse. */
+  /** Skid steer, loader and truck shifter: 1 forward, 0 neutral, -1 reverse. */
   gear: Gear;
 };
 
@@ -44,7 +44,7 @@ export function machineKind(defId: string): MachineKind {
 /** Machines that use a forward / neutral / reverse shifter in realistic mode. */
 export function usesGears(defId: string) {
   const k = machineKind(defId);
-  return k === "loader" || k === "truck";
+  return k === "skid" || k === "loader" || k === "truck";
 }
 
 export function homeTool(defId: string): ToolState {
@@ -81,10 +81,12 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
   const k = machineKind(defId);
   switch (k) {
     case "skid":
-      // Two-stick skid steer: each stick's forward/back runs that side's wheels.
-      // Left stick sideways raises (right) or lowers (left) the arms.
-      // Right stick sideways curls (left) or dumps (right) the bucket.
-      return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: -R.x } };
+      // Loader-style controls: left stick drives and steers; right stick runs
+      // the lift arms and bucket. Forward/reverse is selected with the shifter.
+      return {
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
+        axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
+      };
     case "dozer":
       // Left and right track levers. Left stick sideways = blade up/down, right = blade angle.
       return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: R.x } };
@@ -99,16 +101,16 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
     }
     case "loader":
       return {
-        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
         axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
       };
     case "truck":
       return {
-        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
         axes: { ...NO_AXES, lift: R.y },
       };
     default:
-      return { drive: { kind: "car", throttle: L.y, steer: -L.x, brake: 0 }, axes: { ...NO_AXES } };
+      return { drive: { kind: "car", throttle: L.y, steer: L.x === 0 ? 0 : -L.x, brake: 0 }, axes: { ...NO_AXES } };
   }
 }
 
@@ -234,7 +236,7 @@ export type HelpCard = { title: string; phoneLeft: string; phoneRight: string };
 export function controlHelp(defId: string, parked = false): HelpCard {
   switch (machineKind(defId)) {
     case "skid":
-      return { title: "Skid steer", phoneLeft: "Left wheels ↕ · arms ↔", phoneRight: "Right wheels ↕ · bucket ↔" };
+      return { title: "Skid steer", phoneLeft: "Gas ↑ brake ↓ · steer ↔", phoneRight: "Arms ↕ · bucket ↔" };
     case "excavator":
       return parked
         ? { title: "Excavator · park on", phoneLeft: "Slew ↔ · dipper ↕", phoneRight: "Boom up ↑ · curl ← dump →" }

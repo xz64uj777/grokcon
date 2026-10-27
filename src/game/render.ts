@@ -785,7 +785,11 @@ export function createWorld(host: HTMLElement): World {
         const cap = vehicleStats(v).capacity;
         const f = cap > 0 ? v.cargo / cap : 0;
         rig.load.visible = f > 0.04;
-        rig.load.scale.y = Math.max(0.55, Math.sqrt(f));
+        // Scale the visible pile in all three dimensions so a small scoop looks
+        // like a small load instead of a nearly full bucket of floating rocks.
+        const fill = Math.sqrt(Math.max(0, Math.min(1, f)));
+        const footprint = 0.35 + 0.65 * fill;
+        rig.load.scale.set(footprint, Math.max(0.12, fill), footprint);
         const material = oreMaterials[v.cargoOre ?? "iron"];
         rig.load.traverse((part) => {
           if (part instanceof THREE.Mesh) part.material = material;
@@ -815,7 +819,13 @@ export function createWorld(host: HTMLElement): World {
       } else {
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = 0;
-        const s = 0.62 + fullness * 0.42;
+        // Loose material piles must scale with actual tonnage, not fullness.
+        // New piles have max === tons, so fullness is always 1 and made every
+        // dump look like the same tiny pile regardless of how much was unloaded.
+        const loosePile = d.kind === "pile";
+        const s = loosePile
+          ? Math.max(0.42, Math.min(2.6, 0.42 + Math.sqrt(Math.max(0, d.tons)) * 0.24))
+          : 0.62 + fullness * 0.42;
         view.group.scale.setScalar(s);
         view.group.children.forEach((child) => {
           child.visible = true;

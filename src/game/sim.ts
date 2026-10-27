@@ -1075,6 +1075,13 @@ function performAction(
   }
 
   if (def.scoop > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
+    // In realistic mode, skid steers and loaders only collect material during
+    // an actual bucket-curl fill gesture. Holding the action button alone must not
+    // magically load the bucket; simple controls and crew AI remain assisted.
+    if (v.manual && (kind === "skid" || kind === "loader") && opts.phase !== "fill") {
+      if (player) v.status = "Lower the bucket and curl it to scoop";
+      return null;
+    }
     const pile = closestDeposit(state, v.x, v.z, "pile", 0, v);
     const spot = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
     const cut = spot ? faceOf(spot) : null;
