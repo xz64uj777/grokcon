@@ -84,7 +84,7 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
       // Loader-style controls: left stick drives and steers; right stick runs
       // the lift arms and bucket. Forward/reverse is selected with the shifter.
       return {
-        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
         axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
       };
     case "dozer":
@@ -101,16 +101,16 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
     }
     case "loader":
       return {
-        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
         axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
       };
     case "truck":
       return {
-        drive: { kind: "car", throttle: Math.max(0, L.y), steer: -L.x, brake: Math.max(0, -L.y) },
+        drive: { kind: "car", throttle: Math.max(0, L.y), steer: L.x === 0 ? 0 : -L.x, brake: Math.max(0, -L.y) },
         axes: { ...NO_AXES, lift: R.y },
       };
     default:
-      return { drive: { kind: "car", throttle: L.y, steer: -L.x, brake: 0 }, axes: { ...NO_AXES } };
+      return { drive: { kind: "car", throttle: L.y, steer: L.x === 0 ? 0 : -L.x, brake: 0 }, axes: { ...NO_AXES } };
   }
 }
 
