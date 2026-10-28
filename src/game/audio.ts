@@ -90,26 +90,26 @@ export function createAudio() {
         skid: { base: 38, rev: 1.65, filter: 118, wave: "triangle" as OscillatorType, sub: 0.34 },
         loader: { base: 42, rev: 2.5, filter: 155, wave: "sawtooth" as OscillatorType, sub: 0.3 },
         excavator: { base: 36, rev: 2.0, filter: 125, wave: "triangle" as OscillatorType, sub: 0.36 },
-        dozer: { base: 29, rev: 1.8, filter: 110, wave: "sawtooth" as OscillatorType, sub: 0.44 },
+        dozer: { base: 25, rev: 0.75, filter: 88, wave: "triangle" as OscillatorType, sub: 0.52 },
         truck: { base: 24, rev: 1.25, filter: 82, wave: "triangle" as OscillatorType, sub: 0.62 },
         other: { base: 39, rev: 2.2, filter: 145, wave: "sawtooth" as OscillatorType, sub: 0.3 },
       }[machine];
       const moving = Math.min(1, Math.abs(speed) / 8);
       const load = Math.min(1, Math.abs(throttle));
-      const vol = Math.min(0.052, 0.006 + moving * 0.018 + load * 0.019);
+      const vol = Math.min(machine === "dozer" ? 0.038 : 0.052, 0.004 + moving * 0.014 + load * 0.015);
       osc.type = profile.wave;
       engine.gain.setTargetAtTime(vol, ctx.currentTime, 0.12);
       osc.frequency.setTargetAtTime(profile.base + moving * 5 + load * 4 + profile.rev * Math.abs(speed), ctx.currentTime, 0.18);
-      osc2.frequency.setTargetAtTime(profile.base * 0.48 + moving * 4, ctx.currentTime, 0.12);
-      filter.frequency.setTargetAtTime(profile.filter + load * (machine === "truck" ? 70 : 105) + moving * 35, ctx.currentTime, 0.18);
+      osc2.frequency.setTargetAtTime(profile.base * (machine === "dozer" ? 0.72 : 0.48) + moving * 2.5, ctx.currentTime, 0.12);
+      filter.frequency.setTargetAtTime(profile.filter + load * (machine === "truck" ? 70 : machine === "dozer" ? 28 : 105) + moving * 22, ctx.currentTime, 0.18);
     },
     hydraulics(machine: MachineSound, lift: number, tilt: number) {
       if (muted || !ctx || !started) return;
       const movement = Math.max(Math.abs(lift), Math.abs(tilt));
       if (movement < 0.18 || ctx.currentTime - hydraulicAt < 0.16) return;
       hydraulicAt = ctx.currentTime;
-      const freq = machine === "excavator" ? 620 : machine === "skid" ? 760 : machine === "loader" ? 490 : machine === "dozer" ? 280 : 360;
-      tone(freq + movement * 240, 0.12, "sawtooth", machine === "dozer" ? 0.018 : 0.012);
+      const freq = machine === "excavator" ? 620 : machine === "skid" ? 760 : machine === "loader" ? 490 : machine === "dozer" ? 115 : 360;
+      tone(freq + movement * (machine === "dozer" ? 65 : 240), machine === "dozer" ? 0.2 : 0.12, machine === "dozer" ? "triangle" : "sawtooth", machine === "dozer" ? 0.007 : 0.012);
       if (machine === "skid" || machine === "loader" || machine === "excavator") noise(0.08, 0.008, freq);
     },
     dig() {
