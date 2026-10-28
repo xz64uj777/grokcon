@@ -48,6 +48,7 @@ import {
   readGesture,
   stepTool,
   tankMotion,
+  usesGears,
   type Gesture,
 } from "@/game/controls";
 import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
