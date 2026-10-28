@@ -31,7 +31,7 @@ export const TEST_HOLE_COST = 150;
 /** Flat price of one blast (one charge), paid when you start drilling. */
 export const BLAST_COST = 750;
 export const DRILL_SECONDS = 10;
-export const FUSE_SECONDS = 6;
+export const FUSE_SECONDS = 12;
 export const MIN_PURITY = 0.3;
 
 export type CutResult = {
