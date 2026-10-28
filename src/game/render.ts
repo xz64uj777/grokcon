@@ -356,10 +356,10 @@ export function createWorld(host: HTMLElement): World {
       root.add(house);
     } else if (id === "lowboy") {
       // Full-size conventional road tractor: long hood, broad grille, tall sleeper cab.
-      box(root, 2.15, 0.55, 2.25, 0, 1.18, -3.42, paint);
-      box(root, 1.85, 0.82, 1.15, 0, 1.42, -4.13, paintDark);
-      box(root, 1.72, 1.48, 1.68, 0, 1.92, -3.43, cabMat);
-      box(root, 1.48, 0.92, 1.28, 0, 2.05, -3.50, glass, false);
+      box(root, 2.4, 0.68, 2.5, 0, 1.22, -3.42, paint);
+      box(root, 2.05, 0.92, 1.2, 0, 1.48, -4.18, paintDark);
+      box(root, 2.0, 1.72, 1.9, 0, 2.0, -3.38, cabMat);
+      box(root, 1.68, 1.02, 1.42, 0, 2.12, -3.46, glass, false);
       box(root, 1.12, 0.42, 0.1, 0, 1.18, -4.61, steel);
       box(root, 0.28, 0.22, 0.08, -0.63, 1.18, -4.62, cream, false);
       box(root, 0.28, 0.22, 0.08, 0.63, 1.18, -4.62, cream, false);
@@ -392,7 +392,7 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -1.05, 0.48, 1.65), addWheel(root, 1.05, 0.48, 1.65));
       wheels.push(addWheel(root, -1.05, 0.48, 3.35), addWheel(root, 1.05, 0.48, 3.35));
       // Road-tractor drive tires are larger than the trailer tires.
-      wheels.slice(0, 2).forEach((wheel) => wheel.scale.set(1.18, 1.18, 1.18));
+      wheels.slice(0, 2).forEach((wheel) => wheel.scale.set(1.42, 1.42, 1.42));
     } else {
       const len = id === "heavy" ? 1.25 : 1;
       box(root, 1.7 * len, 0.45, 2.1, 0, 1.05, -1.7 * len, body);
