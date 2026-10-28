@@ -104,9 +104,7 @@ export function createAudio() {
       filter.frequency.setTargetAtTime(profile.filter + load * (machine === "truck" ? 70 : 105) + moving * 35, ctx.currentTime, 0.18);
     },
     hydraulics(machine: MachineSound, lift: number, tilt: number) {
-      // Dozer blade movement was producing a repetitive, synthetic squeak.
-      // Keep the blade silent rather than playing an effect on every stick movement.
-      if (machine === "dozer" || muted || !ctx || !started) return;
+      if (muted || !ctx || !started) return;
       const movement = Math.max(Math.abs(lift), Math.abs(tilt));
       if (movement < 0.18 || ctx.currentTime - hydraulicAt < 0.16) return;
       hydraulicAt = ctx.currentTime;
