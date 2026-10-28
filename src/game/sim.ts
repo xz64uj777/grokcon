@@ -57,6 +57,7 @@ import {
   type Gesture,
 } from "@/game/controls";
 import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
+import { blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, spotsUsed } from "@/game/lowboy";
 import {
   BLAST_RADIUS,
   BLAST_COST,
@@ -295,6 +296,7 @@ export function freshGame(company: string): GameState {
     washPlant: false,
     wet: 0,
     muted: false,
+    deck: [],
     vehicles: (() => {
       const pickup = makeVehicle("pickup", 0);
       const plant = makeVehicle("crusher", 1);
@@ -1223,6 +1225,24 @@ function integrate(v: VehicleState, c: Control, dt: number) {
   v.z += fz * v.speed * dt;
 }
 
+let deckUids = new Set<string>();
+
+function bindDeck(state: GameState) {
+  deckUids = new Set(state.deck ?? []);
+}
+
+function aboard(v: VehicleState) {
+  return deckUids.has(v.uid);
+}
+
+function clampLowboy(v: VehicleState) {
+  if (onHaulRoad(v.x, v.z)) return;
+  if (v.z > 64 && v.x > 20 && v.x < 980) {
+    v.z = Math.max(88, Math.min(104, v.z));
+    v.speed *= 0.5;
+  }
+}
+
 function resolveCircle(v: VehicleState, radius: number) {
   for (const b of BLOCKS) {
     const hx = b.sx / 2;
@@ -1255,6 +1275,17 @@ function resolveCircle(v: VehicleState, radius: number) {
     v.x += dx * push;
     v.z += dz * push;
     v.speed *= 0.82;
+  }
+  if (aboard(v)) return;
+  if (v.defId === "lowboy" && (onHaulRoad(v.x, v.z) || v.z > 64)) {
+    clampLowboy(v);
+    return;
+  }
+  if (blockRoadGate(v.defId, v.x, v.z)) {
+    v.z = Math.min(v.z, v.x > 500 ? 68 : 63);
+    v.speed = 0;
+    v.status = "The north road is for the lowboy";
+    return;
   }
   const padR = radius + 0.4;
   const BOUNDS = boundsFor(v.x);
@@ -1301,6 +1332,7 @@ function resolveVehicles(state: GameState) {
     for (let j = i + 1; j < list.length; j++) {
       const a = list[i];
       const b = list[j];
+      if (aboard(a) || aboard(b)) continue;
       const ra = vehicleStats(a).radius;
       const rb = vehicleStats(b).radius;
       let dx = b.x - a.x;
@@ -1570,6 +1602,8 @@ function blastEvacuationControl(state: GameState, index: number): Control | null
 }
 
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
+  if (!state.deck) state.deck = [];
+  bindDeck(state);
   regen(state, dt);
   const wasRaining = rainNow(state) > 0.05;
   state.wet = stepWet(state.wet, rainNow(state), dt);
@@ -1580,6 +1614,11 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     const v = state.vehicles[i];
     v.busy = false;
     v.manual = false;
+    if (aboard(v)) {
+      controls.push({ ...ZERO });
+      work.push(AUTO_CREW);
+      continue;
+    }
     let c: Control;
     let w: WorkOpts = i === state.active ? AUTO_PLAYER : AUTO_CREW;
     if (i === state.active && playerEnabled && state.controlMode === "real" && input.cmd) {
@@ -1697,6 +1736,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   if (player && !player.status) {
     player.status = player.busy ? "Working" : "In your seat";
   }
+  snapDeck(state);
   state.seconds += dt;
   const raining = rainNow(state) > 0.05;
   if (raining !== wasRaining) log(state, raining ? "Rain's coming in. The valley mud spreads and the low ground floods." : "Rain has stopped. The ground will dry out over a few minutes.");
@@ -1840,9 +1880,93 @@ function placeInArea(state: GameState, v: VehicleState, area: AreaId) {
 }
 
 /** Why the active machine can't go on the lowboy right now, or "" if it can. */
+function snapDeck(state: GameState) {
+  const rig = state.vehicles.find((v) => v.defId === "lowboy");
+  if (!rig) return;
+  const fx = -Math.sin(rig.yaw);
+  const fz = -Math.cos(rig.yaw);
+  const side = Math.cos(rig.yaw);
+  const sideZ = -Math.sin(rig.yaw);
+  state.deck.forEach((uid, i) => {
+    const m = state.vehicles.find((v) => v.uid === uid);
+    if (!m) return;
+    const back = 4.6 + i * 3.4;
+    m.x = rig.x - fx * back + side * 0.2;
+    m.z = rig.z - fz * back + sideZ * 0.2;
+    m.yaw = rig.yaw;
+    m.speed = 0;
+    m.status = "On the lowboy";
+  });
+}
+
+export function ensureLowboy(state: GameState) {
+  if (!valleyOpen(state)) return;
+  if (state.vehicles.some((v) => v.defId === "lowboy")) return;
+  const v = makeVehicle("lowboy", state.vehicles.length);
+  v.x = -18;
+  v.z = 46;
+  v.yaw = Math.PI;
+  state.vehicles.push(v);
+  log(state, "The lowboy is in the yard. Drive it up the north road.");
+}
+
+function nearestDeckLoad(state: GameState, rig: VehicleState) {
+  let best: VehicleState | null = null;
+  let bestD = 9;
+  for (const o of state.vehicles) {
+    if (o === rig || o.defId === "lowboy" || o.defId === "crusher") continue;
+    if (state.deck.includes(o.uid)) continue;
+    if (o.cargo > 0.05) continue;
+    if (deckSpots(o.defId) == null) continue;
+    const d = distTo(rig.x, rig.z, o.x, o.z);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+export function toggleDeck(state: GameState) {
+  if (!state.deck) state.deck = [];
+  bindDeck(state);
+  const rig = state.vehicles[state.active];
+  if (!rig || rig.defId !== "lowboy") return "Get in the lowboy first.";
+  if (!valleyOpen(state)) return "The north road opens once you lease the Deep bench.";
+  const target = nearestDeckLoad(state, rig);
+  if (target) {
+    const why = deckFit(state.deck.map((uid) => state.vehicles.find((v) => v.uid === uid)?.defId ?? ""), target.defId);
+    if (why) return why;
+    target.operator = false;
+    target.speed = 0;
+    state.deck.push(target.uid);
+    bindDeck(state);
+    snapDeck(state);
+    log(state, `${DEFS[target.defId].name} is on the deck. ${spotsUsed(state.deck.map((uid) => state.vehicles.find((v) => v.uid === uid)?.defId ?? ""))} of ${3} spots used.`);
+    return "";
+  }
+  if (!state.deck.length) return "Pull up to an empty parked machine.";
+  if (!inDropYard(rig.x, rig.z)) return "Unload at the ridge yard or the valley camp.";
+  const uid = state.deck.pop();
+  const m = state.vehicles.find((v) => v.uid === uid);
+  if (m) {
+    const side = Math.cos(rig.yaw);
+    const sideZ = -Math.sin(rig.yaw);
+    m.x = rig.x + side * 6;
+    m.z = rig.z + sideZ * 6;
+    m.speed = 0;
+    m.status = "Parked";
+    log(state, `${DEFS[m.defId].name} is off the lowboy.`);
+  }
+  bindDeck(state);
+  return "";
+}
+
 export function haulBlocker(state: GameState) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine.";
+  if (v.defId === "lowboy") return "Drive the lowboy up the north road. The paid jump is for one machine.";
+  if (state.deck?.includes(v.uid)) return "That machine is strapped to the lowboy.";
   if (!valleyOpen(state)) return "River Valley opens once you lease the Deep bench.";
   if (v.defId === "crusher") return "The track crusher stays at the ridge.";
   if (v.cargo > 0.05) return "Dump the load before it goes on the trailer.";
@@ -1898,6 +2022,7 @@ export function buyClaim(state: GameState, id: number) {
   if (!claim) return "No such ground.";
   if (!spend(state, claim.price, `${claim.name} is leased.`)) return "Not enough cash.";
   state.claims.push(id);
+  if (id === 4) ensureLowboy(state);
   return "";
 }
 
@@ -1915,6 +2040,7 @@ export function buyUpgrade(state: GameState, index: number, kind: UpgradeKind) {
 export function toggleCrew(state: GameState, index: number) {
   const v = state.vehicles[index];
   if (!v) return "No machine.";
+  if (v.defId === "lowboy") return "The lowboy does not take a driver. You drive it.";
   const name = DEFS[v.defId].name;
   if (!v.hired) {
     if (state.cash < HIRE_COST) {
@@ -1937,6 +2063,8 @@ export function sellVehicle(state: GameState, index: number) {
   if (state.vehicles.length <= 1) return "Keep one machine on the yard.";
   const v = state.vehicles[index];
   if (!v) return "No machine.";
+  if (v.defId === "lowboy") return "The lowboy stays with the company.";
+  if (state.deck?.includes(v.uid)) return "Unload it from the lowboy first.";
   const refund = resale(v);
   const name = DEFS[v.defId].name;
   state.vehicles.splice(index, 1);
@@ -1962,7 +2090,12 @@ export function setActive(state: GameState, index: number) {
   state.vehicles[index].unstick = 0;
 }
 
-function cargoLine(v: VehicleState) {
+function cargoLine(state: GameState, v: VehicleState) {
+  if (v.defId === "lowboy") {
+    const ids = (state.deck ?? []).map((uid) => state.vehicles.find((o) => o.uid === uid)?.defId ?? "");
+    const names = ids.map((id) => (id && DEFS[id] ? DEFS[id].name : "")).filter(Boolean);
+    return `Deck ${spotsUsed(ids)}/3${names.length ? ` · ${names.join(", ")}` : " · empty"}`;
+  }
   const st = vehicleStats(v);
   if (st.capacity <= 0) return "No bed";
   if (v.cargo < 0.05 || !v.cargoOre) return `Empty · ${st.capacity.toFixed(1)} t`;
@@ -1994,6 +2127,10 @@ function objective(state: GameState) {
 function hint(state: GameState) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine in the seat.";
+  if (v.defId === "lowboy") {
+    if (onHaulRoad(v.x, v.z)) return "North road. Stay on the gravel. Unload only at a yard.";
+    return "Pull up to an empty machine and tap Load. Two small machines fit. A heavy haul rides alone.";
+  }
   if (v.status.startsWith("Loaded") || v.status.startsWith("No dump") || v.status.startsWith("Bucket") || v.status.startsWith("Dump truck") || v.status.startsWith("Truck is") || v.status.startsWith("This machine")) {
     return v.status;
   }
@@ -2185,7 +2322,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       index,
       name: def.name,
       status: index === state.active ? "In your seat" : veh.operator ? veh.status : "Parked",
-      cargo: cargoLine(veh),
+      cargo: cargoLine(state, veh),
       active: index === state.active,
       hired: veh.hired,
       operator: veh.operator,
@@ -2238,7 +2375,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     vehicleCount: state.vehicles.length,
     speedLabel: `${Math.round(Math.abs(v?.speed ?? 0) * 2.15)} mph`,
     moving: Math.abs(v?.speed ?? 0) > 0.6,
-    cargoLabel: v ? cargoLine(v) : "",
+    cargoLabel: v ? cargoLine(state, v) : "",
     cargoFrac: st && st.capacity > 0 && v ? clamp(v.cargo / st.capacity, 0, 1) : 0,
     muted: state.muted,
     sluice: state.sluice,
@@ -2310,7 +2447,7 @@ function areaHud(state: GameState) {
   }
   return {
     area,
-    areaName: areaName(area),
+    areaName: v && onHaulRoad(v.x, v.z) ? "North road" : areaName(area),
     valleyOpen: open,
     travelLabel: !open
       ? "River Valley opens once you lease the Deep bench"
@@ -2323,5 +2460,20 @@ function areaHud(state: GameState) {
     groundLabel,
     bridgeLabel,
     washPlant: state.washPlant,
+    deckLabel: deckHud(state).label,
+    deckButton: deckHud(state).button,
   };
+}
+
+function deckHud(state: GameState): { label: string; button: "Load" | "Unload" | null } {
+  const v = state.vehicles[state.active];
+  if (!v || v.defId !== "lowboy") return { label: "", button: null };
+  const ids = (state.deck ?? []).map((uid) => state.vehicles.find((o) => o.uid === uid)?.defId ?? "");
+  const names = ids.map((id) => (id && DEFS[id] ? DEFS[id].name : "")).filter(Boolean);
+  const label = `Deck ${spotsUsed(ids)}/3${names.length ? ` · ${names.join(", ")}` : ""}`;
+  const near = nearestDeckLoad(state, v);
+  if (near && !deckFit(ids, near.defId)) return { label, button: "Load" };
+  if (near) return { label, button: "Load" };
+  if ((state.deck ?? []).length && inDropYard(v.x, v.z)) return { label, button: "Unload" };
+  return { label, button: "Load" };
 }

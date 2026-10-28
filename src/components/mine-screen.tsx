@@ -321,7 +321,7 @@ export function MineScreen() {
             <div ref={padRef} key={`twin-${screen}`} className="twin-pad pointer-events-none absolute inset-x-0 bottom-0 z-10 gap-2 p-3 pb-4">
               <div className="twin-btns pointer-events-auto flex flex-wrap content-end justify-center gap-2">
                 <SmallBtn onClick={() => apiRef.current?.cycle(1)}>Next</SmallBtn>
-                <SmallBtn onClick={() => apiRef.current?.loadTruck()}>Load</SmallBtn>
+                <SmallBtn onClick={() => apiRef.current?.loadTruck()}>{hud.deckButton ?? "Load"}</SmallBtn>
                 {hud.machineId === "excavator" && (
                   <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Park on" : "Park"}</SmallBtn>
                 )}
@@ -366,7 +366,7 @@ export function MineScreen() {
                   className="h-14 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
                   onClick={() => apiRef.current?.loadTruck()}
                 >
-                  Load
+                  {hud.deckButton ?? "Load"}
                 </button>
                 <button
                   type="button"

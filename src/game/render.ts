@@ -2,6 +2,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
+import { HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR } from "@/game/lowboy";
 import { X0, areaOf, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
@@ -159,6 +160,26 @@ export function createWorld(host: HTMLElement): World {
 
   const groundTex = track(dirtTexture());
   buildPitWalls(scene, track);
+  const roadMat = std(0x6d6458, { roughness: 1 });
+  const haulRoad = new THREE.Mesh(
+    track(new THREE.PlaneGeometry(HAUL_ROAD.maxX - HAUL_ROAD.minX, HAUL_ROAD.maxZ - HAUL_ROAD.minZ)),
+    roadMat,
+  );
+  haulRoad.rotation.x = -Math.PI / 2;
+  haulRoad.position.set((HAUL_ROAD.minX + HAUL_ROAD.maxX) / 2, 0.04, (HAUL_ROAD.minZ + HAUL_ROAD.maxZ) / 2);
+  haulRoad.receiveShadow = true;
+  scene.add(haulRoad);
+  for (const spur of [RIDGE_SPUR, VALLEY_SPUR]) {
+    const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(spur.maxX - spur.minX, spur.maxZ - spur.minZ)), roadMat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set((spur.minX + spur.maxX) / 2, 0.045, (spur.minZ + spur.maxZ) / 2);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  const roadSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("NORTH ROAD", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  roadSign.position.set(0, 5, 62);
+  roadSign.scale.set(8, 3, 1);
+  scene.add(roadSign);
   const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340)), std(0xffffff, { map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -333,6 +354,17 @@ export function createWorld(host: HTMLElement): World {
       boom.add(stick);
       house.add(boom);
       root.add(house);
+    } else if (id === "lowboy") {
+      box(root, 1.7, 0.45, 2.2, 0, 1.05, -3.4, paint);
+      box(root, 1.5, 1.05, 1.4, 0, 1.7, -3.8, cabMat);
+      box(root, 1.25, 0.55, 1.15, 0, 1.85, -3.8, glass, false);
+      box(root, 2.4, 0.22, 7.2, 0, 0.85, 0.6, steel);
+      box(root, 0.12, 0.35, 7.0, -1.15, 1.05, 0.6, paintDark);
+      box(root, 0.12, 0.35, 7.0, 1.15, 1.05, 0.6, paintDark);
+      wheels.push(addWheel(root, -0.9, 0.52, -3.6), addWheel(root, 0.9, 0.52, -3.6));
+      wheels.push(addWheel(root, -1.05, 0.48, -0.4), addWheel(root, 1.05, 0.48, -0.4));
+      wheels.push(addWheel(root, -1.05, 0.48, 1.6), addWheel(root, 1.05, 0.48, 1.6));
+      wheels.push(addWheel(root, -1.05, 0.48, 3.2), addWheel(root, 1.05, 0.48, 3.2));
     } else {
       const len = id === "heavy" ? 1.25 : 1;
       box(root, 1.7 * len, 0.45, 2.1, 0, 1.05, -1.7 * len, body);

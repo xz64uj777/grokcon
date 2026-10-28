@@ -10,10 +10,12 @@ import {
   contractUnit,
   faceOf,
   freshGame,
+  ensureLowboy,
   loadTruck,
   plannedPad,
   startBlast,
   step,
+  toggleDeck,
 } from "@/game/sim";
 import type { VehicleState } from "@/game/types";
 
@@ -152,6 +154,37 @@ describe("west barge", () => {
     loadTruck(state, 0);
     assert.ok(truck.cargo <= 18.01, `dump truck should respect the bridge, got ${truck.cargo}`);
     assert.ok(truck.cargo > 1);
+  });
+});
+
+describe("driving the lowboy", () => {
+  it("straps a skid and a dozer, carries them east, and will not unload on the road", () => {
+    const state = freshGame("Haul");
+    state.claims = [1, 4];
+    state.cash = 1;
+    ensureLowboy(state);
+    const rig = state.vehicles.find((v) => v.defId === "lowboy");
+    assert.ok(rig);
+    const skid = park(state, "skid", rig.x + 4, rig.z);
+    const dozer = park(state, "dozer", rig.x + 4, rig.z + 3);
+    state.active = state.vehicles.indexOf(rig);
+    assert.equal(toggleDeck(state), "");
+    skid.x = rig.x + 4;
+    skid.z = rig.z;
+    assert.equal(toggleDeck(state), "");
+    assert.equal(state.deck.length, 2);
+    park(state, "pickup", rig.x + 3, rig.z);
+    assert.equal(toggleDeck(state), "The deck already has two machines.");
+
+    rig.x = 220;
+    rig.z = 96;
+    rig.yaw = -Math.PI / 2;
+    const before = rig.x;
+    for (let i = 0; i < 40; i++) step(state, { throttle: 1, steer: 0, action: false }, 0.1, true);
+    assert.ok(rig.x > before + 8, `lowboy should roll east, x=${rig.x}`);
+    assert.ok(Math.abs(skid.x - rig.x) < 12);
+    assert.ok(Math.abs(dozer.z - rig.z) < 8);
+    assert.equal(toggleDeck(state), "Unload at the ridge yard or the valley camp.");
   });
 });
 

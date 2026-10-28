@@ -11,7 +11,8 @@ export type VehicleId =
   | "excavator"
   | "truck"
   | "heavy"
-  | "crusher";
+  | "crusher"
+  | "lowboy";
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 
@@ -111,6 +112,8 @@ export type GameState = {
   wet: number;
   muted: boolean;
   vehicles: VehicleState[];
+  /** Uids strapped to the lowboy deck, load order. */
+  deck: string[];
   active: number;
   deposits: Deposit[];
   pileSeq: number;
@@ -233,6 +236,8 @@ export type HudModel = {
   groundLabel: string;
   bridgeLabel: string;
   washPlant: boolean;
+  deckLabel: string;
+  deckButton: "Load" | "Unload" | null;
 };
 
 export type PriceRow = {

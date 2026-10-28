@@ -1,8 +1,9 @@
 import { boundsFor, isOreId, isVehicleId } from "@/game/catalog";
+import { onHaulRoad } from "@/game/lowboy";
 import { areaOf } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
-import { MARKET_KEYS, freshGame } from "@/game/sim";
+import { MARKET_KEYS, ensureLowboy, freshGame } from "@/game/sim";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
 
 /** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
@@ -19,10 +20,13 @@ function num(v: unknown, fallback: number, min: number, max: number) {
 
 /** Clamp a saved x/z into whichever area (ridge or valley) the x falls in. */
 function posX(raw: unknown, fallback: number) {
+  if (typeof raw === "number" && raw > 120 && raw < 880) return num(raw, fallback, -20, 1100);
   const b = boundsFor(typeof raw === "number" && Number.isFinite(raw) ? raw : fallback);
   return num(raw, fallback, b.minX, b.maxX);
 }
 function posZ(raw: unknown, rawX: unknown, fallback: number) {
+  if (typeof raw === "number" && typeof rawX === "number" && onHaulRoad(rawX, raw)) return num(raw, fallback, 48, 112);
+  if (typeof rawX === "number" && rawX > 120 && rawX < 880) return num(raw, fallback, 80, 112);
   const b = boundsFor(typeof rawX === "number" && Number.isFinite(rawX) ? rawX : 0);
   return num(raw, fallback, b.minZ, b.maxZ);
 }
@@ -218,6 +222,9 @@ function sanitize(raw: unknown): GameState | null {
     }
   }
   if (!state.vehicles.length) return null;
+  const live = new Set(state.vehicles.map((v) => v.uid));
+  state.deck = Array.isArray(o.deck) ? o.deck.filter((id): id is string => typeof id === "string" && live.has(id)).slice(0, 2) : [];
+  ensureLowboy(state);
   return state;
 }
 

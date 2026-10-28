@@ -27,6 +27,7 @@ import {
   startBlast,
   step,
   toggleCrew,
+  toggleDeck,
 } from "@/game/sim";
 import type { GameApi, GameState, Input, VehicleId, ViewModel } from "@/game/types";
 
@@ -289,7 +290,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
     },
     loadTruck() {
-      const msg = loadTruck(state);
+      const seated = state.vehicles[state.active];
+      const msg = seated?.defId === "lowboy" ? toggleDeck(state) : loadTruck(state);
       state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
       saveGame(books());
@@ -323,7 +325,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       let next = state.active;
       for (let k = 1; k <= n; k++) {
         const i = (state.active + dir * k + n * k) % n;
-        if (areaOf(state.vehicles[i].x) === here) {
+        if (areaOf(state.vehicles[i].x) === here && !state.deck?.includes(state.vehicles[i].uid)) {
           next = i;
           break;
         }

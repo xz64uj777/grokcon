@@ -22,6 +22,17 @@ There's one bridge over the river. The sign says **30 T LIMIT**, and that counts
 - **West barge:** a buyer tied up on the west bank. It pays about 70% of the rail price, and the load never has to cross. Sell there, or take a dump truck over the bridge for the full rail price.
 - A hired dump truck still leaves room for the bridge and hauls to the rail. A hired heavy haul fills the bed and sells at the barge. It cannot take a real load across.
 
+## The north road
+
+Once the Deep bench is leased, a **lowboy** sits in the ridge yard. Get in it, pull up to an empty parked machine, and tap **Load**. The deck has three spots, and it holds two machines at most.
+
+- Claim truck or skid steer: 1 spot. Two of them fit. A dozer and a skid steer fit.
+- Bulldozer or payloader: 2 spots.
+- Dump truck, excavator, or heavy haul: the whole deck, and it rides alone.
+- The track crusher does not fit. Beds have to be empty.
+
+Drive it north onto the gravel road and follow it to the valley camp. Only the lowboy can take that road. Unload only at the ridge yard or the valley camp. The office button is still there: **$500**, one empty machine, no drive.
+
 ## 3. Mud
 
 The river banks are soft, so machines slow down there. Wheeled machines (pickup, skid steer, loader, trucks) slow down a lot. In deep mud they show **Bogged** and crawl. Tracked machines (dozer, excavator) barely notice. Nothing ever gets stuck for good, you just go slowly.
