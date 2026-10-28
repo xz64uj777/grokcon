@@ -351,7 +351,9 @@ export function MineScreen() {
           ) : (
           <div ref={padRef} key={`one-${screen}`} className="touch-ui pointer-events-none absolute inset-x-0 bottom-0 z-10 items-end justify-between p-4 pb-6">
               <Joystick onChange={(steer, throttle) => apiRef.current?.setStick(steer, throttle)} />
-              <div className="pointer-events-auto flex flex-col items-end gap-3">
+              <div className="pointer-events-auto flex flex-col items-end gap-2">
+                {hud.canTest && <SmallBtn onClick={() => apiRef.current?.testHole()}>Test hole</SmallBtn>}
+                {hud.canBlast && <SmallBtn danger onClick={() => apiRef.current?.blast()}>Blast</SmallBtn>}
                 <button
                   type="button"
                   className="h-12 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
