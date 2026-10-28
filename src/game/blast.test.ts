@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { homeTool, sticksToCommand } from "./controls.ts";
 import { BLAST_RADIUS } from "./mining.ts";
-import { RIVER, X0, inRiver } from "./river.ts";
+import { RIVER, WEST_BARGE, X0, inRiver } from "./river.ts";
 import {
   blastEscapeTarget,
   buySluicePlant,
@@ -10,6 +10,8 @@ import {
   contractUnit,
   faceOf,
   freshGame,
+  loadTruck,
+  plannedPad,
   startBlast,
   step,
 } from "@/game/sim";
@@ -102,6 +104,54 @@ describe("valley blasts", () => {
     state.contract = { ore: "gold", delivered: 0, need: 4, bonus: 280 };
     assert.equal(buySluicePlant(state), "");
     assert.equal(state.contract.bonus, Math.round(4 * 300 * 0.5));
+  });
+});
+
+describe("west barge", () => {
+  it("sends a loaded heavy haul to the barge and a dump truck to the rail", () => {
+    const state = freshGame("Barge");
+    state.claims = [1, 4, 5, 6];
+    const heavy = park(state, "heavy", WEST_BARGE.x - 20, WEST_BARGE.z);
+    heavy.cargoOre = "copper";
+    heavy.cargo = 12;
+    heavy.hired = true;
+    heavy.operator = true;
+    assert.equal(plannedPad(state, state.vehicles.indexOf(heavy)), "barge");
+
+    const truck = park(state, "truck", WEST_BARGE.x - 20, WEST_BARGE.z);
+    truck.cargoOre = "copper";
+    truck.cargo = 12;
+    truck.hired = true;
+    truck.operator = true;
+    assert.equal(plannedPad(state, state.vehicles.indexOf(truck)), "loadout");
+  });
+
+  it("fills a hired heavy haul and leaves a hired dump truck room for the bridge", () => {
+    const state = freshGame("Load");
+    state.claims = [1, 4];
+    const digger = state.vehicles[0];
+    digger.cargoOre = "copper";
+    digger.cargo = 8;
+    const heavy = park(state, "heavy", digger.x + 4, digger.z);
+    heavy.hired = true;
+    heavy.operator = true;
+    heavy.x = WEST_BARGE.x;
+    heavy.z = WEST_BARGE.z;
+    digger.x = heavy.x + 3;
+    digger.z = heavy.z;
+    assert.equal(loadTruck(state, 0).includes("Loaded"), true);
+    assert.ok(heavy.cargo > 2, `heavy should take a real load, got ${heavy.cargo}`);
+
+    const truck = park(state, "truck", heavy.x, heavy.z + 4);
+    truck.hired = true;
+    truck.operator = true;
+    digger.cargoOre = "copper";
+    digger.cargo = 8;
+    digger.x = truck.x + 3;
+    digger.z = truck.z;
+    loadTruck(state, 0);
+    assert.ok(truck.cargo <= 18.01, `dump truck should respect the bridge, got ${truck.cargo}`);
+    assert.ok(truck.cargo > 1);
   });
 });
 

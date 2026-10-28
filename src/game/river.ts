@@ -42,6 +42,19 @@ export const HAUL_FEE = 500;
 export const UNLOCK_CLAIM = 4;
 export const VALLEY_CLAIMS = { bars: 5, quarry: 6 } as const;
 
+/** Share of the crusher price the west-bank buyer pays. Crossing still pays full rail price. */
+export const BARGE_RATE = 0.7;
+
+/** Buyer tied up on the west bank. The sell ring is on firm ground; the hull sits in the river. */
+export const WEST_BARGE = {
+  id: "barge",
+  name: "West barge",
+  x: X0 - 28,
+  z: 16,
+  r: 9,
+  blurb: "A buyer on the west bank. Pays less than the rail, and the load never crosses the bridge.",
+};
+
 export const WASH_PLANT = {
   id: "wash",
   name: "Wash plant",
@@ -80,6 +93,26 @@ export function bridgeAllows(defId: string, cargo: number) {
 /** Biggest load this machine can carry over the bridge. */
 export function bridgeMaxLoad(defId: string) {
   return Math.max(0, BRIDGE.limit - (MACHINE_TONS[defId] ?? 10));
+}
+
+/** True when the two points are on opposite sides of the valley river. */
+export function otherBank(ax: number, bx: number) {
+  if (areaOf(ax) !== "river" || areaOf(bx) !== "river") return false;
+  const as = Math.sign(ax - RIVER.x);
+  const bs = Math.sign(bx - RIVER.x);
+  return as !== 0 && bs !== 0 && as !== bs;
+}
+
+/**
+ * A crossing is worth planning when the bridge will take the load already in the bed,
+ * or at least half an empty bed. A heavy haul's 2 t allowance is not a plan.
+ */
+export function crossingWorth(defId: string, capacity: number, cargo: number) {
+  const legal = cargo > 0.2 ? cargo : bridgeMaxLoad(defId);
+  if (!bridgeAllows(defId, legal)) return false;
+  if (cargo > 0.2) return true;
+  if (capacity <= 0) return true;
+  return bridgeMaxLoad(defId) >= capacity * 0.5;
 }
 
 export function inRiver(x: number, z: number) {

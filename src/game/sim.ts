@@ -28,8 +28,11 @@ import {
   X0,
   areaOf,
   boggedDown,
+  BARGE_RATE,
   bridgeAllows,
   bridgeMaxLoad,
+  crossingWorth,
+  otherBank,
   grossTons,
   mudDepth,
   mudSpeedFactor,
@@ -107,7 +110,7 @@ export type WorkOpts = {
 const AUTO_PLAYER: WorkOpts = { phase: "auto", cut: "auto", quality: 0.8 };
 const AUTO_CREW: WorkOpts = { phase: "auto", cut: "auto", quality: 0.85 };
 
-export const MARKET_PADS = ["crusher", "reclaim", "sluice", "loadout", "wash"] as const;
+export const MARKET_PADS = ["crusher", "reclaim", "sluice", "loadout", "wash", "barge"] as const;
 export const MARKET_KEYS = MARKET_PADS.flatMap((pad) => (Object.keys(ORES) as OreId[]).map((ore) => marketKey(pad, ore)));
 
 const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
@@ -210,6 +213,7 @@ export function unitPrice(ore: OreId, pad: PadKind, sluice: boolean, market?: Ga
 export function basePrice(ore: OreId, pad: PadKind, sluice: boolean) {
   const o = ORES[ore];
   if (pad === "wash") return o.wash;
+  if (pad === "barge") return Math.round(o.crusher * BARGE_RATE);
   if (pad === "loadout") return o.crusher;
   if (pad === "reclaim") return ore === "dirt" ? o.reclaim : Math.round(o.crusher * 0.4);
   if (pad === "sluice") {
@@ -490,26 +494,41 @@ function washScore(state: GameState, ore: OreId) {
   return Math.max(0, ORES[ore].sluice - ORES[ore].crusher) * 40;
 }
 
-function bestPad(state: GameState, ore: OreId, x: number, z: number) {
+function canReach(v: VehicleState, padX: number) {
+  if (areaOf(v.x) !== areaOf(padX)) return false;
+  if (!otherBank(v.x, padX)) return true;
+  return crossingWorth(v.defId, vehicleStats(v).capacity, v.cargo);
+}
+
+function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: VehicleState) {
   let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
   for (const pad of livePads(state)) {
     if (!padOpen(state, pad.kind)) continue;
     if (areaOf(pad.x) !== areaOf(x)) continue;
-    if (pad.kind === "wash" && prefersWash(state, ore, x)) return pad;
+    if (v && !canReach(v, pad.x)) continue;
     const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
     if (unit <= 0) continue;
-    const d = distTo(x, z, pad.x, pad.z);
+    if (pad.kind === "wash" && prefersWash(state, ore, x)) return pad;
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
     if (pad.kind === "sluice" && prefersSluice(state, ore)) return pad;
-    const s = unit - d * 0.55;
+    // A bridge crossing is a price choice, not a long haul. Metres must not
+    // talk a dump truck into the cheaper barge.
+    const d = distTo(x, z, pad.x, pad.z);
+    const s = otherBank(x, pad.x) ? unit - 12 : unit - d * 0.55;
     if (s > score) {
       score = s;
       best = pad;
     }
   }
   return best;
+}
+
+export function plannedPad(state: GameState, index: number) {
+  const v = state.vehicles[index];
+  if (!v?.cargoOre) return null;
+  return bestPad(state, v.cargoOre, v.x, v.z, v)?.kind ?? null;
 }
 
 function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
@@ -679,7 +698,7 @@ function aiControl(state: GameState, index: number): Control {
         return;
       }
     }
-    const pad = bestPad(state, v.cargoOre, v.x, v.z);
+    const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (pad) {
       target = pad;
       arrive = Math.max(5, pad.r * 0.62);
@@ -848,7 +867,7 @@ function aiControl(state: GameState, index: number): Control {
     const pad = nearestPad(state, v.x, v.z);
     const wrongPlant =
       (prefersSluice(state, v.cargoOre) && pad?.kind !== "sluice") ||
-      (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash") ||
+      (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash" && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
       (!!pad && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     if (pad && !wrongPlant) {
       v.status = `Dumping at ${pad.name}`;
@@ -954,7 +973,7 @@ function performAction(
       !!v.cargoOre &&
       !!pad &&
       ((prefersSluice(state, v.cargoOre) && pad.kind !== "sluice") ||
-        (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player) ||
+        (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     const crewShort = !player && st.capacity > 0 && v.cargo < st.capacity * 0.9;
     const reclaimWaste = precious && pad?.kind === "reclaim";
@@ -1331,9 +1350,12 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32, 
   }
   if (!truck) return "No dump truck close enough. Pull up beside it.";
   let cap = vehicleStats(truck).capacity;
-  // Crew drivers in the valley won't take more than the bridge can carry.
+  // Crew who mean to cross the bridge leave room for the limit. A heavy haul
+  // does not: half a bed will not fit, so it fills up for the west barge.
   const crewTruck = truck.operator && state.vehicles[state.active] !== truck;
-  if (crewTruck && areaOf(truck.x) === "river") cap = Math.min(cap, bridgeMaxLoad(truck.defId));
+  if (crewTruck && areaOf(truck.x) === "river" && crossingWorth(truck.defId, cap, 0)) {
+    cap = Math.min(cap, bridgeMaxLoad(truck.defId));
+  }
   const room = cap - truck.cargo;
   if (room < 0.2) return "Dump truck is full.";
   if (truck.cargoOre && truck.cargoOre !== v.cargoOre) {

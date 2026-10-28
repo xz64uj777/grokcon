@@ -9,6 +9,7 @@ import {
   boggedDown,
   bridgeAllows,
   bridgeMaxLoad,
+  crossingWorth,
   grossTons,
   inRiver,
   mudDepth,
@@ -42,6 +43,12 @@ describe("bridge", () => {
   it("lets every machine cross empty except the track crusher", () => {
     for (const id of ["pickup", "skid", "dozer", "loader", "truck", "excavator", "heavy"]) assert.ok(bridgeAllows(id, 0), id);
     assert.ok(!bridgeAllows("crusher", 0));
+  });
+  it("does not plan a heavy-haul crossing for two tonnes", () => {
+    assert.equal(crossingWorth("heavy", 40, 0), false);
+    assert.equal(crossingWorth("heavy", 40, 20), false);
+    assert.equal(crossingWorth("truck", 22, 0), true);
+    assert.equal(crossingWorth("truck", 22, 20), false);
   });
   it("knows where the deck is, and the deck isn't river", () => {
     assert.ok(onBridge(BRIDGE.x, BRIDGE.z));

@@ -15,7 +15,7 @@ export type VehicleId =
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 
-export type PadKind = "crusher" | "reclaim" | "sluice" | "loadout" | "wash";
+export type PadKind = "crusher" | "reclaim" | "sluice" | "loadout" | "wash" | "barge";
 
 export type Deposit = {
   id: string;

@@ -17,9 +17,10 @@ Old saves still load. Nothing is taken away, and everything you own stays at Rid
 
 There's one bridge over the river. The sign says **30 T LIMIT**, and that counts the machine and its load together.
 
-- Over the limit, the machine stops at the end of the bridge and a **TOO HEAVY** banner tells you how much it can carry. A dump truck can carry 18 t across. A heavy haul can carry 2 t. It is a one-bank truck: forty tons to the crusher or the rail loadout, not across the river.
+- Over the limit, the machine stops at the end of the bridge and a **TOO HEAVY** banner tells you how much it can carry. A dump truck can carry 18 t across. A heavy haul can carry 2 t.
 - Backing off the bridge always works.
-- Your crew knows the rule and only loads valley trucks up to what the bridge can take.
+- **West barge:** a buyer tied up on the west bank. It pays about 70% of the rail price, and the load never has to cross. Sell there, or take a dump truck over the bridge for the full rail price.
+- A hired dump truck still leaves room for the bridge and hauls to the rail. A hired heavy haul fills the bed and sells at the barge. It cannot take a real load across.
 
 ## 3. Mud
 

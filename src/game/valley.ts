@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PADS } from "@/game/catalog";
-import { BRIDGE, MUD_ZONES, RIVER, RIVER_BOUNDS, RIVER_CAMP, WASH_PLANT, X0 } from "@/game/river";
+import { BRIDGE, MUD_ZONES, RIVER, RIVER_BOUNDS, RIVER_CAMP, WASH_PLANT, WEST_BARGE, X0 } from "@/game/river";
 import { buildBackdrop, buildPitWalls, buildScatter, dirtTexture, gravelTexture } from "@/game/scenery";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
@@ -155,6 +155,30 @@ export function buildValley(
     scene.add(g);
   }
 
+  // West barge: hull in the river, ramp and hopper on the bank where trucks sell.
+  const barge = PADS.find((p) => p.kind === "barge");
+  if (barge) {
+    const g = new THREE.Group();
+    const hull = new THREE.Mesh(track(new THREE.BoxGeometry(7, 1.1, 16)), std(0x3e4a42, { roughness: 0.55, metalness: 0.25 }));
+    hull.position.set(RIVER.x - RIVER.halfWidth - 1.2, 0.35, barge.z);
+    hull.castShadow = true;
+    g.add(hull);
+    const cabin = new THREE.Mesh(track(new THREE.BoxGeometry(3.2, 1.6, 3.2)), std(0x8a6f3a, { roughness: 0.7 }));
+    cabin.position.set(hull.position.x, 1.5, barge.z - 5);
+    cabin.castShadow = true;
+    g.add(cabin);
+    const ramp = new THREE.Mesh(track(new THREE.BoxGeometry(8, 0.2, 3)), steel);
+    ramp.position.set((barge.x + hull.position.x) / 2, 0.3, barge.z);
+    ramp.rotation.z = 0.08;
+    g.add(ramp);
+    const hopper = new THREE.Mesh(track(new THREE.CylinderGeometry(2.2, 1.1, 2.4, 4)), std(0x6a5a3a, { roughness: 0.75 }));
+    hopper.position.set(barge.x, 1.6, barge.z);
+    hopper.rotation.y = Math.PI / 4;
+    hopper.castShadow = true;
+    g.add(hopper);
+    scene.add(g);
+  }
+
   // Wash plant (only once it's bought): trommel drum, frame, chute and settling pond.
   const wash = new THREE.Group();
   wash.position.set(WASH_PLANT.x + 6, 0, WASH_PLANT.z - 6);
@@ -199,6 +223,7 @@ export function buildValley(
     MUD_ZONES.some((m) => ((x - m.x) / (m.rx + 3)) ** 2 + ((z - m.z) / (m.rz + 3)) ** 2 < 1) ||
     Math.hypot(x - RIVER_CAMP.x, z - RIVER_CAMP.z) < 22 ||
     Math.hypot(x - WASH_PLANT.x, z - WASH_PLANT.z) < 18 ||
+    Math.hypot(x - WEST_BARGE.x, z - WEST_BARGE.z) < 16 ||
     Math.abs(z - BRIDGE.z) < 9 ||
     Math.hypot(x - (X0 - 72), z) < 16;
   buildScatter(scene, track, [], rich, { cx: X0, bounds: RIVER_BOUNDS, avoid, seed: 311 });

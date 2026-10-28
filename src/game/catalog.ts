@@ -1,5 +1,5 @@
 import type { OreId, UpgradeKind, VehicleId } from "@/game/types";
-import { BRIDGE, RIVER, RIVER_BOUNDS, RIVER_SPAWNS, WASH_PLANT, X0, areaOf } from "@/game/river";
+import { BRIDGE, RIVER, RIVER_BOUNDS, RIVER_SPAWNS, WASH_PLANT, WEST_BARGE, X0, areaOf } from "@/game/river";
 
 export const HIRE_COST = 800;
 /** Share of a hired operator's sale that lands in the company box. The crew keeps the rest. */
@@ -59,6 +59,7 @@ export const PADS = [
   { id: "reclaim", name: "Reclaim", x: 44, z: 46, r: 8, kind: "reclaim" as const },
   { id: "sluice", name: "Sluice", x: -80, z: 36, r: 8, kind: "sluice" as const },
   { id: "loadout", name: "Rail loadout", x: X0 + 74, z: 30, r: 9, kind: "loadout" as const },
+  { id: WEST_BARGE.id, name: WEST_BARGE.name, x: WEST_BARGE.x, z: WEST_BARGE.z, r: WEST_BARGE.r, kind: "barge" as const },
   { id: "wash", name: "Wash plant", x: WASH_PLANT.x, z: WASH_PLANT.z, r: WASH_PLANT.r, kind: "wash" as const },
 ];
 
@@ -474,7 +475,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   heavy: {
     id: "heavy",
     name: "Heavy haul",
-    blurb: "Forty tons a trip, on one bank. The valley bridge only allows 2 t in this bed, so it stays put once it is loaded.",
+    blurb: "Forty tons a trip, on one bank. In the valley it sells at the west barge. The bridge only allows 2 t in this bed.",
     price: 125000,
     capacity: 40,
     maxSpeed: 13,
@@ -551,7 +552,7 @@ export const CLAIMS = [
     id: 6,
     name: "Valley quarry",
     price: 30000,
-    blurb: "Hard copper in the west wall. A dump truck crosses with 18 t. A heavy haul cannot — the bridge allows 2 t in that bed.",
+    blurb: "Hard copper in the west wall. Sell it at the west barge, or cross with a dump truck for the better rail price.",
   },
 ];
 
