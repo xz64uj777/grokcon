@@ -90,7 +90,7 @@ export function createAudio() {
         skid: { base: 38, rev: 1.65, filter: 118, wave: "triangle" as OscillatorType, sub: 0.34 },
         loader: { base: 42, rev: 2.5, filter: 155, wave: "sawtooth" as OscillatorType, sub: 0.3 },
         excavator: { base: 36, rev: 2.0, filter: 125, wave: "triangle" as OscillatorType, sub: 0.36 },
-        dozer: { base: 29, rev: 1.8, filter: 110, wave: "sawtooth" as OscillatorType, sub: 0.44 },
+        dozer: { base: 25, rev: 0.75, filter: 88, wave: "triangle" as OscillatorType, sub: 0.52 },
         truck: { base: 24, rev: 1.25, filter: 82, wave: "triangle" as OscillatorType, sub: 0.62 },
         other: { base: 39, rev: 2.2, filter: 145, wave: "sawtooth" as OscillatorType, sub: 0.3 },
       }[machine];
