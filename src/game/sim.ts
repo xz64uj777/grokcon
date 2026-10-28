@@ -1368,6 +1368,7 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32, 
   const v = state.vehicles[index];
   if (!v) return "No machine.";
   const def = DEFS[v.defId];
+  if (v.defId === "lowboy") return "Use the lowboy Load control to put a parked machine on the trailer; this control loads ore into dump trucks.";
   if (def.receives || def.capacity <= 0) return "This machine can't load a truck.";
   if (v.cargo < 0.08 || !v.cargoOre) return "Bucket is empty.";
   let truck: VehicleState | null = forced;
