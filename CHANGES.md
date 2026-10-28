@@ -93,7 +93,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 | **Excavator** | Drive ↕ · steer ↔ | Boom up ↑ · curl ← dump → |
 | **Excavator, park on** | Slew ↔ · dipper ↕ | Boom up ↑ · curl ← dump → |
 | **Payloader** | Drive/reverse ↕ · steer ↔ | Arms ↕ · bucket ↔ |
-| **Bulldozer** | Left track ↕ · blade ↔ | Right track ↕ · angle ↔ |
+| **Bulldozer** | Drive/reverse ↕ · steer ↔ | Blade up/down ↕ · angle ↔ |
 | **Dump truck / Heavy haul** | Drive/reverse ↕ · steer ↔ | Bed up/down ↕ |
 | **Claim truck / Track crusher** | Drive | — |
 <!-- cheat-sheet:end -->
