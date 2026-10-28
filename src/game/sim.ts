@@ -1427,6 +1427,29 @@ export function groundFactor(state: GameState, v: VehicleState) {
   return mudSpeedFactor(v.defId, mudDepth(v.x, v.z, state.wet));
 }
 
+function blastEvacuationControl(state: GameState, index: number): Control | null {
+  const blast = state.blast;
+  if (!blast || blast.phase !== "fuse" || index === state.active) return null;
+  const deposit = state.deposits.find((d) => d.id === blast.deposit);
+  const v = state.vehicles[index];
+  if (!deposit || !v) return null;
+  const face = faceOf(deposit);
+  const dx = v.x - face.x;
+  const dz = v.z - face.z;
+  const distance = Math.hypot(dx, dz);
+  const safeDistance = BLAST_RADIUS + vehicleStats(v).radius + 3;
+  if (distance >= safeDistance) return null;
+  // Crew and parked machines evacuate directly away from the blast face while
+  // the fuse is running. Do not rely on their normal work route to move them.
+  const length = distance > 0.1 ? distance : 1;
+  const ux = distance > 0.1 ? dx / length : (GATE.x - face.x) / Math.hypot(GATE.x - face.x, GATE.z - face.z);
+  const uz = distance > 0.1 ? dz / length : (GATE.z - face.z) / Math.hypot(GATE.x - face.x, GATE.z - face.z);
+  const targetX = face.x + ux * (safeDistance + 8);
+  const targetZ = face.z + uz * (safeDistance + 8);
+  v.status = "Evacuating blast zone";
+  return seek(v, targetX, targetZ, 2);
+}
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   regen(state, dt);
   const wasRaining = rainNow(state) > 0.05;
@@ -1483,11 +1506,16 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
             brake: Math.abs(input.throttle) < 0.05 ? 0.4 : 0,
           }
         : { ...ZERO };
-    } else if (v.operator) {
-      c = aiControl(state, i);
     } else {
-      c = { ...ZERO };
-      v.status = "Parked";
+      const evacuation = blastEvacuationControl(state, i);
+      if (evacuation) {
+        c = evacuation;
+      } else if (v.operator) {
+        c = aiControl(state, i);
+      } else {
+        c = { ...ZERO };
+        v.status = "Parked";
+      }
     }
     controls.push(c);
     work.push(w);
