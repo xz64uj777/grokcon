@@ -286,7 +286,6 @@ export function MineScreen() {
                   </p>
                 )}
                 <p className="flex shrink-0 items-center gap-1 text-sm text-muted">
-                  {hud.gearLabel && <span className="font-display text-base text-fg">{hud.gearLabel.replace(/^Gear /, "").slice(0, 1)} ·</span>}
                   {!compact && <Gauge className="size-4" aria-hidden />}
                   {hud.speedLabel}
                 </p>
@@ -323,12 +322,6 @@ export function MineScreen() {
               <div className="twin-btns pointer-events-auto flex flex-wrap content-end justify-center gap-2">
                 <SmallBtn onClick={() => apiRef.current?.cycle(1)}>Next</SmallBtn>
                 <SmallBtn onClick={() => apiRef.current?.loadTruck()}>Load</SmallBtn>
-                {hud.gearLabel && (
-                  <>
-                    <SmallBtn label="Shift up" onClick={() => apiRef.current?.shift(1)}>Gear ▲</SmallBtn>
-                    <SmallBtn label="Shift down" onClick={() => apiRef.current?.shift(-1)}>Gear ▼</SmallBtn>
-                  </>
-                )}
                 {hud.machineId === "excavator" && (
                   <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Park on" : "Park"}</SmallBtn>
                 )}
