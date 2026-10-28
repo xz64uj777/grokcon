@@ -1,10 +1,14 @@
+export type MachineSound = "skid" | "loader" | "excavator" | "dozer" | "truck" | "other";
+
 export function createAudio() {
   let ctx: AudioContext | null = null;
   let osc: OscillatorNode | null = null;
+  let osc2: OscillatorNode | null = null;
   let filter: BiquadFilterNode | null = null;
   let engine: GainNode | null = null;
   let muted = false;
   let started = false;
+  let hydraulicAt = 0;
 
   function ac() {
     if (!ctx) {
@@ -12,16 +16,24 @@ export function createAudio() {
       ctx = new Ctx();
       osc = ctx.createOscillator();
       osc.type = "sawtooth";
-      osc.frequency.value = 46;
+      osc.frequency.value = 42;
+      osc2 = ctx.createOscillator();
+      osc2.type = "triangle";
+      osc2.frequency.value = 22;
       filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.value = 160;
+      filter.frequency.value = 150;
       engine = ctx.createGain();
       engine.gain.value = 0;
+      const sub = ctx.createGain();
+      sub.gain.value = 0.28;
       osc.connect(filter);
       filter.connect(engine);
       engine.connect(ctx.destination);
+      osc2.connect(sub);
+      sub.connect(engine);
       osc.start();
+      osc2.start();
       started = true;
     }
     if (ctx.state === "suspended") void ctx.resume();
@@ -42,7 +54,7 @@ export function createAudio() {
     o.stop(ctx.currentTime + dur + 0.02);
   }
 
-  function noise(dur: number, gain: number) {
+  function noise(dur: number, gain: number, frequency = 180) {
     if (!ctx || muted) return;
     const n = Math.floor(ctx.sampleRate * dur);
     const buf = ctx.createBuffer(1, n, ctx.sampleRate);
@@ -52,7 +64,7 @@ export function createAudio() {
     src.buffer = buf;
     const filterN = ctx.createBiquadFilter();
     filterN.type = "bandpass";
-    filterN.frequency.value = 180;
+    filterN.frequency.value = frequency;
     const g = ctx.createGain();
     g.gain.value = gain;
     src.connect(filterN);
@@ -63,47 +75,55 @@ export function createAudio() {
 
   return {
     unlock() {
-      try {
-        ac();
-      } catch {
-        /* audio is optional */
-      }
+      try { ac(); } catch { /* audio is optional */ }
     },
     setMuted(m: boolean) {
       muted = m;
       if (engine && ctx) engine.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
     },
-    engine(speed: number, throttle: number) {
-      if (!started || !ctx || !osc || !engine || !filter || muted) return;
-      const vol = Math.min(0.045, Math.abs(speed) * 0.0022 + (Math.abs(throttle) > 0.08 ? 0.012 : 0.004));
-      engine.gain.setTargetAtTime(vol, ctx.currentTime, 0.08);
-      osc.frequency.setTargetAtTime(38 + Math.abs(speed) * 2.4, ctx.currentTime, 0.08);
-      filter.frequency.setTargetAtTime(140 + Math.abs(throttle) * 90, ctx.currentTime, 0.08);
+    engine(speed: number, throttle: number, machine: MachineSound = "other") {
+      if (!started || !ctx || !osc || !osc2 || !engine || !filter || muted) return;
+      // Distinct synthesized profiles based on real machine references:
+      // compact/high-rev skid steer, broad loader, heavy tracked dozer,
+      // excavator idle and low-frequency haul-truck diesel.
+      const profile = {
+        skid: { base: 53, rev: 3.2, filter: 205, wave: "square" as OscillatorType, sub: 0.16 },
+        loader: { base: 42, rev: 2.5, filter: 155, wave: "sawtooth" as OscillatorType, sub: 0.3 },
+        excavator: { base: 36, rev: 2.0, filter: 125, wave: "triangle" as OscillatorType, sub: 0.36 },
+        dozer: { base: 29, rev: 1.8, filter: 110, wave: "sawtooth" as OscillatorType, sub: 0.44 },
+        truck: { base: 32, rev: 2.8, filter: 135, wave: "sawtooth" as OscillatorType, sub: 0.48 },
+        other: { base: 39, rev: 2.2, filter: 145, wave: "sawtooth" as OscillatorType, sub: 0.3 },
+      }[machine];
+      const moving = Math.min(1, Math.abs(speed) / 8);
+      const load = Math.min(1, Math.abs(throttle));
+      const vol = Math.min(0.052, 0.006 + moving * 0.018 + load * 0.019);
+      osc.type = profile.wave;
+      engine.gain.setTargetAtTime(vol, ctx.currentTime, 0.12);
+      osc.frequency.setTargetAtTime(profile.base + moving * 10 + load * 9 + profile.rev * Math.abs(speed), ctx.currentTime, 0.12);
+      osc2.frequency.setTargetAtTime(profile.base * 0.48 + moving * 4, ctx.currentTime, 0.12);
+      filter.frequency.setTargetAtTime(profile.filter + load * 180 + moving * 70, ctx.currentTime, 0.12);
+    },
+    hydraulics(machine: MachineSound, lift: number, tilt: number) {
+      if (muted || !ctx || !started) return;
+      const movement = Math.max(Math.abs(lift), Math.abs(tilt));
+      if (movement < 0.18 || ctx.currentTime - hydraulicAt < 0.16) return;
+      hydraulicAt = ctx.currentTime;
+      const freq = machine === "excavator" ? 620 : machine === "skid" ? 760 : machine === "loader" ? 490 : machine === "dozer" ? 280 : 360;
+      tone(freq + movement * 240, 0.12, "sawtooth", machine === "dozer" ? 0.018 : 0.012);
+      if (machine === "skid" || machine === "loader" || machine === "excavator") noise(0.08, 0.008, freq);
     },
     dig() {
-      try {
-        ac();
-        noise(0.12, 0.08);
-      } catch {
-        /* ignore */
-      }
+      try { ac(); noise(0.12, 0.08, 180); } catch { /* ignore */ }
     },
     sell() {
       try {
         ac();
         tone(523, 0.12, "triangle", 0.06);
         tone(784, 0.18, "triangle", 0.045);
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     },
     stop() {
-      try {
-        osc?.stop();
-        void ctx?.close();
-      } catch {
-        /* ignore */
-      }
+      try { osc?.stop(); osc2?.stop(); void ctx?.close(); } catch { /* ignore */ }
       ctx = null;
       started = false;
     },

@@ -43,7 +43,6 @@ import {
   bladeDrag,
   bucketPoint,
   controlHelp,
-  gearedThrottle,
   homeTool,
   machineKind,
   readGesture,
@@ -1453,7 +1452,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
         gesture = readGesture(v.defId, prev, v.tool, v.speed);
         c = { throttle: 0, steer: 0, action: false, brake: 0 };
       } else {
-        const throttle = usesGears(v.defId) ? gearedThrottle(cmd.drive.throttle, v.tool.gear) : cmd.drive.throttle;
+        const throttle = cmd.drive.throttle;
         c = { throttle, steer: cmd.drive.steer, action: false, brake: cmd.drive.brake > 0.1 ? 1 : 0 };
         integrate(v, c, dt);
         gesture = readGesture(v.defId, prev, v.tool, v.speed);

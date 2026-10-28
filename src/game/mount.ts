@@ -617,7 +617,9 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (sold) saveGame(books());
       digCool = Math.max(0, digCool - dt);
       const v = state.vehicles[state.active];
-      audio.engine(v?.speed ?? 0, panelOpen ? 0 : input.throttle);
+      const soundKind = (id: string | undefined) => id === "skid" || id === "loader" || id === "excavator" || id === "dozer" || id === "truck" || id === "heavy" ? (id === "heavy" ? "truck" : id) : "other";
+      audio.engine(v?.speed ?? 0, panelOpen ? 0 : input.throttle, soundKind(v?.defId));
+      if (!panelOpen && input.cmd) audio.hydraulics(soundKind(v?.defId), input.cmd.axes.lift, input.cmd.axes.tilt);
       saveT += dt;
       if (saveT > 4) {
         saveGame(books());

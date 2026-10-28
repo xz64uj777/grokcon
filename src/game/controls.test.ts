@@ -30,11 +30,11 @@ describe("loader-style skid steer controls", () => {
     assert.ok(cmd.axes.lift > 0.9, "right stick up raises the arms");
     assert.ok(cmd.axes.tilt > 0.9, "right stick left curls the bucket");
   });
-  it("left stick back brakes; reverse is selected with the shifter", () => {
+  it("left stick back drives in reverse without a shifter", () => {
     const cmd = sticksToCommand("skid", { x: 0, y: -1 }, { x: 0, y: 0 });
     if (cmd.drive.kind !== "car") throw new Error("car");
-    assert.equal(cmd.drive.throttle, 0);
-    assert.equal(cmd.drive.brake, 1);
+    assert.equal(cmd.drive.throttle, -1);
+    assert.equal(cmd.drive.brake, 0);
   });
   it("small stick wobble is ignored", () => {
     const cmd = sticksToCommand("skid", { x: 0.05, y: 0.08 }, { x: -0.05, y: 0 });
@@ -88,11 +88,11 @@ describe("loader and trucks", () => {
     assert.equal(gearedThrottle(1, -1), -1);
     assert.equal(gearedThrottle(-1, 1), 0);
   });
-  it("pulling the left stick back brakes, it does not reverse", () => {
+  it("pulling the left stick back reverses without a gear button", () => {
     const cmd = sticksToCommand("loader", { x: 0, y: -1 }, { x: 0, y: 0 });
     if (cmd.drive.kind !== "car") throw new Error("car");
-    assert.equal(cmd.drive.throttle, 0);
-    assert.equal(cmd.drive.brake, 1);
+    assert.equal(cmd.drive.throttle, -1);
+    assert.equal(cmd.drive.brake, 0);
   });
 });
 
