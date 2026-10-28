@@ -99,12 +99,16 @@ describe("loader and trucks", () => {
 });
 
 describe("dozer and truck sticks", () => {
-  it("dozer tracks on each stick, blade on the left stick sideways", () => {
+  it("dozer uses skid-steer-style driving and right-stick blade controls", () => {
     const c = sticksToCommand("dozer", { x: -1, y: 1 }, { x: 1, y: 1 });
-    if (c.drive.kind !== "tank") throw new Error("tank");
-    assert.equal(tankMotion(c.drive.left, c.drive.right).forward, 1);
-    assert.ok(c.axes.lift < 0, "left stick left lowers the blade");
-    assert.ok(c.axes.tilt > 0, "right stick sideways angles the blade");
+    if (c.drive.kind !== "car") throw new Error("car");
+    assert.equal(c.drive.throttle, 1, "left stick forward drives forward");
+    assert.equal(c.drive.steer, 1, "left stick left steers left");
+    assert.ok(c.axes.lift > 0.9, "right stick up raises the blade");
+    assert.ok(c.axes.tilt < -0.9, "right stick right angles the blade");
+    const reverse = sticksToCommand("dozer", { x: 0, y: -1 }, { x: 0, y: 0 });
+    if (reverse.drive.kind !== "car") throw new Error("car");
+    assert.equal(reverse.drive.throttle, -1, "left stick back reverses");
   });
   it("truck bed rides the right stick", () => {
     assert.ok(sticksToCommand("truck", { x: 0, y: 0 }, { x: 0, y: 1 }).axes.lift > 0.9);
