@@ -355,44 +355,56 @@ export function createWorld(host: HTMLElement): World {
       house.add(boom);
       root.add(house);
     } else if (id === "lowboy") {
-      // Full-size conventional road tractor: long hood, broad grille, tall sleeper cab.
-      box(root, 2.4, 0.68, 2.5, 0, 1.22, -3.42, paint);
-      box(root, 2.05, 0.92, 1.2, 0, 1.48, -4.18, paintDark);
-      box(root, 2.0, 1.72, 1.9, 0, 2.0, -3.38, cabMat);
-      box(root, 1.68, 1.02, 1.42, 0, 2.12, -3.46, glass, false);
-      box(root, 1.12, 0.42, 0.1, 0, 1.18, -4.61, steel);
-      box(root, 0.28, 0.22, 0.08, -0.63, 1.18, -4.62, cream, false);
-      box(root, 0.28, 0.22, 0.08, 0.63, 1.18, -4.62, cream, false);
-      // Mirrors and exhaust stacks give the tractor a recognisable semi profile.
-      box(root, 0.08, 0.42, 0.08, -0.88, 1.95, -3.78, steel);
-      box(root, 0.08, 0.42, 0.08, 0.88, 1.95, -3.78, steel);
-      box(root, 0.12, 0.78, 0.12, -0.62, 1.85, -2.95, steel);
-      box(root, 0.12, 0.78, 0.12, 0.62, 1.85, -2.95, steel);
-      // Gooseneck rises over the tractor's rear axles, then drops to a genuinely low deck.
-      box(root, 2.1, 0.2, 1.35, 0, 1.18, -2.28, steel);
-      box(root, 1.9, 0.18, 0.85, 0, 0.96, -1.52, steel);
-      box(root, 2.45, 0.16, 0.85, 0, 0.66, -0.95, steel);
-      // Low center well with steel side rails and visible crossmembers.
-      box(root, 2.45, 0.18, 5.35, 0, 0.59, 1.45, steel);
-      box(root, 0.12, 0.3, 5.25, -1.2, 0.78, 1.45, paintDark);
-      box(root, 0.12, 0.3, 5.25, 1.2, 0.78, 1.45, paintDark);
-      for (const z of [-0.55, 0.35, 1.25, 2.15, 3.05]) {
-        box(root, 2.2, 0.12, 0.12, 0, 0.48, z, paintDark, false);
+      // Distinct highway semi tractor with a long bonnet, tall sleeper cab and tandem drives.
+      // The lowboy remains behind the tractor; the yellow cab/hood are intentionally much larger
+      // than the previous compact utility-truck silhouette.
+      box(root, 2.65, 0.78, 2.85, 0, 1.38, -3.55, paint);
+      box(root, 2.18, 0.98, 1.18, 0, 1.48, -4.62, paintDark);
+      box(root, 2.32, 0.16, 0.18, 0, 0.91, -4.96, cabMat);
+      // Tall sleeper cab, roof cap, windshield, side windows and rear sleeper panel.
+      box(root, 2.18, 1.95, 2.0, 0, 2.16, -3.15, cabMat);
+      box(root, 2.22, 0.16, 1.95, 0, 3.19, -3.15, paintDark);
+      box(root, 1.82, 1.08, 0.12, 0, 2.43, -4.17, glass, false);
+      box(root, 0.12, 0.92, 1.18, -1.1, 2.42, -3.18, paintDark);
+      box(root, 0.12, 0.92, 1.18, 1.1, 2.42, -3.18, paintDark);
+      box(root, 0.12, 0.88, 1.25, -1.17, 2.43, -3.18, glass, false);
+      box(root, 0.12, 0.88, 1.25, 1.17, 2.43, -3.18, glass, false);
+      box(root, 1.55, 0.14, 0.14, 0, 1.55, -4.78, steel);
+      box(root, 1.12, 0.36, 0.16, 0, 1.04, -4.78, steel);
+      // Big mirrors, paired vertical exhaust stacks, and visible side fuel tanks.
+      box(root, 0.09, 0.52, 0.1, -1.12, 2.25, -4.0, steel);
+      box(root, 0.09, 0.52, 0.1, 1.12, 2.25, -4.0, steel);
+      box(root, 0.15, 0.95, 0.15, -0.88, 2.0, -2.42, steel);
+      box(root, 0.15, 0.95, 0.15, 0.88, 2.0, -2.42, steel);
+      box(root, 0.32, 0.4, 1.05, -1.12, 1.0, -2.5, steel);
+      box(root, 0.32, 0.4, 1.05, 1.12, 1.0, -2.5, steel);
+      // Black tractor chassis and a raised gooseneck dropping into a deep low center well.
+      box(root, 1.65, 0.28, 4.25, 0, 0.72, -1.55, cabMat);
+      box(root, 2.25, 0.24, 1.25, 0, 1.35, -1.85, steel);
+      box(root, 2.0, 0.2, 0.9, 0, 1.08, -1.15, steel);
+      box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
+      box(root, 2.55, 0.2, 5.25, 0, 0.58, 1.95, steel);
+      box(root, 0.14, 0.36, 5.15, -1.22, 0.8, 1.95, paintDark);
+      box(root, 0.14, 0.36, 5.15, 1.22, 0.8, 1.95, paintDark);
+      for (const z of [0.0, 0.9, 1.8, 2.7, 3.6]) {
+        box(root, 2.25, 0.12, 0.12, 0, 0.46, z, paintDark, false);
       }
-      // Rear loading ramps are separate, sloped steel plates rather than a tow-truck bed.
-      const rampL = box(root, 0.92, 0.13, 1.05, -0.63, 0.38, 4.42, steel);
-      const rampR = box(root, 0.92, 0.13, 1.05, 0.63, 0.38, 4.42, steel);
+      // Separate rear loading ramps and reinforced rear frame.
+      const rampL = box(root, 0.92, 0.14, 1.08, -0.65, 0.37, 4.78, steel);
+      const rampR = box(root, 0.92, 0.14, 1.08, 0.65, 0.37, 4.78, steel);
       rampL.rotation.x = 0.22;
       rampR.rotation.x = 0.22;
-      box(root, 0.18, 0.22, 0.35, -0.62, 0.62, 3.92, paintDark);
-      box(root, 0.18, 0.22, 0.35, 0.62, 0.62, 3.92, paintDark);
-      // Tractor tandem plus three lowboy axles.
-      wheels.push(addWheel(root, -1.05, 0.58, -3.65), addWheel(root, 1.05, 0.58, -3.65));
-      wheels.push(addWheel(root, -1.05, 0.48, -0.25), addWheel(root, 1.05, 0.48, -0.25));
-      wheels.push(addWheel(root, -1.05, 0.48, 1.65), addWheel(root, 1.05, 0.48, 1.65));
-      wheels.push(addWheel(root, -1.05, 0.48, 3.35), addWheel(root, 1.05, 0.48, 3.35));
-      // Road-tractor drive tires are larger than the trailer tires.
-      wheels.slice(0, 2).forEach((wheel) => wheel.scale.set(1.42, 1.42, 1.42));
+      box(root, 0.2, 0.24, 0.38, -0.65, 0.62, 4.22, paintDark);
+      box(root, 0.2, 0.24, 0.38, 0.65, 0.62, 4.22, paintDark);
+      // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
+      wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
+      wheels.push(addWheel(root, -1.18, 0.64, -2.35), addWheel(root, 1.18, 0.64, -2.35));
+      wheels.push(addWheel(root, -1.18, 0.64, -1.25), addWheel(root, 1.18, 0.64, -1.25));
+      wheels.push(addWheel(root, -1.08, 0.48, 1.05), addWheel(root, 1.08, 0.48, 1.05));
+      wheels.push(addWheel(root, -1.08, 0.48, 2.55), addWheel(root, 1.08, 0.48, 2.55));
+      wheels.push(addWheel(root, -1.08, 0.48, 3.9), addWheel(root, 1.08, 0.48, 3.9));
+      // Tractor tires visibly larger than the trailer tires.
+      wheels.slice(0, 6).forEach((wheel) => wheel.scale.set(1.75, 1.75, 1.75));
     } else {
       const len = id === "heavy" ? 1.25 : 1;
       box(root, 1.7 * len, 0.45, 2.1, 0, 1.05, -1.7 * len, body);
