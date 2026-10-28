@@ -87,11 +87,11 @@ export function createAudio() {
       // compact/high-rev skid steer, broad loader, heavy tracked dozer,
       // excavator idle and low-frequency haul-truck diesel.
       const profile = {
-        skid: { base: 53, rev: 3.2, filter: 205, wave: "square" as OscillatorType, sub: 0.16 },
+        skid: { base: 38, rev: 1.65, filter: 118, wave: "triangle" as OscillatorType, sub: 0.34 },
         loader: { base: 42, rev: 2.5, filter: 155, wave: "sawtooth" as OscillatorType, sub: 0.3 },
         excavator: { base: 36, rev: 2.0, filter: 125, wave: "triangle" as OscillatorType, sub: 0.36 },
         dozer: { base: 29, rev: 1.8, filter: 110, wave: "sawtooth" as OscillatorType, sub: 0.44 },
-        truck: { base: 32, rev: 2.8, filter: 135, wave: "sawtooth" as OscillatorType, sub: 0.48 },
+        truck: { base: 24, rev: 1.25, filter: 82, wave: "triangle" as OscillatorType, sub: 0.62 },
         other: { base: 39, rev: 2.2, filter: 145, wave: "sawtooth" as OscillatorType, sub: 0.3 },
       }[machine];
       const moving = Math.min(1, Math.abs(speed) / 8);
@@ -99,9 +99,9 @@ export function createAudio() {
       const vol = Math.min(0.052, 0.006 + moving * 0.018 + load * 0.019);
       osc.type = profile.wave;
       engine.gain.setTargetAtTime(vol, ctx.currentTime, 0.12);
-      osc.frequency.setTargetAtTime(profile.base + moving * 10 + load * 9 + profile.rev * Math.abs(speed), ctx.currentTime, 0.12);
+      osc.frequency.setTargetAtTime(profile.base + moving * 5 + load * 4 + profile.rev * Math.abs(speed), ctx.currentTime, 0.18);
       osc2.frequency.setTargetAtTime(profile.base * 0.48 + moving * 4, ctx.currentTime, 0.12);
-      filter.frequency.setTargetAtTime(profile.filter + load * 180 + moving * 70, ctx.currentTime, 0.12);
+      filter.frequency.setTargetAtTime(profile.filter + load * (machine === "truck" ? 70 : 105) + moving * 35, ctx.currentTime, 0.18);
     },
     hydraulics(machine: MachineSound, lift: number, tilt: number) {
       if (muted || !ctx || !started) return;
