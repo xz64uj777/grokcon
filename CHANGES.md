@@ -17,7 +17,7 @@ Old saves still load. Nothing is taken away, and everything you own stays at Rid
 
 There's one bridge over the river. The sign says **30 T LIMIT**, and that counts the machine and its load together.
 
-- Over the limit, the machine stops at the end of the bridge and a **TOO HEAVY** banner tells you how much it can carry. For example, a dump truck can carry 18 t across.
+- Over the limit, the machine stops at the end of the bridge and a **TOO HEAVY** banner tells you how much it can carry. A dump truck can carry 18 t across. A heavy haul can carry 2 t. It is a one-bank truck: forty tons to the crusher or the rail loadout, not across the river.
 - Backing off the bridge always works.
 - Your crew knows the rule and only loads valley trucks up to what the bridge can take.
 
@@ -72,20 +72,26 @@ Open the Yard office and tap **Practice yard**. You get a yard with one of every
 
 ## 3. Controls cheat sheet (phone)
 
-On a digging machine the screen shows **two big sticks**, one for each thumb. A label under each stick tells you what it does on the machine you're in.
+On a digging machine the screen shows **two big sticks**, one for each thumb. A label under each stick tells you what it does on the machine you're in. The table below is generated from those labels. Do not edit it by hand.
 
-| Machine | Left stick | Right stick | Extra buttons |
-|---|---|---|---|
-| **Skid steer** | Up/down: left wheels. Sideways: arms up/down | Up/down: right wheels. Sideways: curl/dump the bucket | |
-| **Excavator** | Up/down: drive. Sideways: steer. Tap **Park** and this stick slews and works the dipper | Up: boom up. Down: boom down. Left: curl. Right: dump | **Park** locks the tracks |
-| **Payloader** | Up: gas. Down: brake. Sideways: steer | Up/down: arms. Sideways: curl/dump the bucket | **Gear ▲ / Gear ▼** |
-| **Bulldozer** | Up/down: left track. Sideways: blade up/down | Up/down: right track. Sideways: blade angle | |
-| **Dump truck / Heavy haul** | Up: gas. Down: brake. Sideways: steer | Up/down: raise/lower the bed | **Gear ▲ / Gear ▼** |
-| **Claim truck / Track crusher** | One stick drives | | Hold **DIG** to scoop |
+<!-- cheat-sheet:start -->
+| Machine | Left stick | Right stick |
+|---|---|---|
+| **Skid steer** | Drive/reverse ↕ · steer ↔ | Arms ↕ · bucket ↔ |
+| **Excavator** | Drive ↕ · steer ↔ | Boom up ↑ · curl ← dump → |
+| **Excavator, park on** | Slew ↔ · dipper ↕ | Boom up ↑ · curl ← dump → |
+| **Payloader** | Drive/reverse ↕ · steer ↔ | Arms ↕ · bucket ↔ |
+| **Bulldozer** | Left track ↕ · blade ↔ | Right track ↕ · angle ↔ |
+| **Dump truck / Heavy haul** | Drive/reverse ↕ · steer ↔ | Bed up/down ↕ |
+| **Claim truck / Track crusher** | Drive | — |
+<!-- cheat-sheet:end -->
 
-- **Skid steer driving:** push both sticks forward to go straight. Push one to turn. Push them opposite ways to spin in place.
-- **Gears:** the truck and payloader only move in the gear you pick (F, N or R). To back up, stop, tap **Gear ▼** until it says R, then push the gas.
+- **Reversing:** pull the drive stick back. There is no gear button.
+- **Excavator park:** tap **Park** to lock the tracks. The left stick then slews the house and crowds the dipper. Tap it again to drive.
+- **Claim truck and track crusher:** one stick drives. In Simple mode, hold **DIG** to scoop. Realistic mode does not give them a bucket stick.
+- **Skid steer and dozer:** push both sticks forward to go straight. Push one to turn. Push them opposite ways to spin in place.
 - **Buttons above the sticks:** **Next** (switch machines), **Load** (load a truck), **Test hole**, **Blast** (only when you're at a face) and **Auto** (hold it to let the machine work).
+- **Folding the phone** lets go of every stick, so the machine does not keep the last thumb input.
 - **Top of the screen:** **Office**, **View** (change the camera), and sound on/off. Drag on the open ground to turn the camera, and pinch to zoom.
 
 ### The machine card

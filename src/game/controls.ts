@@ -247,3 +247,22 @@ export function controlHelp(defId: string, parked = false): HelpCard {
       return { title: "Drive", phoneLeft: "Drive", phoneRight: "" };
   }
 }
+
+/** Phone cheat sheet. CHANGES.md must contain this table, not a hand-written copy. */
+export function controlCheatSheet() {
+  const row = (machine: string, defId: string, parked = false) => {
+    const h = controlHelp(defId, parked);
+    return `| **${machine}** | ${h.phoneLeft} | ${h.phoneRight || "—"} |`;
+  };
+  return [
+    "| Machine | Left stick | Right stick |",
+    "|---|---|---|",
+    row("Skid steer", "skid"),
+    row("Excavator", "excavator"),
+    row("Excavator, park on", "excavator", true),
+    row("Payloader", "loader"),
+    row("Bulldozer", "dozer"),
+    row("Dump truck / Heavy haul", "truck"),
+    row("Claim truck / Track crusher", "pickup"),
+  ].join("\n");
+}

@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   bladeDrag,
   bucketPoint,
+  controlCheatSheet,
   gearedThrottle,
   homeTool,
   readGesture,
@@ -140,5 +142,17 @@ describe("gestures", () => {
   it("a buried dozer blade stalls", () => {
     assert.ok(bladeDrag(0.02) < 0.3);
     assert.equal(bladeDrag(0.5), 1);
+  });
+});
+
+describe("cheat sheet", () => {
+  it("CHANGES.md contains the table generated from the stick labels", () => {
+    const doc = readFileSync(new URL("../../CHANGES.md", import.meta.url), "utf8");
+    const start = doc.indexOf("<!-- cheat-sheet:start -->");
+    const end = doc.indexOf("<!-- cheat-sheet:end -->");
+    assert.ok(start >= 0 && end > start);
+    const table = doc.slice(start, end).replace("<!-- cheat-sheet:start -->", "").trim();
+    assert.equal(table, controlCheatSheet());
+    assert.equal(doc.includes("Gear ▲"), false);
   });
 });

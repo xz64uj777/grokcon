@@ -33,8 +33,10 @@ import {
   grossTons,
   mudDepth,
   mudSpeedFactor,
+  inRiver,
   onBridge,
   rainAt,
+  RIVER,
   stepWet,
   TRACKED,
   type AreaId,
@@ -232,15 +234,29 @@ function log(state: GameState, msg: string) {
   if (state.log.length > 5) state.log.length = 5;
 }
 
-function rollContract(seq: number, claims: number[]): GameState["contract"] {
+type Plants = { sluice: boolean; washPlant: boolean };
+
+/** Bonus price for a contract. Uses the pad the company can actually sell at. */
+export function contractUnit(ore: OreId, plants: Plants) {
+  if (ore === "silver") return plants.washPlant ? ORES.silver.wash : ORES.silver.crusher;
+  if (ore === "gold") return plants.sluice ? ORES.gold.sluice : ORES.gold.crusher;
+  return ORES[ore].crusher;
+}
+
+function rollContract(seq: number, claims: number[], plants: Plants): GameState["contract"] {
   const options: OreId[] = ["iron"];
   if (claims.includes(2)) options.push("copper");
   if (claims.includes(3)) options.push("gold");
   if (claims.includes(VALLEY_CLAIMS.bars)) options.push("silver");
   const ore = options[seq % options.length] ?? "iron";
   const need = (ore === "gold" ? 4 : ore === "copper" ? 6 : 8) + seq * 2;
-  const unit = ore === "gold" ? ORES.gold.sluice : ore === "silver" ? ORES.silver.wash : ORES[ore].crusher;
-  return { ore, delivered: 0, need, bonus: Math.round(need * unit * 0.5) };
+  return { ore, delivered: 0, need, bonus: Math.round(need * contractUnit(ore, plants) * 0.5) };
+}
+
+function repriceContract(state: GameState) {
+  const c = state.contract;
+  if (!c) return;
+  c.bonus = Math.round(c.need * contractUnit(c.ore, state) * 0.5);
 }
 
 function fillContract(state: GameState, ore: OreId, tons: number) {
@@ -252,7 +268,7 @@ function fillContract(state: GameState, ore: OreId, tons: number) {
   state.cash += bonus;
   state.lifetime += bonus;
   state.contractSeq += 1;
-  state.contract = rollContract(state.contractSeq, state.claims);
+  state.contract = rollContract(state.contractSeq, state.claims, state);
   log(state, `Contract filled. Bonus ${formatMoney(bonus)}. Next: ${state.contract.need} t ${ORES[state.contract.ore].name}.`);
   return bonus;
 }
@@ -288,7 +304,7 @@ export function freshGame(company: string): GameState {
     pileSeq: 1,
     tutorial: { loaded: false, dumped: false, bought: false },
     contractSeq: 0,
-    contract: rollContract(0, [1]),
+    contract: rollContract(0, [1], { sluice: false, washPlant: false }),
     log: ["The claim truck is fueled. The iron pile is south of the gate."],
   };
 }
@@ -1395,15 +1411,15 @@ function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
   d.tons -= loose;
   d.overburden -= dirt;
   d.stress = 0;
-  const dx = GATE.x - f.x;
-  const dz = GATE.z - f.z;
-  const len = Math.hypot(dx, dz) || 1;
-  const px = f.x + (dx / len) * 6;
-  const pz = f.z + (dz / len) * 6;
-  if (loose > 0.1) addPile(state, d.ore, loose, px, pz, d.claim, d.grade * 0.95);
-  if (dirt > 0.1) addPile(state, "dirt", dirt, px + (-dz / len) * 7, pz + (dx / len) * 7, d.claim, 1);
+  const oreSpot = blastPilePoint(f.x, f.z, 0);
+  const dirtSpot = blastPilePoint(f.x, f.z, 7);
+  if (loose > 0.1) addPile(state, d.ore, loose, oreSpot.x, oreSpot.z, d.claim, d.grade * 0.95);
+  if (dirt > 0.1) addPile(state, "dirt", dirt, dirtSpot.x, dirtSpot.z, d.claim, 1);
   let hurt = 0;
   for (const v of state.vehicles) {
+    const sheltered = blastSheltered.has(v);
+    blastSheltered.delete(v);
+    if (sheltered) continue;
     const dmg = blastDamage(distTo(v.x, v.z, f.x, f.z));
     if (dmg > 0) {
       v.damage = Math.min(1, (v.damage ?? 0) + dmg);
@@ -1427,27 +1443,108 @@ export function groundFactor(state: GameState, v: VehicleState) {
   return mudSpeedFactor(v.defId, mudDepth(v.x, v.z, state.wet));
 }
 
+const blastSheltered = new WeakSet<VehicleState>();
+
+function pointBlocked(x: number, z: number, radius: number, avoidBridge = false) {
+  if (inRiver(x, z)) return true;
+  if (avoidBridge && onBridge(x, z)) return true;
+  for (const b of BLOCKS) {
+    const hx = b.sx / 2;
+    const hz = b.sz / 2;
+    const cx = clamp(x, b.x - hx, b.x + hx);
+    const cz = clamp(z, b.z - hz, b.z + hz);
+    const dx = x - cx;
+    const dz = z - cz;
+    if (dx * dx + dz * dz < radius * radius) return true;
+  }
+  const bounds = boundsFor(x);
+  return x < bounds.minX + radius || x > bounds.maxX - radius || z < bounds.minZ + radius || z > bounds.maxZ - radius;
+}
+
+function sameBank(ax: number, bx: number) {
+  if (areaOf(ax) !== "river" || areaOf(bx) !== "river") return areaOf(ax) === areaOf(bx);
+  const as = Math.sign(ax - RIVER.x);
+  const bs = Math.sign(bx - RIVER.x);
+  return as === bs || as === 0 || bs === 0;
+}
+
+function segmentClear(x0: number, z0: number, x1: number, z1: number, radius: number) {
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 8;
+    if (pointBlocked(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, radius)) return false;
+  }
+  return true;
+}
+
+/** A point outside the blast, on the same bank, that does not sit in the river or a wall. */
+export function blastEscapeTarget(face: { x: number; z: number }, v: VehicleState) {
+  const radius = vehicleStats(v).radius;
+  const safe = BLAST_RADIUS + radius + 3;
+  const dist = Math.hypot(v.x - face.x, v.z - face.z);
+  const gate = gateFor(face.x);
+  const glen = Math.hypot(gate.x - face.x, gate.z - face.z) || 1;
+  const towardGate = { x: (gate.x - face.x) / glen, z: (gate.z - face.z) / glen };
+  const away = dist > 0.1 ? { x: (v.x - face.x) / dist, z: (v.z - face.z) / dist } : towardGate;
+  const rot = (ux: number, uz: number, ang: number) => ({
+    x: ux * Math.cos(ang) - uz * Math.sin(ang),
+    z: ux * Math.sin(ang) + uz * Math.cos(ang),
+  });
+  const dirs = [away, towardGate];
+  for (let i = 1; i <= 12; i++) {
+    const ang = (i * Math.PI) / 12;
+    dirs.push(rot(away.x, away.z, ang), rot(away.x, away.z, -ang));
+  }
+  const reach = safe + 8;
+  for (const d of dirs) {
+    const len = Math.hypot(d.x, d.z) || 1;
+    const tx = face.x + (d.x / len) * reach;
+    const tz = face.z + (d.z / len) * reach;
+    if (!sameBank(v.x, tx)) continue;
+    if (pointBlocked(tx, tz, radius)) continue;
+    if (!segmentClear(v.x, v.z, tx, tz, Math.max(0.8, radius * 0.45))) continue;
+    return { x: tx, z: tz };
+  }
+  return null;
+}
+
+/** Loose rock lands toward this map's gate, not toward the ridge from every face. */
+export function blastPilePoint(faceX: number, faceZ: number, side = 0) {
+  const gate = gateFor(faceX);
+  let dx = gate.x - faceX;
+  let dz = gate.z - faceZ;
+  const len = Math.hypot(dx, dz) || 1;
+  dx /= len;
+  dz /= len;
+  for (let step = 6; step <= 16; step += 2) {
+    const x = faceX + dx * step - dz * side;
+    const z = faceZ + dz * step + dx * side;
+    if (!pointBlocked(x, z, 1.2, true)) return { x, z };
+  }
+  return { x: faceX + dx * 6, z: faceZ + dz * 6 };
+}
+
 function blastEvacuationControl(state: GameState, index: number): Control | null {
   const blast = state.blast;
-  if (!blast || blast.phase !== "fuse" || index === state.active) return null;
+  if (!blast || index === state.active) return null;
   const deposit = state.deposits.find((d) => d.id === blast.deposit);
   const v = state.vehicles[index];
   if (!deposit || !v) return null;
   const face = faceOf(deposit);
-  const dx = v.x - face.x;
-  const dz = v.z - face.z;
-  const distance = Math.hypot(dx, dz);
+  const distance = Math.hypot(v.x - face.x, v.z - face.z);
   const safeDistance = BLAST_RADIUS + vehicleStats(v).radius + 3;
-  if (distance >= safeDistance) return null;
-  // Crew and parked machines evacuate directly away from the blast face while
-  // the fuse is running. Do not rely on their normal work route to move them.
-  const length = distance > 0.1 ? distance : 1;
-  const ux = distance > 0.1 ? dx / length : (GATE.x - face.x) / Math.hypot(GATE.x - face.x, GATE.z - face.z);
-  const uz = distance > 0.1 ? dz / length : (GATE.z - face.z) / Math.hypot(GATE.x - face.x, GATE.z - face.z);
-  const targetX = face.x + ux * (safeDistance + 8);
-  const targetZ = face.z + uz * (safeDistance + 8);
+  if (distance >= safeDistance) {
+    blastSheltered.delete(v);
+    return null;
+  }
+  const target = blastEscapeTarget(face, v);
+  if (!target) {
+    blastSheltered.add(v);
+    v.status = "No clear way out of the blast";
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
+  }
+  blastSheltered.delete(v);
   v.status = "Evacuating blast zone";
-  return seek(v, targetX, targetZ, 2);
+  return seek(v, target.x, target.z, 2);
 }
 
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
@@ -1646,7 +1743,7 @@ export function startBlast(state: GameState) {
   d.lastBlastDay = state.market.day;
   const f = faceOf(d);
   state.blast = { deposit: d.id, x: f.x, z: f.z, phase: "drill", t: 0, paid };
-  log(state, `Drilling blast holes in ${d.sign}. Hold still for ${DRILL_SECONDS} seconds.`);
+  log(state, `Drilling blast holes in ${d.sign}. Hold still for ${DRILL_SECONDS} seconds. Other machines are pulling back.`);
   return "";
 }
 
@@ -1688,6 +1785,10 @@ export function buyWashPlant(state: GameState) {
   if (!valleyOpen(state)) return "River Valley opens once you lease the Deep bench.";
   if (!spend(state, WASH_PLANT.price, "Wash plant is running on the east bank of the river.")) return "Not enough cash.";
   state.washPlant = true;
+  if (state.contract?.ore === "silver") {
+    repriceContract(state);
+    log(state, "Silver contract now pays wash-plant prices.");
+  }
   return "";
 }
 
@@ -1761,6 +1862,10 @@ export function buySluicePlant(state: GameState) {
   if (state.sluice) return "Sluice is already running.";
   if (!spend(state, SLUICE.price, "Sluice plant is washing on the west road.")) return "Not enough cash.";
   state.sluice = true;
+  if (state.contract?.ore === "gold") {
+    repriceContract(state);
+    log(state, "Gold contract now pays sluice prices.");
+  }
   return "";
 }
 

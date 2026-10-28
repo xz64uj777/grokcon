@@ -474,7 +474,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   heavy: {
     id: "heavy",
     name: "Heavy haul",
-    blurb: "Forty tons a trip. For a company that already owns the ridge.",
+    blurb: "Forty tons a trip, on one bank. The valley bridge only allows 2 t in this bed, so it stays put once it is loaded.",
     price: 125000,
     capacity: 40,
     maxSpeed: 13,
@@ -551,7 +551,7 @@ export const CLAIMS = [
     id: 6,
     name: "Valley quarry",
     price: 30000,
-    blurb: "Hard copper rock in the west valley wall. Blast it, haul it over the bridge.",
+    blurb: "Hard copper in the west wall. A dump truck crosses with 18 t. A heavy haul cannot — the bridge allows 2 t in that bed.",
   },
 ];
 
@@ -600,5 +600,5 @@ export function isVehicleId(id: string): id is VehicleId {
 }
 
 export function isOreId(id: string): id is OreId {
-  return id === "dirt" || id === "iron" || id === "copper" || id === "gold";
+  return id === "dirt" || id === "iron" || id === "copper" || id === "gold" || id === "silver";
 }
