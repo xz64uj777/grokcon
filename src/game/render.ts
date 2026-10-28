@@ -402,7 +402,7 @@ export function createWorld(host: HTMLElement): World {
   }
 
   const lockedMat = std(0x4a463f, { roughness: 1, flatShading: true });
-  const cutMat = std(0xffffff, { roughness: 0.96, metalness: 0, flatShading: true, vertexColors: true });
+  const cutMat = std(0xffffff, { roughness: 0.96, metalness: 0, flatShading: true, vertexColors: true, side: THREE.DoubleSide });
   function carveFace(d: Deposit, dug: number) {
     const radius = d.radius;
     const geo = new THREE.PlaneGeometry(radius * 1.9, radius * 2.4, 18, 22);
