@@ -1894,9 +1894,11 @@ function snapDeck(state: GameState) {
     const back = 4.6 + i * 3.4;
     m.x = rig.x - fx * back + side * 0.2;
     m.z = rig.z - fz * back + sideZ * 0.2;
-    m.yaw = rig.yaw;
+    // Machines are backed onto the lowboy, so they face the trailer ramps.
+    // This lets the operator drive forward off the rear when unloading.
+    m.yaw = rig.yaw + Math.PI;
     m.speed = 0;
-    m.status = "On the lowboy";
+    m.status = "Loaded facing the ramps";
   });
 }
 
