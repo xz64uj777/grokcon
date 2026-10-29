@@ -454,34 +454,9 @@ export function createWorld(host: HTMLElement): World {
         neckPlate.receiveShadow = true;
         root.add(neckPlate);
       }
-      // Cross-members are exposed beneath the deck, as on a heavy-haul trailer.
-      for (const z of [0.35, 1.15, 1.95, 2.75, 3.55, 4.35]) {
-        box(root, 2.3, 0.13, 0.16, 0, 0.42, z, cabMat);
-      }
-      // Lowboy profile: raised neck over the tractor fifth-wheel, then a clearly dropped well deck.
-      box(root, 1.9, 0.16, 1.15, 0, 0.91, 0.05, cabMat);
-      box(root, 0.18, 0.36, 1.65, -1.16, 0.78, 0.15, steel);
-      box(root, 0.18, 0.36, 1.65, 1.16, 0.78, 0.15, steel);
-      box(root, 0.16, 0.28, 3.85, -1.34, 0.76, 2.15, steel);
-      box(root, 0.16, 0.28, 3.85, 1.34, 0.76, 2.15, steel);
-      box(root, 0.14, 0.36, 5.15, -1.22, 0.8, 1.95, paintDark);
-      box(root, 0.14, 0.36, 5.15, 1.22, 0.8, 1.95, paintDark);
-      for (const z of [0.0, 0.9, 1.8, 2.7, 3.6]) {
-        box(root, 2.25, 0.12, 0.12, 0, 0.46, z, paintDark, false);
-      }
-      // Recessed tie-down pockets and small amber side markers along the low deck.
-      for (const z of [0.25, 1.15, 2.05, 2.95, 3.85]) {
-        box(root, 0.16, 0.08, 0.12, -1.31, 0.73, z, steel, false);
-        box(root, 0.16, 0.08, 0.12, 1.31, 0.73, z, steel, false);
-      }
-      for (const z of [0.2, 1.5, 2.8, 4.05]) {
-        box(root, 0.07, 0.12, 0.09, -1.31, 0.91, z, orange, false);
-        box(root, 0.07, 0.12, 0.09, 1.31, 0.91, z, orange, false);
-      }
-      // Fixed rear frame with simple tail lights; no deployable ramps or unloading hardware.
-      box(root, 2.62, 0.18, 0.28, 0, 0.56, 4.72, steel);
-      box(root, 0.24, 0.16, 0.08, -0.9, 0.65, 4.54, orange, false);
-      box(root, 0.24, 0.16, 0.08, 0.9, 0.65, 4.54, orange, false);
+      // The pivoting deck already carries its planks and rub rails. Do not
+      // overlay it with a second fixed deck, fixed cross-members, or fixed rear
+      // frame; those parts visually lock the deck in place and hide its motion.
       // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
       wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
       wheels.push(addWheel(root, -1.18, 0.64, -2.35), addWheel(root, 1.18, 0.64, -2.35));
