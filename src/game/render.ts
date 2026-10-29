@@ -415,15 +415,16 @@ export function createWorld(host: HTMLElement): World {
       box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
       // The dropped well is one articulated steel deck assembly, not a second plate floating over a fixed deck.
       deckPivot = new THREE.Group();
-      deckPivot.position.set(0, 0.58, 1.95);
+      // Hinge at the front of the dropped well; the rear end lowers toward the ground.
+      deckPivot.position.set(0, 0.58, -0.675);
       root.add(deckPivot);
-      box(deckPivot, 2.55, 0.2, 5.25, 0, 0, 0, steel);
+      box(deckPivot, 2.55, 0.2, 5.25, 0, 0, 2.625, steel);
       // Individual deck planks, rub rails and tie-down edges move with the deck.
       for (let i = 0; i < 9; i++) {
-        box(deckPivot, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.125, -0.03, i % 2 === 0 ? lowboyPaint : steel, false);
+        box(deckPivot, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.125, 2.595, i % 2 === 0 ? lowboyPaint : steel, false);
       }
-      box(deckPivot, 0.09, 0.09, 4.95, -1.27, 0.2, -0.03, cabMat, false);
-      box(deckPivot, 0.09, 0.09, 4.95, 1.27, 0.2, -0.03, cabMat, false);
+      box(deckPivot, 0.09, 0.09, 4.95, -1.27, 0.2, 2.595, cabMat, false);
+      box(deckPivot, 0.09, 0.09, 4.95, 1.27, 0.2, 2.595, cabMat, false);
       // Full-depth fabricated gooseneck side plates. These create the recognizable raised
       // neck-to-dropped-well silhouette of a real lowboy instead of relying on stacked boxes.
       const neckProfile = new THREE.Shape();
