@@ -413,13 +413,17 @@ export function createWorld(host: HTMLElement): World {
       box(root, 2.25, 0.24, 1.25, 0, 1.35, -1.85, steel);
       box(root, 2.0, 0.2, 0.9, 0, 1.08, -1.15, steel);
       box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
-      box(root, 2.55, 0.2, 5.25, 0, 0.58, 1.95, steel);
-      // Longitudinal steel deck planks and raised rub rails make the low deck read as a usable equipment platform.
+      // The dropped well is one articulated steel deck assembly, not a second plate floating over a fixed deck.
+      deckPivot = new THREE.Group();
+      deckPivot.position.set(0, 0.58, 1.95);
+      root.add(deckPivot);
+      box(deckPivot, 2.55, 0.2, 5.25, 0, 0, 0, steel);
+      // Individual deck planks, rub rails and tie-down edges move with the deck.
       for (let i = 0; i < 9; i++) {
-        box(root, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.705, 1.92, i % 2 === 0 ? lowboyPaint : steel, false);
+        box(deckPivot, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.125, -0.03, i % 2 === 0 ? lowboyPaint : steel, false);
       }
-      box(root, 0.09, 0.09, 4.95, -1.27, 0.79, 1.92, cabMat, false);
-      box(root, 0.09, 0.09, 4.95, 1.27, 0.79, 1.92, cabMat, false);
+      box(deckPivot, 0.09, 0.09, 4.95, -1.27, 0.2, -0.03, cabMat, false);
+      box(deckPivot, 0.09, 0.09, 4.95, 1.27, 0.2, -0.03, cabMat, false);
       // Full-depth fabricated gooseneck side plates. These create the recognizable raised
       // neck-to-dropped-well silhouette of a real lowboy instead of relying on stacked boxes.
       const neckProfile = new THREE.Shape();
@@ -481,15 +485,16 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.2, 0.24, 0.38, 0.65, 0.62, 4.22, paintDark);
       box(root, 0.24, 0.16, 0.08, -0.88, 0.64, 4.45, orange, false);
       box(root, 0.24, 0.16, 0.08, 0.88, 0.64, 4.45, orange, false);
-      // Hinged deck overlay follows the loading sequence and visibly pivots down.
-      deckPivot = new THREE.Group();
-      deckPivot.position.set(0, 0.84, -0.55);
-      root.add(deckPivot);
-      box(deckPivot, 2.22, 0.13, 5.05, 0, 0, 2.55, lowboyPaint);
-      for (let rib = 0; rib < 12; rib++) box(deckPivot, 2.05, 0.025, 0.055, 0, 0.08, 0.28 + rib * 0.4, steel, false);
+      // Hinge pins and paired hydraulic lift cylinders make the articulation read as trailer hardware.
       for (const side of [-1, 1]) {
-        const ram = box(root, 0.1, 0.58, 0.1, side * 0.82, 0.52, 0.55, steel);
-        ram.rotation.x = -0.2;
+        const hinge = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 0.28, 12)), steel);
+        hinge.rotation.z = Math.PI / 2;
+        hinge.position.set(side * 1.18, 0.59, -0.58);
+        root.add(hinge);
+        const cylinder = box(root, 0.13, 0.62, 0.13, side * 0.83, 0.56, 0.48, steel);
+        cylinder.rotation.x = -0.34;
+        const piston = box(root, 0.075, 0.44, 0.075, side * 0.83, 0.77, 0.2, white);
+        piston.rotation.x = -0.34;
       }
       // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
       wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
