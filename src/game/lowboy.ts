@@ -52,6 +52,23 @@ export function hillBlocksRoad(x: number, z: number, rx: number, rz: number) {
   return boxes.some((b) => x + rx > b.minX - 8 && x - rx < b.maxX + 8 && z + rz > b.minZ - 4 && z - rz < b.maxZ + 6);
 }
 
+export type PassPeak = { x: number; z: number; r: number; h: number };
+
+/** Mountains on both sides of the marked road. Feet stay off the gravel. */
+export function passPeaks(): PassPeak[] {
+  const peaks: PassPeak[] = [];
+  const north = HAUL_ROAD.maxZ + 28;
+  const south = HAUL_ROAD.minZ - 28;
+  for (let i = 0, x = 60; x < HAUL_ROAD.maxX - 80; i++, x += 48) {
+    const wobble = (i % 3) * 6;
+    const nr = 22 + (i % 4) * 4;
+    const sr = 20 + ((i + 1) % 4) * 4;
+    peaks.push({ x, z: north + nr * 0.35 + wobble, r: nr, h: 16 + (i % 5) * 3 });
+    peaks.push({ x: x + 18, z: south - sr * 0.35 - wobble, r: sr, h: 14 + ((i + 2) % 5) * 3 });
+  }
+  return peaks.filter((peak) => !hillBlocksRoad(peak.x, peak.z, peak.r * 0.85, peak.r * 0.85));
+}
+
 export function onHaulRoad(x: number, z: number) {
   const p = { x, z };
   return inBox(p, HAUL_ROAD) || inBox(p, RIDGE_SPUR) || inBox(p, VALLEY_SPUR);

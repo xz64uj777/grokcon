@@ -31,7 +31,7 @@ Once the Deep bench is leased, a **lowboy** sits in the ridge yard. Get in it, p
 - Dump truck, excavator, or heavy haul: the whole deck, and it rides alone.
 - The track crusher does not fit. Beds have to be empty.
 
-Drive it north onto the gravel road and follow it to the valley camp. The hills sit back off that gravel, so the marked road is a pass, not a wall. Only the lowboy can take that road. Unload only at the ridge yard or the valley camp. The office button is still there: **$500**, one empty machine, no drive.
+Drive it north onto the gravel road and follow it to the valley camp. Mountains stand on both sides of that gravel. Cross the pass and the map becomes River Valley. Only the lowboy can take that road. Unload only at the ridge yard or the valley camp. The office button is still there: **$500**, one empty machine, no drive.
 
 ## 3. Mud
 

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, onHaulRoad, spotsUsed, stepHitch } from "./lowboy.ts";
+import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, spotsUsed, stepHitch } from "./lowboy.ts";
 
 describe("lowboy deck space", () => {
   it("gives small machines one spot and big machines the whole deck", () => {
@@ -41,6 +41,14 @@ describe("north road", () => {
     assert.equal(hillBlocksRoad(0, 150, 40, 50), true);
     assert.equal(hillBlocksRoad(400, 200, 40, 30), false);
     assert.equal(hillBlocksRoad(40, 20, 20, 20), false);
+  });
+
+  it("puts mountains on both sides of the gravel and keeps the gravel clear", () => {
+    const peaks = passPeaks();
+    assert.ok(peaks.some((p) => p.z > 108));
+    assert.ok(peaks.some((p) => p.z < 86));
+    assert.ok(peaks.length > 20);
+    for (const p of peaks) assert.equal(hillBlocksRoad(p.x, p.z, p.r * 0.85, p.r * 0.85), false);
   });
 
   it("stops every machine but the lowboy at the gate", () => {

@@ -1,5 +1,5 @@
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { buildBackdrop, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
+import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import { HAUL_ROAD, HITCH_Z, RIDGE_SPUR, VALLEY_SPUR } from "@/game/lowboy";
@@ -173,6 +173,15 @@ export function createWorld(host: HTMLElement): World {
   haulRoad.position.set((HAUL_ROAD.minX + HAUL_ROAD.maxX) / 2, 0.04, (HAUL_ROAD.minZ + HAUL_ROAD.maxZ) / 2);
   haulRoad.receiveShadow = true;
   scene.add(haulRoad);
+  const shoulder = new THREE.Mesh(
+    track(new THREE.PlaneGeometry(HAUL_ROAD.maxX - HAUL_ROAD.minX, 96)),
+    std(0x8d7044, { roughness: 1 }),
+  );
+  shoulder.rotation.x = -Math.PI / 2;
+  shoulder.position.set((HAUL_ROAD.minX + HAUL_ROAD.maxX) / 2, 0.02, (HAUL_ROAD.minZ + HAUL_ROAD.maxZ) / 2);
+  shoulder.receiveShadow = true;
+  scene.add(shoulder);
+  buildPass(scene, track);
   for (const spur of [RIDGE_SPUR, VALLEY_SPUR]) {
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(spur.maxX - spur.minX, spur.maxZ - spur.minZ)), roadMat);
     mesh.rotation.x = -Math.PI / 2;
@@ -1050,7 +1059,8 @@ export function createWorld(host: HTMLElement): World {
     }
     frameCamera(state, dt, follow);
     // Keep the one shadow light over whichever area the camera is in.
-    const cx = areaOf(camera.position.x) === "river" ? X0 : 0;
+    const inPass = camera.position.z > 70 && camera.position.x > 40 && camera.position.x < X0 - 40;
+    const cx = inPass ? camera.position.x : areaOf(camera.position.x) === "river" ? X0 : 0;
     if (sun.target.position.x !== cx) {
       sun.position.set(cx + 48, 72, 26);
       sun.target.position.set(cx, 0, 0);

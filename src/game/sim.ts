@@ -1602,6 +1602,17 @@ function blastEvacuationControl(state: GameState, index: number): Control | null
   return seek(v, target.x, target.z, 2);
 }
 
+const passSide = new WeakMap<GameState, AreaId>();
+
+function notePass(state: GameState) {
+  const v = state.vehicles[state.active];
+  if (!v || !onHaulRoad(v.x, v.z)) return;
+  const side = areaOf(v.x);
+  const prev = passSide.get(state);
+  passSide.set(state, side);
+  if (prev && prev !== side) log(state, side === "river" ? "The pass opens into River Valley." : "The pass opens into Ridge pit.");
+}
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   if (!state.deck) state.deck = [];
   bindDeck(state);
@@ -1738,6 +1749,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     player.status = player.busy ? "Working" : "In your seat";
   }
   snapDeck(state);
+  notePass(state);
   state.seconds += dt;
   const raining = rainNow(state) > 0.05;
   if (raining !== wasRaining) log(state, raining ? "Rain's coming in. The valley mud spreads and the low ground floods." : "Rain has stopped. The ground will dry out over a few minutes.");
@@ -2461,7 +2473,7 @@ function areaHud(state: GameState) {
   }
   return {
     area,
-    areaName: v && onHaulRoad(v.x, v.z) ? "North road" : areaName(area),
+    areaName: v && onHaulRoad(v.x, v.z) && area === "ridge" ? "North road" : areaName(area),
     valleyOpen: open,
     travelLabel: !open
       ? "River Valley opens once you lease the Deep bench"

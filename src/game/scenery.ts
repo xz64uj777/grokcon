@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BLOCKS, BOUNDS, PADS, PIT, inPit } from "@/game/catalog";
-import { hillBlocksRoad } from "@/game/lowboy";
+import { hillBlocksRoad, passPeaks } from "@/game/lowboy";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
 
@@ -474,3 +474,21 @@ export function puffTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+
+/** Mountains on both sides of the north-road pass. Visual only. */
+export function buildPass(scene: THREE.Scene, track: Track) {
+  const geos: THREE.BufferGeometry[] = [];
+  for (const peak of passPeaks()) {
+    const g = new THREE.SphereGeometry(1, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+    g.scale(peak.r, peak.h, peak.r * 0.85);
+    g.translate(peak.x, -1.5, peak.z);
+    g.deleteAttribute("uv");
+    geos.push(g);
+  }
+  const merged = mergeGeometries(geos, false);
+  geos.forEach((g) => g.dispose());
+  if (!merged) return;
+  merged.computeVertexNormals();
+  track(merged);
+  scene.add(new THREE.Mesh(merged, track(new THREE.MeshStandardMaterial({ color: 0x8a6a52, roughness: 1, flatShading: true }))));
+}

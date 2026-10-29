@@ -298,7 +298,7 @@ export function MineScreen() {
               </p>
               {hud.toolLabel && <p className="text-xs text-muted">{hud.toolLabel}</p>}
               {hud.faceLabel && <p className="text-xs text-fg">{hud.faceLabel}</p>}
-              {(hud.area === "river" || hud.rain > 0.05) && (
+              {(hud.area === "river" || hud.areaName === "North road" || hud.rain > 0.05) && (
                 <p className="area-line text-xs text-muted">
                   {hud.areaName} · {hud.weatherLabel}
                   {hud.groundLabel && !hud.groundLabel.startsWith("Bogged") ? ` · ${hud.groundLabel}` : ""}
