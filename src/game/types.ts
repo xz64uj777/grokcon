@@ -180,6 +180,8 @@ export type GroundCard = {
   priceLabel: string;
   owned: boolean;
   affordable: boolean;
+  /** This lease is on the map whose office is open. */
+  here: boolean;
 };
 
 export type HudModel = {
@@ -229,6 +231,7 @@ export type HudModel = {
   /** Which area the active machine is in. */
   area: "ridge" | "river";
   areaName: string;
+  officeTitle: string;
   /** River Valley is open (Deep bench owned). */
   valleyOpen: boolean;
   /** Short travel line for the office, e.g. "Haul Skid steer to River Valley · $500". */

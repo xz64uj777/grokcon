@@ -388,7 +388,7 @@ export function MineScreen() {
             <aside className="office-panel absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-border bg-surface">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div>
-                  <p className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Yard office</p>
+                  <p className="font-display text-2xl uppercase leading-none tracking-wide text-fg">{hud.officeTitle}</p>
                   <p className="mt-1 text-sm text-cash">{hud.cashLabel}</p>
                 </div>
                 <button
@@ -533,7 +533,7 @@ export function MineScreen() {
                     <article key={m.id} className="border-b border-border py-4">
                       <div className="flex items-baseline justify-between gap-3">
                         <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">{m.name}</h2>
-                        <p className="text-sm text-cash">{m.owned ? "On the yard" : m.priceLabel}</p>
+                        <p className="text-sm text-cash">{m.priceLabel}</p>
                       </div>
                       <p className="mt-2 text-sm leading-relaxed text-muted">{m.blurb}</p>
                       {!m.owned && (
@@ -549,7 +549,7 @@ export function MineScreen() {
                     </article>
                   ))}
                 {panel === "ground" &&
-                  hud.grounds.map((g) => (
+                  hud.grounds.filter((g) => g.here).map((g) => (
                     <article key={g.id} className="border-b border-border py-4">
                       <div className="flex items-baseline justify-between gap-3">
                         <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">{g.name}</h2>
@@ -568,6 +568,9 @@ export function MineScreen() {
                       )}
                     </article>
                   ))}
+                {panel === "crew" && hud.crew.length === 0 && (
+                  <p className="py-4 text-sm text-muted">No machines on this map.</p>
+                )}
                 {panel === "crew" &&
                   hud.crew.map((c) => (
                     <article key={c.index} className="border-b border-border py-4">
@@ -586,7 +589,7 @@ export function MineScreen() {
                           onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : Number(e.target.value))}
                         >
                           <option value="any">Any leased source</option>
-                          {hud.grounds.filter((g) => g.owned).map((g) => (
+                          {hud.grounds.filter((g) => g.owned && (g.here || g.id === c.workClaim)).map((g) => (
                             <option key={g.id} value={g.id}>{g.name}</option>
                           ))}
                         </select>

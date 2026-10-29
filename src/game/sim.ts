@@ -2267,9 +2267,9 @@ function faceLabel(state: GameState, v: VehicleState) {
   return `${d.sign} · seam ${Math.round(d.grade * 100)}% · ${d.overburden.toFixed(0)} t dirt on top · bench ${d.bench}${hard}${wall}`;
 }
 
-function priceRows(state: GameState): HudModel["prices"] {
-  const pads = PADS.filter((p) => padOpen(state, p.kind) && (p.x < X0 / 2 || valleyOpen(state)));
-  return (Object.keys(ORES) as OreId[]).filter((ore) => ore !== "silver" || valleyOpen(state)).map((ore) => ({
+function priceRows(state: GameState, here: AreaId): HudModel["prices"] {
+  const pads = PADS.filter((p) => padOpen(state, p.kind) && areaOf(p.x) === here);
+  return (Object.keys(ORES) as OreId[]).filter((ore) => ore !== "silver" || here === "river").map((ore) => ({
     ore,
     name: ORES[ore].name,
     spots: pads.filter((p) => basePrice(ore, p.kind, state.sluice) > 0).map((p) => {
@@ -2311,33 +2311,33 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       id,
       name: def.name,
       blurb,
-      priceLabel: formatMoney(price),
+      priceLabel: owned ? "Owned" : formatMoney(price),
       owned,
       affordable: !owned && state.cash >= price,
       kind: "vehicle" as const,
     };
   });
-  if (valleyOpen(state)) {
+  if (valleyOpen(state) && currentArea(state) === "river") {
     machines.push({
       id: WASH_PLANT.id,
       name: WASH_PLANT.name,
       blurb: WASH_PLANT.blurb,
-      priceLabel: formatMoney(WASH_PLANT.price),
+      priceLabel: state.washPlant ? "Owned" : formatMoney(WASH_PLANT.price),
       owned: state.washPlant,
       affordable: !state.washPlant && state.cash >= WASH_PLANT.price,
       kind: "plant",
     });
   }
-  machines.push({
+  if (currentArea(state) === "ridge") machines.push({
     id: SLUICE.id,
     name: SLUICE.name,
     blurb: SLUICE.blurb,
-    priceLabel: formatMoney(SLUICE.price),
+    priceLabel: state.sluice ? "Owned" : formatMoney(SLUICE.price),
     owned: state.sluice,
     affordable: !state.sluice && state.cash >= SLUICE.price,
     kind: "plant",
   });
-  const crew: HudModel["crew"] = state.vehicles.map((veh, index) => {
+  const crew: HudModel["crew"] = state.vehicles.map((veh, index) => ({ veh, index })).filter(({ veh }) => areaOf(veh.x) === currentArea(state)).map(({ veh, index }) => {
     const def = DEFS[veh.defId];
     const kinds: { kind: UpgradeKind; label: string }[] = [
       { kind: "engine", label: "Engine" },
@@ -2371,6 +2371,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       }),
     };
   });
+  const here = currentArea(state);
   const grounds: HudModel["grounds"] = CLAIMS.filter((c) => c.id < VALLEY_CLAIMS.bars || valleyOpen(state)).map((c) => ({
     id: c.id,
     name: c.name,
@@ -2378,6 +2379,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     priceLabel: c.price === 0 ? "Included" : formatMoney(c.price),
     owned: ownsClaim(state, c.id),
     affordable: !ownsClaim(state, c.id) && state.cash >= c.price,
+    here: (c.id >= VALLEY_CLAIMS.bars ? "river" : "ridge") === here,
   }));
   const savedBlurb = hadSave
     ? `${state.company} · ${formatMoney(state.cash)} · ${info.name}`
@@ -2421,7 +2423,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     faceLabel: v ? faceLabel(state, v) : "",
     help: controlHelp(v?.defId ?? "pickup", excDrive),
     twoSticks: state.controlMode === "real" && !!v && machineKind(v.defId) !== "car",
-    prices: priceRows(state),
+    prices: priceRows(state, currentArea(state)),
     dayLabel: (() => {
       const left = Math.max(0, DAY_SECONDS - (state.seconds % DAY_SECONDS));
       return `Day ${state.market.day + 1} · new prices in ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
@@ -2474,6 +2476,7 @@ function areaHud(state: GameState) {
   return {
     area,
     areaName: v && onHaulRoad(v.x, v.z) && area === "ridge" ? "North road" : areaName(area),
+    officeTitle: area === "river" ? "Valley office" : "Ridge office",
     valleyOpen: open,
     travelLabel: !open
       ? "River Valley opens once you lease the Deep bench"
