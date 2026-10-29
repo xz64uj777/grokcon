@@ -1963,7 +1963,7 @@ export function toggleDeck(state: GameState) {
   }
 
   if (phase === "loaded") {
-    if (!inDropYard(rig.x, rig.z)) return "Drive to the ridge yard or valley camp before unloading.";
+    
     state.lowboyPhase = "lowered";
     log(state, "Lowboy deck pivoted down for unloading. Gooseneck remains attached.");
     return "Deck lowered. Tap Unload.";
@@ -1972,7 +1972,7 @@ export function toggleDeck(state: GameState) {
     state.lowboyPhase = "loaded";
     return "Deck raised for transport.";
   }
-  if (!inDropYard(rig.x, rig.z)) return "Unload at the ridge yard or the valley camp.";
+  
   const uid = state.deck.pop();
   const m = state.vehicles.find((v) => v.uid === uid);
   if (m) {
