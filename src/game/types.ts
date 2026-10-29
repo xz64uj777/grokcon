@@ -114,6 +114,8 @@ export type GameState = {
   vehicles: VehicleState[];
   /** Uids strapped to the lowboy deck, load order. */
   deck: string[];
+  /** Current articulation stage of the lowboy. */
+  lowboyPhase?: "raised" | "detached" | "lowered" | "loaded" | "connected";
   active: number;
   deposits: Deposit[];
   pileSeq: number;
@@ -237,7 +239,7 @@ export type HudModel = {
   bridgeLabel: string;
   washPlant: boolean;
   deckLabel: string;
-  deckButton: "Load" | "Unload" | null;
+  deckButton: string | null;
 };
 
 export type PriceRow = {
