@@ -418,6 +418,33 @@ export function createWorld(host: HTMLElement): World {
       }
       box(root, 0.09, 0.09, 4.95, -1.27, 0.79, 1.92, cabMat, false);
       box(root, 0.09, 0.09, 4.95, 1.27, 0.79, 1.92, cabMat, false);
+      // Full-depth fabricated gooseneck side plates. These create the recognizable raised
+      // neck-to-dropped-well silhouette of a real lowboy instead of relying on stacked boxes.
+      const neckProfile = new THREE.Shape();
+      neckProfile.moveTo(0, 1.26);
+      neckProfile.lineTo(0.7, 1.24);
+      neckProfile.lineTo(1.3, 0.96);
+      neckProfile.lineTo(1.95, 0.76);
+      neckProfile.lineTo(5.25, 0.76);
+      neckProfile.lineTo(5.25, 0.54);
+      neckProfile.lineTo(1.9, 0.54);
+      neckProfile.lineTo(1.18, 0.73);
+      neckProfile.lineTo(0.62, 1.03);
+      neckProfile.lineTo(0, 1.04);
+      neckProfile.closePath();
+      const neckPlateGeo = track(new THREE.ExtrudeGeometry(neckProfile, { depth: 0.14, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: 0.025, bevelThickness: 0.025 }));
+      for (const side of [-1, 1]) {
+        const neckPlate = new THREE.Mesh(neckPlateGeo, lowboyPaint);
+        neckPlate.rotation.y = -Math.PI / 2;
+        neckPlate.position.set(side * 1.22, 0, -0.65);
+        neckPlate.castShadow = true;
+        neckPlate.receiveShadow = true;
+        root.add(neckPlate);
+      }
+      // Cross-members are exposed beneath the deck, as on a heavy-haul trailer.
+      for (const z of [0.35, 1.15, 1.95, 2.75, 3.55, 4.35]) {
+        box(root, 2.3, 0.13, 0.16, 0, 0.42, z, cabMat);
+      }
       // Lowboy profile: raised neck over the tractor fifth-wheel, then a clearly dropped well deck.
       box(root, 1.9, 0.16, 1.15, 0, 0.91, 0.05, cabMat);
       box(root, 0.18, 0.36, 1.65, -1.16, 0.78, 0.15, steel);
