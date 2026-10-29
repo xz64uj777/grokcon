@@ -417,6 +417,13 @@ export function createWorld(host: HTMLElement): World {
       // Hinge at the front of the dropped well; the rear end lowers toward the ground.
       deckPivot.position.set(0, 0.58, -0.675);
       root.add(deckPivot);
+      // Fixed saddle and transverse hinge pin visibly join the neck to the pivoting deck.
+      box(root, 2.2, 0.22, 0.42, 0, 0.52, -0.64, cabMat);
+      const hingePin = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 2.72, 12)), steel);
+      hingePin.rotation.z = Math.PI / 2;
+      hingePin.position.set(0, 0.66, -0.675);
+      hingePin.castShadow = true;
+      root.add(hingePin);
       box(deckPivot, 2.55, 0.2, 5.25, 0, 0, 2.625, steel);
       // Individual deck planks, rub rails and tie-down edges move with the deck.
       for (let i = 0; i < 9; i++) {
