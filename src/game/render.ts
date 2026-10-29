@@ -124,6 +124,7 @@ export function createWorld(host: HTMLElement): World {
   const steel = std(0x8d949b, { roughness: 0.32, metalness: 0.72 });
   const rust = std(0x8d4d34, { roughness: 0.72, metalness: 0.12 });
   const cream = std(0xd7cdc0, { roughness: 0.6, metalness: 0.05 });
+  const lowboyPaint = std(0xb8c0c5, { roughness: 0.48, metalness: 0.18 });
   const white = std(0xe7e2d8, { roughness: 0.46, metalness: 0.08 });
   const orange = std(0xe26a2c, { roughness: 0.5, metalness: 0.1 });
   const beaconMat = std(0xe26a2c, { emissive: 0xe26a2c, emissiveIntensity: 0.7, roughness: 0.4 });
@@ -250,8 +251,8 @@ export function createWorld(host: HTMLElement): World {
     let beaconMat: THREE.MeshStandardMaterial | null = null;
     let conveyor: THREE.Object3D | null = null;
     let stickArm: THREE.Object3D | null = null;
-    const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : paint;
-    const trim = id === "pickup" ? cream : id === "truck" ? orange : paintDark;
+    const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : id === "lowboy" ? lowboyPaint : paint;
+    const trim = id === "pickup" ? cream : id === "truck" ? orange : id === "lowboy" ? steel : paintDark;
 
     if (id === "crusher") {
       const parts = buildCrusherDressing(root, track, box, steel, orange);
@@ -358,12 +359,18 @@ export function createWorld(host: HTMLElement): World {
       // Distinct highway semi tractor with a long bonnet, tall sleeper cab and tandem drives.
       // The lowboy remains behind the tractor; the yellow cab/hood are intentionally much larger
       // than the previous compact utility-truck silhouette.
-      box(root, 2.65, 0.78, 2.85, 0, 1.38, -3.55, paint);
-      box(root, 2.18, 0.98, 1.18, 0, 1.48, -4.62, paintDark);
+      box(root, 2.65, 0.78, 2.85, 0, 1.38, -3.55, body);
+      box(root, 2.18, 0.98, 1.18, 0, 1.48, -4.62, body);
+      // Sloped hood crown and distinct front fenders give the tractor a semi profile instead of a box van.
+      const hoodCrown = box(root, 2.02, 0.18, 1.55, 0, 1.92, -3.93, body);
+      hoodCrown.rotation.x = -0.12;
+      box(root, 0.2, 0.34, 1.45, -1.28, 1.24, -3.85, steel);
+      box(root, 0.2, 0.34, 1.45, 1.28, 1.24, -3.85, steel);
       box(root, 2.32, 0.16, 0.18, 0, 0.91, -4.96, cabMat);
       // Tall sleeper cab, roof cap, windshield, side windows and rear sleeper panel.
       box(root, 2.18, 1.95, 2.0, 0, 2.16, -3.15, cabMat);
-      box(root, 2.22, 0.16, 1.95, 0, 3.19, -3.15, paintDark);
+      box(root, 2.22, 0.16, 1.95, 0, 3.19, -3.15, body);
+      box(root, 1.9, 0.12, 1.78, 0, 3.29, -3.15, steel);
       box(root, 1.82, 1.08, 0.12, 0, 2.43, -4.17, glass, false);
       box(root, 0.12, 0.92, 1.18, -1.1, 2.42, -3.18, paintDark);
       box(root, 0.12, 0.92, 1.18, 1.1, 2.42, -3.18, paintDark);
@@ -389,12 +396,23 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.15, 0.95, 0.15, 0.88, 2.0, -2.42, steel);
       box(root, 0.32, 0.4, 1.05, -1.12, 1.0, -2.5, steel);
       box(root, 0.32, 0.4, 1.05, 1.12, 1.0, -2.5, steel);
+      // Fuel-tank steps and cab access ladder are visible below the sleeper door.
+      box(root, 0.52, 0.12, 0.34, -1.12, 0.72, -3.05, steel);
+      box(root, 0.52, 0.12, 0.34, 1.12, 0.72, -3.05, steel);
+      box(root, 0.07, 0.46, 0.08, -1.22, 1.12, -3.1, cabMat);
+      box(root, 0.07, 0.46, 0.08, 1.22, 1.12, -3.1, cabMat);
       // Black tractor chassis and a raised gooseneck dropping into a deep low center well.
       box(root, 1.65, 0.28, 4.25, 0, 0.72, -1.55, cabMat);
       box(root, 2.25, 0.24, 1.25, 0, 1.35, -1.85, steel);
       box(root, 2.0, 0.2, 0.9, 0, 1.08, -1.15, steel);
       box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
       box(root, 2.55, 0.2, 5.25, 0, 0.58, 1.95, steel);
+      // Lowboy profile: raised neck over the tractor fifth-wheel, then a clearly dropped well deck.
+      box(root, 1.9, 0.16, 1.15, 0, 0.91, 0.05, cabMat);
+      box(root, 0.18, 0.36, 1.65, -1.16, 0.78, 0.15, steel);
+      box(root, 0.18, 0.36, 1.65, 1.16, 0.78, 0.15, steel);
+      box(root, 0.16, 0.28, 3.85, -1.34, 0.76, 2.15, steel);
+      box(root, 0.16, 0.28, 3.85, 1.34, 0.76, 2.15, steel);
       box(root, 0.14, 0.36, 5.15, -1.22, 0.8, 1.95, paintDark);
       box(root, 0.14, 0.36, 5.15, 1.22, 0.8, 1.95, paintDark);
       for (const z of [0.0, 0.9, 1.8, 2.7, 3.6]) {
@@ -430,6 +448,15 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -1.08, 0.48, 1.05), addWheel(root, 1.08, 0.48, 1.05));
       wheels.push(addWheel(root, -1.08, 0.48, 2.55), addWheel(root, 1.08, 0.48, 2.55));
       wheels.push(addWheel(root, -1.08, 0.48, 3.9), addWheel(root, 1.08, 0.48, 3.9));
+      // Steel mudguards over the tractor tandems and trailer tri-axle make the running gear read clearly.
+      for (const z of [-2.35, -1.25]) {
+        box(root, 0.18, 0.16, 1.25, -1.18, 1.28, z, cabMat);
+        box(root, 0.18, 0.16, 1.25, 1.18, 1.28, z, cabMat);
+      }
+      for (const z of [1.05, 2.55, 3.9]) {
+        box(root, 0.16, 0.12, 1.05, -1.08, 0.91, z, paintDark);
+        box(root, 0.16, 0.12, 1.05, 1.08, 0.91, z, paintDark);
+      }
       // Tractor tires visibly larger than the trailer tires.
       wheels.slice(0, 6).forEach((wheel) => wheel.scale.set(1.75, 1.75, 1.75));
     } else {
