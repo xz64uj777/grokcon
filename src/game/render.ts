@@ -869,7 +869,7 @@ export function createWorld(host: HTMLElement): World {
       // and omit any separate ramp animation.
       if (rig.deckPivot && v.defId === "lowboy") {
         const phase = state.lowboyPhase ?? "raised";
-        const targetAngle = phase === "detached" || phase === "lowered" || phase === "loaded" ? 0.22 : 0;
+        const targetAngle = phase === "lowered" ? 0.34 : 0;
         rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-3.2 * dt));
       }
       rig.spin += v.speed * dt * 1.7;
