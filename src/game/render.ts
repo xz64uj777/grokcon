@@ -2,7 +2,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
-import { HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR } from "@/game/lowboy";
+import { HAUL_ROAD, HITCH_Z, RIDGE_SPUR, VALLEY_SPUR } from "@/game/lowboy";
 import { X0, areaOf, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
@@ -29,6 +29,8 @@ type Rig = {
   conveyor: THREE.Object3D | null;
   stick: THREE.Object3D | null;
   bucketY: number;
+  /** Fifth-wheel pivot. The trailer hangs off this and yaws in a turn. */
+  hitch: THREE.Group | null;
   deckPivot: THREE.Group | null;
 };
 
@@ -253,6 +255,7 @@ export function createWorld(host: HTMLElement): World {
     let conveyor: THREE.Object3D | null = null;
     let stickArm: THREE.Object3D | null = null;
     let deckPivot: THREE.Group | null = null;
+    let hitch: THREE.Group | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : id === "lowboy" ? lowboyPaint : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : id === "lowboy" ? steel : paintDark;
 
@@ -407,78 +410,66 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.52, 0.12, 0.34, 1.12, 0.72, -3.05, steel);
       box(root, 0.07, 0.46, 0.08, -1.22, 1.12, -3.1, cabMat);
       box(root, 0.07, 0.46, 0.08, 1.22, 1.12, -3.1, cabMat);
-      // Black tractor chassis and a raised gooseneck dropping into a deep low center well.
-      box(root, 1.65, 0.28, 4.25, 0, 0.72, -1.55, cabMat);
-      box(root, 2.25, 0.24, 1.25, 0, 1.35, -1.85, steel);
-      box(root, 2.0, 0.2, 0.9, 0, 1.08, -1.15, steel);
-      box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
-      // The dropped well is one articulated steel deck assembly, not a second plate floating over a fixed deck.
-      deckPivot = new THREE.Group();
-      // Hinge at the front of the dropped well; the rear end lowers toward the ground.
-      deckPivot.position.set(0, 0.58, -0.675);
-      root.add(deckPivot);
-      // Fixed saddle and transverse hinge pin visibly join the neck to the pivoting deck.
-      box(root, 2.2, 0.22, 0.42, 0, 0.52, -0.64, cabMat);
-      const hingePin = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 2.72, 12)), steel);
-      hingePin.rotation.z = Math.PI / 2;
-      hingePin.position.set(0, 0.66, -0.675);
-      hingePin.castShadow = true;
-      root.add(hingePin);
-      box(deckPivot, 2.55, 0.2, 5.25, 0, 0, 2.625, steel);
-      // Individual deck planks, rub rails and tie-down edges move with the deck.
-      for (let i = 0; i < 9; i++) {
-        box(deckPivot, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.125, 2.595, i % 2 === 0 ? lowboyPaint : steel, false);
-      }
-      box(deckPivot, 0.09, 0.09, 4.95, -1.27, 0.2, 2.595, cabMat, false);
-      box(deckPivot, 0.09, 0.09, 4.95, 1.27, 0.2, 2.595, cabMat, false);
-      // Full-depth fabricated gooseneck side plates. These create the recognizable raised
-      // neck-to-dropped-well silhouette of a real lowboy instead of relying on stacked boxes.
+      // Tractor frame stops at the fifth wheel. The trailer hangs off that hitch and yaws in a turn.
+      box(root, 1.55, 0.28, 3.4, 0, 0.78, -2.7, cabMat);
+      box(root, 1.35, 0.1, 0.7, 0, 1.12, HITCH_Z, steel);
+      const fifth = new THREE.Mesh(track(new THREE.CylinderGeometry(0.42, 0.46, 0.1, 16)), steel);
+      fifth.position.set(0, 1.2, HITCH_Z);
+      fifth.castShadow = true;
+      root.add(fifth);
+      hitch = new THREE.Group();
+      hitch.position.set(0, 0, HITCH_Z);
+      root.add(hitch);
+      const pin = new THREE.Mesh(track(new THREE.CylinderGeometry(0.1, 0.1, 0.34, 10)), paintDark);
+      pin.position.set(0, 1.22, 0);
+      pin.castShadow = true;
+      hitch.add(pin);
       const neckProfile = new THREE.Shape();
-      neckProfile.moveTo(0, 1.26);
-      neckProfile.lineTo(0.7, 1.24);
-      neckProfile.lineTo(1.3, 0.96);
-      neckProfile.lineTo(1.95, 0.76);
-      neckProfile.lineTo(5.25, 0.76);
-      neckProfile.lineTo(5.25, 0.54);
-      neckProfile.lineTo(1.9, 0.54);
-      neckProfile.lineTo(1.18, 0.73);
-      neckProfile.lineTo(0.62, 1.03);
-      neckProfile.lineTo(0, 1.04);
+      neckProfile.moveTo(0, 1.22);
+      neckProfile.lineTo(1.15, 1.2);
+      neckProfile.lineTo(2.15, 0.78);
+      neckProfile.lineTo(8.6, 0.62);
+      neckProfile.lineTo(8.6, 0.4);
+      neckProfile.lineTo(2.15, 0.46);
+      neckProfile.lineTo(1.2, 0.78);
+      neckProfile.lineTo(0.15, 1.02);
       neckProfile.closePath();
-      const neckPlateGeo = track(new THREE.ExtrudeGeometry(neckProfile, { depth: 0.14, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: 0.025, bevelThickness: 0.025 }));
+      const neckPlateGeo = track(new THREE.ExtrudeGeometry(neckProfile, { depth: 0.12, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: 0.02, bevelThickness: 0.02 }));
       for (const side of [-1, 1]) {
         const neckPlate = new THREE.Mesh(neckPlateGeo, lowboyPaint);
         neckPlate.rotation.y = -Math.PI / 2;
-        neckPlate.position.set(side * 1.22, 0, -0.65);
+        neckPlate.position.set(side * 1.18, 0, 0);
         neckPlate.castShadow = true;
         neckPlate.receiveShadow = true;
-        root.add(neckPlate);
+        hitch.add(neckPlate);
       }
-      // The pivoting deck already carries its planks and rub rails. Do not
-      // overlay it with a second fixed deck, fixed cross-members, or fixed rear
-      // frame; those parts visually lock the deck in place and hide its motion.
-      // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
+      box(hitch, 2.6, 0.18, 6.4, 0, 0.58, 4.7, steel);
+      for (let i = 0; i < 10; i++) {
+        box(hitch, 0.2, 0.04, 6.1, -1.0 + i * 0.22, 0.7, 4.65, i % 2 === 0 ? lowboyPaint : steel, false);
+      }
+      box(hitch, 0.1, 0.16, 6.5, -1.32, 0.78, 4.7, cabMat, false);
+      box(hitch, 0.1, 0.16, 6.5, 1.32, 0.78, 4.7, cabMat, false);
+      for (const z of [2.4, 4.0, 5.6]) box(hitch, 2.4, 0.08, 0.12, 0, 0.42, z, steel, false);
+      for (const x of [-0.72, 0.72]) {
+        const ramp = box(hitch, 0.7, 0.08, 1.7, x, 0.42, 8.7, steel);
+        ramp.rotation.x = 0.48;
+      }
+      box(hitch, 0.16, 0.1, 0.2, -1.15, 0.82, 8.15, orange, false);
+      box(hitch, 0.16, 0.1, 0.2, 1.15, 0.82, 8.15, orange, false);
       wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
       wheels.push(addWheel(root, -1.18, 0.64, -2.35), addWheel(root, 1.18, 0.64, -2.35));
-      wheels.push(addWheel(root, -1.18, 0.64, -1.25), addWheel(root, 1.18, 0.64, -1.25));
-      wheels.push(addWheel(root, -1.08, 0.48, 1.05), addWheel(root, 1.08, 0.48, 1.05));
-      wheels.push(addWheel(root, -1.08, 0.48, 2.55), addWheel(root, 1.08, 0.48, 2.55));
-      wheels.push(addWheel(root, -1.08, 0.48, 3.9), addWheel(root, 1.08, 0.48, 3.9));
-      // Real lowboy tri-axle groups use dual tires; add the outer tires at each trailer wheel station.
-      for (const z of [1.05, 2.55, 3.9]) {
-        wheels.push(addWheel(root, -1.52, 0.48, z), addWheel(root, 1.52, 0.48, z));
-      }
-      // Steel mudguards over the tractor tandems and trailer tri-axle make the running gear read clearly.
-      for (const z of [-2.35, -1.25]) {
-        box(root, 0.18, 0.16, 1.25, -1.18, 1.28, z, cabMat);
-        box(root, 0.18, 0.16, 1.25, 1.18, 1.28, z, cabMat);
-      }
-      for (const z of [1.05, 2.55, 3.9]) {
-        box(root, 0.16, 0.12, 1.05, -1.08, 0.91, z, paintDark);
-        box(root, 0.16, 0.12, 1.05, 1.08, 0.91, z, paintDark);
-      }
-      // Tractor tires visibly larger than the trailer tires.
+      wheels.push(addWheel(root, -1.18, 0.64, -1.45), addWheel(root, 1.18, 0.64, -1.45));
       wheels.slice(0, 6).forEach((wheel) => wheel.scale.set(1.75, 1.75, 1.75));
+      for (const z of [-2.35, -1.45]) {
+        box(root, 0.18, 0.16, 1.15, -1.18, 1.28, z, cabMat);
+        box(root, 0.18, 0.16, 1.15, 1.18, 1.28, z, cabMat);
+      }
+      for (const z of [6.5, 7.4, 8.3]) {
+        wheels.push(addWheel(hitch, -1.05, 0.48, z), addWheel(hitch, 1.05, 0.48, z));
+        wheels.push(addWheel(hitch, -1.5, 0.48, z), addWheel(hitch, 1.5, 0.48, z));
+        box(hitch, 0.16, 0.1, 1.15, -1.05, 0.92, z, paintDark);
+        box(hitch, 0.16, 0.1, 1.15, 1.05, 0.92, z, paintDark);
+      }
     } else {
       const len = id === "heavy" ? 1.25 : 1;
       box(root, 1.7 * len, 0.45, 2.1, 0, 1.05, -1.7 * len, body);
@@ -505,6 +496,7 @@ export function createWorld(host: HTMLElement): World {
       root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat, conveyor,
       stick: stickArm,
       bucketY: bucket ? bucket.position.y : 0,
+      hitch,
       deckPivot,
     };
   }
@@ -838,10 +830,6 @@ export function createWorld(host: HTMLElement): World {
     }
   }
 
-  let lastLowboyDeckCount = -1;
-  let lowboyDeckMotion = 0;
-  const LOWBOY_DECK_MOTION_SECONDS = 1.6;
-
   function sync(state: GameState, dt: number, follow: boolean) {
     clock.t += dt;
     if (bound !== state) bound = state;
@@ -849,23 +837,11 @@ export function createWorld(host: HTMLElement): World {
     for (const v of state.vehicles) {
       const rig = rigs.get(v.uid);
       if (!rig) continue;
-      rig.root.position.set(v.x, 0, v.z);
+      rig.root.position.set(v.x, (state.deck ?? []).includes(v.uid) ? 0.74 : 0, v.z);
       rig.root.rotation.y = v.yaw;
-      // Automatically lower and raise the deck whenever a machine is loaded
-      // or unloaded. No separate deck button; the gooseneck stays attached.
-      if (rig.deckPivot && v.defId === "lowboy") {
-        const deckCount = (state.deck ?? []).length;
-        if (lastLowboyDeckCount < 0) lastLowboyDeckCount = deckCount;
-        if (deckCount !== lastLowboyDeckCount) {
-          lastLowboyDeckCount = deckCount;
-          lowboyDeckMotion = LOWBOY_DECK_MOTION_SECONDS;
-        }
-        lowboyDeckMotion = Math.max(0, lowboyDeckMotion - dt);
-        const progress = 1 - lowboyDeckMotion / LOWBOY_DECK_MOTION_SECONDS;
-        const targetAngle = progress < 0.45
-          ? (progress / 0.45) * 0.34
-          : ((1 - progress) / 0.55) * 0.34;
-        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-5.5 * dt));
+      if (rig.hitch && v.defId === "lowboy") {
+        const art = (v.trailerYaw ?? v.yaw) - v.yaw;
+        rig.hitch.rotation.y = Math.atan2(Math.sin(art), Math.cos(art));
       }
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;

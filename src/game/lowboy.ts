@@ -64,3 +64,43 @@ export function blockRoadGate(defId: string, x: number, z: number) {
   if (inBox({ x, z }, HAUL_ROAD)) return true;
   return false;
 }
+
+/** Fifth wheel, in the tractor's local space. Forward is -Z, so this sits behind the cab. */
+export const HITCH_Z = -0.95;
+/** Trailer axle group, measured back from the hitch along the deck. */
+export const AXLE_BACK = 7.4;
+
+export function hitchPoint(x: number, z: number, yaw: number) {
+  return { x: x + Math.sin(yaw) * HITCH_Z, z: z + Math.cos(yaw) * HITCH_Z };
+}
+
+/**
+ * Pull the trailer from the fifth wheel. The axle does not slide sideways,
+ * so the deck yaws around the hitch instead of staying locked to the cab.
+ */
+export function stepHitch(
+  x: number,
+  z: number,
+  yaw: number,
+  trailerYaw: number | undefined,
+  axleX: number | undefined,
+  axleZ: number | undefined,
+) {
+  const h = hitchPoint(x, z, yaw);
+  void trailerYaw;
+  let ax = axleX;
+  let az = axleZ;
+  if (ax == null || az == null || Math.hypot((ax ?? h.x) - h.x, (az ?? h.z) - h.z) > AXLE_BACK * 1.8) {
+    return {
+      trailerYaw: yaw,
+      axleX: h.x + Math.sin(yaw) * AXLE_BACK,
+      axleZ: h.z + Math.cos(yaw) * AXLE_BACK,
+    };
+  }
+  const nextYaw = Math.atan2(ax - h.x, az - h.z);
+  return {
+    trailerYaw: nextYaw,
+    axleX: h.x + Math.sin(nextYaw) * AXLE_BACK,
+    axleZ: h.z + Math.cos(nextYaw) * AXLE_BACK,
+  };
+}

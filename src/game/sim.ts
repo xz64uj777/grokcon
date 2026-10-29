@@ -57,7 +57,7 @@ import {
   type Gesture,
 } from "@/game/controls";
 import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
-import { blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, spotsUsed } from "@/game/lowboy";
+import { HITCH_Z, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, spotsUsed, stepHitch } from "@/game/lowboy";
 import {
   BLAST_RADIUS,
   BLAST_COST,
@@ -1884,19 +1884,23 @@ function placeInArea(state: GameState, v: VehicleState, area: AreaId) {
 function snapDeck(state: GameState) {
   const rig = state.vehicles.find((v) => v.defId === "lowboy");
   if (!rig) return;
-  const fx = -Math.sin(rig.yaw);
-  const fz = -Math.cos(rig.yaw);
-  const side = Math.cos(rig.yaw);
-  const sideZ = -Math.sin(rig.yaw);
+  const hitch = stepHitch(rig.x, rig.z, rig.yaw, rig.trailerYaw, rig.axleX, rig.axleZ);
+  rig.trailerYaw = hitch.trailerYaw;
+  rig.axleX = hitch.axleX;
+  rig.axleZ = hitch.axleZ;
+  const ty = hitch.trailerYaw;
+  const backX = Math.sin(ty);
+  const backZ = Math.cos(ty);
+  const hx = rig.x + Math.sin(rig.yaw) * HITCH_Z;
+  const hz = rig.z + Math.cos(rig.yaw) * HITCH_Z;
   state.deck.forEach((uid, i) => {
     const m = state.vehicles.find((v) => v.uid === uid);
     if (!m) return;
-    const back = 4.6 + i * 3.4;
-    m.x = rig.x - fx * back + side * 0.2;
-    m.z = rig.z - fz * back + sideZ * 0.2;
+    const along = 3.6 + i * 2.8;
+    m.x = hx + backX * along;
+    m.z = hz + backZ * along;
     // Machines are backed onto the lowboy, so they face the trailer ramps.
-    // This lets the operator drive forward off the rear when unloading.
-    m.yaw = rig.yaw + Math.PI;
+    m.yaw = ty + Math.PI;
     m.speed = 0;
     m.status = "Loaded facing the ramps";
   });

@@ -66,6 +66,10 @@ export type VehicleState = {
   unstick: number;
   bias: number;
   busy: boolean;
+  /** Lowboy trailer heading. The deck pivots around the fifth wheel, so this lags the cab in a turn. */
+  trailerYaw?: number;
+  axleX?: number;
+  axleZ?: number;
 };
 
 export type Tutorial = {
