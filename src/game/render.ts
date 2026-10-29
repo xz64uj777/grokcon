@@ -865,8 +865,13 @@ export function createWorld(host: HTMLElement): World {
       if (!rig) continue;
       rig.root.position.set(v.x, 0, v.z);
       rig.root.rotation.y = v.yaw;
-      // Lowboy deck stays fixed; this game only needs the trailer's visual silhouette.
-      if (rig.deckPivot && v.defId === "lowboy") rig.deckPivot.rotation.x = 0;
+      // Pivot only the dropped deck at its front hinge; keep the gooseneck attached
+      // and omit any separate ramp animation.
+      if (rig.deckPivot && v.defId === "lowboy") {
+        const phase = state.lowboyPhase ?? "raised";
+        const targetAngle = phase === "detached" || phase === "lowered" || phase === "loaded" ? 0.22 : 0;
+        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-3.2 * dt));
+      }
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
       if (rig.flywheel) {
