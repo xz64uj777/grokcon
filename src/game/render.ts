@@ -368,14 +368,19 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.2, 0.34, 1.45, 1.28, 1.24, -3.85, steel);
       box(root, 2.32, 0.16, 0.18, 0, 0.91, -4.96, cabMat);
       // Tall sleeper cab, roof cap, windshield, side windows and rear sleeper panel.
-      box(root, 2.18, 1.95, 2.0, 0, 2.16, -3.15, cabMat);
+      box(root, 2.18, 1.95, 2.0, 0, 2.16, -3.15, body);
       box(root, 2.22, 0.16, 1.95, 0, 3.19, -3.15, body);
       box(root, 1.9, 0.12, 1.78, 0, 3.29, -3.15, steel);
       box(root, 1.82, 1.08, 0.12, 0, 2.43, -4.17, glass, false);
-      box(root, 0.12, 0.92, 1.18, -1.1, 2.42, -3.18, paintDark);
-      box(root, 0.12, 0.92, 1.18, 1.1, 2.42, -3.18, paintDark);
-      box(root, 0.12, 0.88, 1.25, -1.17, 2.43, -3.18, glass, false);
-      box(root, 0.12, 0.88, 1.25, 1.17, 2.43, -3.18, glass, false);
+      box(root, 0.12, 0.98, 1.28, -1.1, 2.42, -3.18, body);
+      box(root, 0.12, 0.98, 1.28, 1.1, 2.42, -3.18, body);
+      box(root, 0.055, 0.82, 1.02, -1.17, 2.47, -3.18, glass, false);
+      box(root, 0.055, 0.82, 1.02, 1.17, 2.47, -3.18, glass, false);
+      // Sleeper door seams and grab handles break up the single-block cab silhouette.
+      box(root, 0.035, 0.78, 0.035, -1.18, 2.08, -2.72, steel, false);
+      box(root, 0.035, 0.78, 0.035, 1.18, 2.08, -2.72, steel, false);
+      box(root, 0.045, 0.055, 0.18, -1.2, 2.02, -2.82, cabMat, false);
+      box(root, 0.045, 0.055, 0.18, 1.2, 2.02, -2.82, cabMat, false);
       box(root, 1.55, 0.14, 0.14, 0, 1.55, -4.78, steel);
       box(root, 1.12, 0.36, 0.16, 0, 1.04, -4.78, steel);
       // Front-end details: recessed dark grille with vertical chrome bars, paired lamps,
@@ -407,6 +412,12 @@ export function createWorld(host: HTMLElement): World {
       box(root, 2.0, 0.2, 0.9, 0, 1.08, -1.15, steel);
       box(root, 2.55, 0.18, 0.85, 0, 0.72, -0.55, steel);
       box(root, 2.55, 0.2, 5.25, 0, 0.58, 1.95, steel);
+      // Longitudinal steel deck planks and raised rub rails make the low deck read as a usable equipment platform.
+      for (let i = 0; i < 9; i++) {
+        box(root, 0.22, 0.045, 4.72, -0.88 + i * 0.22, 0.705, 1.92, i % 2 === 0 ? lowboyPaint : steel, false);
+      }
+      box(root, 0.09, 0.09, 4.95, -1.27, 0.79, 1.92, cabMat, false);
+      box(root, 0.09, 0.09, 4.95, 1.27, 0.79, 1.92, cabMat, false);
       // Lowboy profile: raised neck over the tractor fifth-wheel, then a clearly dropped well deck.
       box(root, 1.9, 0.16, 1.15, 0, 0.91, 0.05, cabMat);
       box(root, 0.18, 0.36, 1.65, -1.16, 0.78, 0.15, steel);
@@ -448,6 +459,10 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -1.08, 0.48, 1.05), addWheel(root, 1.08, 0.48, 1.05));
       wheels.push(addWheel(root, -1.08, 0.48, 2.55), addWheel(root, 1.08, 0.48, 2.55));
       wheels.push(addWheel(root, -1.08, 0.48, 3.9), addWheel(root, 1.08, 0.48, 3.9));
+      // Real lowboy tri-axle groups use dual tires; add the outer tires at each trailer wheel station.
+      for (const z of [1.05, 2.55, 3.9]) {
+        wheels.push(addWheel(root, -1.52, 0.48, z), addWheel(root, 1.52, 0.48, z));
+      }
       // Steel mudguards over the tractor tandems and trailer tri-axle make the running gear read clearly.
       for (const z of [-2.35, -1.25]) {
         box(root, 0.18, 0.16, 1.25, -1.18, 1.28, z, cabMat);
