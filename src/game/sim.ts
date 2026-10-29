@@ -1932,37 +1932,39 @@ function nearestDeckLoad(state: GameState, rig: VehicleState) {
 
 export function toggleDeck(state: GameState) {
   if (!state.deck) state.deck = [];
+  if (!state.lowboyPhase) state.lowboyPhase = "raised";
   bindDeck(state);
   const rig = state.vehicles[state.active];
   if (!rig || rig.defId !== "lowboy") return "Get in the lowboy first.";
-  if (!valleyOpen(state)) return "The north road opens once you lease the Deep bench.";
+  // Keep lowboy loading testable without a land lease; mine access remains lease-gated.
+  const phase = state.lowboyPhase;
   const target = nearestDeckLoad(state, rig);
-  if (target) {
-    const why = deckFit(state.deck.map((uid) => state.vehicles.find((v) => v.uid === uid)?.defId ?? ""), target.defId);
+  if (!state.deck.length && target) {
+    if (phase === "raised") { state.lowboyPhase = "detached"; log(state, "Gooseneck disconnected."); return "Neck detached. Lower deck."; }
+    if (phase === "detached") { state.lowboyPhase = "lowered"; log(state, "Loading deck pivoted down."); return "Deck lowered. Tap Load to secure the nearby machine."; }
+    if (phase !== "lowered") return "Lower the deck before loading.";
+    const why = deckFit([], target.defId);
     if (why) return why;
-    target.operator = false;
-    target.speed = 0;
-    state.deck.push(target.uid);
-    bindDeck(state);
-    snapDeck(state);
-    log(state, `${DEFS[target.defId].name} is on the deck. ${spotsUsed(state.deck.map((uid) => state.vehicles.find((v) => v.uid === uid)?.defId ?? ""))} of ${3} spots used.`);
-    return "";
+    target.operator = false; target.speed = 0; state.deck.push(target.uid); bindDeck(state); snapDeck(state);
+    state.lowboyPhase = "loaded"; log(state, `${DEFS[target.defId].name} loaded. Raise the deck, then reconnect the neck.`);
+    return "Machine secured. Raise deck.";
   }
-  if (!state.deck.length) return "Pull up to an empty parked machine.";
+  if (!state.deck.length) {
+    if (phase === "detached") { state.lowboyPhase = "lowered"; return "Deck lowered. Park near a machine, then tap Load."; }
+    return "Pull up close to a parked machine, then detach the neck.";
+  }
+  if (phase === "loaded") { state.lowboyPhase = "raised"; log(state, "Deck raised to transport height."); return "Deck raised. Reconnect neck."; }
+  if (phase === "raised") { state.lowboyPhase = "connected"; log(state, "Gooseneck reconnected and locked."); return "Neck locked for transport."; }
+  if (phase === "connected") {
+    if (!inDropYard(rig.x, rig.z)) return "Drive to the ridge yard or valley camp before unloading.";
+    state.lowboyPhase = "detached"; log(state, "Gooseneck disconnected at the drop yard."); return "Neck detached. Lower deck.";
+  }
+  if (phase === "detached") { state.lowboyPhase = "lowered"; return "Deck lowered. Tap Unload."; }
+  if (phase !== "lowered") return "Lower the deck before unloading.";
   if (!inDropYard(rig.x, rig.z)) return "Unload at the ridge yard or the valley camp.";
-  const uid = state.deck.pop();
-  const m = state.vehicles.find((v) => v.uid === uid);
-  if (m) {
-    const side = Math.cos(rig.yaw);
-    const sideZ = -Math.sin(rig.yaw);
-    m.x = rig.x + side * 6;
-    m.z = rig.z + sideZ * 6;
-    m.speed = 0;
-    m.status = "Parked";
-    log(state, `${DEFS[m.defId].name} is off the lowboy.`);
-  }
-  bindDeck(state);
-  return "";
+  const uid = state.deck.pop(); const m = state.vehicles.find((v) => v.uid === uid);
+  if (m) { const side = Math.cos(rig.yaw); const sideZ = -Math.sin(rig.yaw); m.x = rig.x + side * 6; m.z = rig.z + sideZ * 6; m.speed = 0; m.status = "Parked"; log(state, `${DEFS[m.defId].name} unloaded from the lowboy.`); }
+  state.lowboyPhase = "raised"; bindDeck(state); return "Machine unloaded. Deck reset.";
 }
 
 export function haulBlocker(state: GameState) {
@@ -2468,15 +2470,15 @@ function areaHud(state: GameState) {
   };
 }
 
-function deckHud(state: GameState): { label: string; button: "Load" | "Unload" | null } {
+function deckHud(state: GameState): { label: string; button: string | null } {
   const v = state.vehicles[state.active];
   if (!v || v.defId !== "lowboy") return { label: "", button: null };
   const ids = (state.deck ?? []).map((uid) => state.vehicles.find((o) => o.uid === uid)?.defId ?? "");
   const names = ids.map((id) => (id && DEFS[id] ? DEFS[id].name : "")).filter(Boolean);
-  const label = `Deck ${spotsUsed(ids)}/3${names.length ? ` · ${names.join(", ")}` : ""}`;
+  const phase = state.lowboyPhase ?? "raised";
+  const stage = phase === "detached" ? "neck detached" : phase === "lowered" ? "deck down" : phase === "loaded" ? "loaded · deck down" : phase === "connected" ? "secured for travel" : "transport height";
+  const label = `Lowboy · ${stage} · Deck ${spotsUsed(ids)}/3${names.length ? ` · ${names.join(", ")}` : ""}`;
   const near = nearestDeckLoad(state, v);
-  if (near && !deckFit(ids, near.defId)) return { label, button: "Load" };
-  if (near) return { label, button: "Load" };
-  if ((state.deck ?? []).length && inDropYard(v.x, v.z)) return { label, button: "Unload" };
-  return { label, button: "Load" };
+  if (!ids.length) return { label, button: phase === "raised" ? (near ? "Detach neck" : "Find machine") : phase === "detached" ? "Lower deck" : "Load" };
+  return { label, button: phase === "loaded" ? "Raise deck" : phase === "raised" ? "Reconnect neck" : phase === "connected" ? "Disconnect neck" : phase === "detached" ? "Lower deck" : "Unload" };
 }
