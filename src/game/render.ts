@@ -29,6 +29,7 @@ type Rig = {
   conveyor: THREE.Object3D | null;
   stick: THREE.Object3D | null;
   bucketY: number;
+  deckPivot: THREE.Group | null;
 };
 
 type DepositView = {
@@ -251,6 +252,7 @@ export function createWorld(host: HTMLElement): World {
     let beaconMat: THREE.MeshStandardMaterial | null = null;
     let conveyor: THREE.Object3D | null = null;
     let stickArm: THREE.Object3D | null = null;
+    let deckPivot: THREE.Group | null = null;
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : id === "lowboy" ? lowboyPaint : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : id === "lowboy" ? steel : paintDark;
 
@@ -479,6 +481,16 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.2, 0.24, 0.38, 0.65, 0.62, 4.22, paintDark);
       box(root, 0.24, 0.16, 0.08, -0.88, 0.64, 4.45, orange, false);
       box(root, 0.24, 0.16, 0.08, 0.88, 0.64, 4.45, orange, false);
+      // Hinged deck overlay follows the loading sequence and visibly pivots down.
+      deckPivot = new THREE.Group();
+      deckPivot.position.set(0, 0.84, -0.55);
+      root.add(deckPivot);
+      box(deckPivot, 2.22, 0.13, 5.05, 0, 0, 2.55, lowboyPaint);
+      for (let rib = 0; rib < 12; rib++) box(deckPivot, 2.05, 0.025, 0.055, 0, 0.08, 0.28 + rib * 0.4, steel, false);
+      for (const side of [-1, 1]) {
+        const ram = box(root, 0.1, 0.58, 0.1, side * 0.82, 0.52, 0.55, steel);
+        ram.rotation.x = -0.2;
+      }
       // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
       wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
       wheels.push(addWheel(root, -1.18, 0.64, -2.35), addWheel(root, 1.18, 0.64, -2.35));
@@ -527,6 +539,7 @@ export function createWorld(host: HTMLElement): World {
       root, wheels, spin: 0, bucket, boom, house, bed, blade, load, dump: 0, uid, flywheel, flyHub, beltCleats, beaconMat, conveyor,
       stick: stickArm,
       bucketY: bucket ? bucket.position.y : 0,
+      deckPivot,
     };
   }
 
@@ -869,6 +882,11 @@ export function createWorld(host: HTMLElement): World {
       if (!rig) continue;
       rig.root.position.set(v.x, 0, v.z);
       rig.root.rotation.y = v.yaw;
+      if (rig.deckPivot && v.defId === "lowboy") {
+        const phase = state.lowboyPhase ?? "raised";
+        const targetAngle = phase === "detached" || phase === "lowered" || phase === "loaded" ? 0.34 : 0;
+        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-3.2 * dt));
+      }
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
       if (rig.flywheel) {
