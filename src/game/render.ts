@@ -863,6 +863,10 @@ export function createWorld(host: HTMLElement): World {
     }
   }
 
+  let lastLowboyDeckCount = -1;
+  let lowboyDeckMotion = 0;
+  const LOWBOY_DECK_MOTION_SECONDS = 1.6;
+
   function sync(state: GameState, dt: number, follow: boolean) {
     clock.t += dt;
     if (bound !== state) bound = state;
@@ -872,12 +876,21 @@ export function createWorld(host: HTMLElement): World {
       if (!rig) continue;
       rig.root.position.set(v.x, 0, v.z);
       rig.root.rotation.y = v.yaw;
-      // Pivot only the dropped deck at its front hinge; keep the gooseneck attached
-      // and omit any separate ramp animation.
+      // Automatically lower and raise the deck whenever a machine is loaded
+      // or unloaded. No separate deck button; the gooseneck stays attached.
       if (rig.deckPivot && v.defId === "lowboy") {
-        const phase = state.lowboyPhase ?? "raised";
-        const targetAngle = phase === "lowered" ? 0.34 : 0;
-        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-3.2 * dt));
+        const deckCount = (state.deck ?? []).length;
+        if (lastLowboyDeckCount < 0) lastLowboyDeckCount = deckCount;
+        if (deckCount !== lastLowboyDeckCount) {
+          lastLowboyDeckCount = deckCount;
+          lowboyDeckMotion = LOWBOY_DECK_MOTION_SECONDS;
+        }
+        lowboyDeckMotion = Math.max(0, lowboyDeckMotion - dt);
+        const progress = 1 - lowboyDeckMotion / LOWBOY_DECK_MOTION_SECONDS;
+        const targetAngle = progress < 0.45
+          ? (progress / 0.45) * 0.34
+          : ((1 - progress) / 0.55) * 0.34;
+        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-5.5 * dt));
       }
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
