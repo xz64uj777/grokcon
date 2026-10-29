@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BLOCKS, BOUNDS, PADS, PIT, inPit } from "@/game/catalog";
+import { hillBlocksRoad } from "@/game/lowboy";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
 
@@ -392,15 +393,22 @@ export function buildBackdrop(scene: THREE.Scene, track: Track, cx = 0, withSky 
     const a = (i / 26) * Math.PI * 2 + r() * 0.1;
     const d = 170 + r() * 70;
     const h = 14 + r() * 26;
+    const sx = 40 + r() * 40;
+    const sz = 30 + r() * 30;
+    let hx = cx + Math.cos(a) * d;
+    let hz = Math.sin(a) * d;
+    // Hemisphere scale is the footprint. Push a hill off the marked road, or drop it.
+    for (let n = 0; n < 8 && hillBlocksRoad(hx, hz, sx, sz); n++) hz += sx * 0.85;
+    if (hillBlocksRoad(hx, hz, sx * 0.92, sz * 0.92)) continue;
     const g = new THREE.SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2);
     const pos = g.attributes.position as THREE.BufferAttribute;
     for (let k = 0; k < pos.count; k++) {
       const n = hash3(i, k, 3) * 0.25;
       pos.setXYZ(k, pos.getX(k) * (1 + n), pos.getY(k) * (1 - n * 0.6), pos.getZ(k) * (1 + n));
     }
-    g.scale(40 + r() * 40, h, 30 + r() * 30);
+    g.scale(sx, h, sz);
     g.rotateY(a);
-    g.translate(cx + Math.cos(a) * d, -2, Math.sin(a) * d);
+    g.translate(hx, -2, hz);
     g.deleteAttribute("uv");
     geos.push(g);
   }
@@ -465,3 +473,4 @@ export function puffTexture() {
   }
   return new THREE.CanvasTexture(c);
 }
+

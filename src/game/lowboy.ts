@@ -46,6 +46,12 @@ function inBox(p: Point, b: { minX: number; maxX: number; minZ: number; maxZ: nu
   return p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ;
 }
 
+/** A hill footprint (center plus radii) sitting on the marked north road. */
+export function hillBlocksRoad(x: number, z: number, rx: number, rz: number) {
+  const boxes = [HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR];
+  return boxes.some((b) => x + rx > b.minX - 8 && x - rx < b.maxX + 8 && z + rz > b.minZ - 4 && z - rz < b.maxZ + 6);
+}
+
 export function onHaulRoad(x: number, z: number) {
   const p = { x, z };
   return inBox(p, HAUL_ROAD) || inBox(p, RIDGE_SPUR) || inBox(p, VALLEY_SPUR);
