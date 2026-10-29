@@ -297,8 +297,7 @@ export function createWorld(host: HTMLElement): World {
       box(root, 0.28, 0.32, 1.5, 0.72, 0.4, 0, cabMat);
     } else if (id === "dozer") {
       box(root, 0.42, 0.45, 2.5, -0.85, 0.45, 0, cabMat);
-      box(root, 0.42, 0.45, 2.5, 0.85, 0.45, 0, cabMat);
-      box(root, 1.5, 0.7, 2.3, 0, 0.95, 0.15, body);
+      box(root, 0.42, 0.45, 2.5, 0.85, 0.45, 0, cabMat);      box(root, 1.5, 0.7, 2.3, 0, 0.95, 0.15, body);
       box(root, 1.25, 0.75, 1.05, 0, 1.6, 0.15, cabMat);
       box(root, 1.05, 0.45, 0.85, 0, 1.7, 0.1, glass, false);
       blade = new THREE.Group();
@@ -472,31 +471,10 @@ export function createWorld(host: HTMLElement): World {
         box(root, 0.07, 0.12, 0.09, -1.31, 0.91, z, orange, false);
         box(root, 0.07, 0.12, 0.09, 1.31, 0.91, z, orange, false);
       }
-      // Separate rear loading ramps and reinforced rear frame.
-      const rampL = box(root, 0.92, 0.14, 1.08, -0.65, 0.37, 4.78, steel);
-      const rampR = box(root, 0.92, 0.14, 1.08, 0.65, 0.37, 4.78, steel);
-      rampL.rotation.x = 0.22;
-      rampR.rotation.x = 0.22;
-      // Ramp traction ribs, hinge blocks and rear conspicuity lights.
-      for (let i = 0; i < 4; i++) {
-        box(root, 0.82, 0.045, 0.055, -0.65, 0.45 + i * 0.035, 4.38 + i * 0.22, paintDark, false);
-        box(root, 0.82, 0.045, 0.055, 0.65, 0.45 + i * 0.035, 4.38 + i * 0.22, paintDark, false);
-      }
-      box(root, 0.2, 0.24, 0.38, -0.65, 0.62, 4.22, paintDark);
-      box(root, 0.2, 0.24, 0.38, 0.65, 0.62, 4.22, paintDark);
-      box(root, 0.24, 0.16, 0.08, -0.88, 0.64, 4.45, orange, false);
-      box(root, 0.24, 0.16, 0.08, 0.88, 0.64, 4.45, orange, false);
-      // Hinge pins and paired hydraulic lift cylinders make the articulation read as trailer hardware.
-      for (const side of [-1, 1]) {
-        const hinge = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 0.28, 12)), steel);
-        hinge.rotation.z = Math.PI / 2;
-        hinge.position.set(side * 1.18, 0.59, -0.58);
-        root.add(hinge);
-        const cylinder = box(root, 0.13, 0.62, 0.13, side * 0.83, 0.56, 0.48, steel);
-        cylinder.rotation.x = -0.34;
-        const piston = box(root, 0.075, 0.44, 0.075, side * 0.83, 0.77, 0.2, white);
-        piston.rotation.x = -0.34;
-      }
+      // Fixed rear frame with simple tail lights; no deployable ramps or unloading hardware.
+      box(root, 2.62, 0.18, 0.28, 0, 0.56, 4.72, steel);
+      box(root, 0.24, 0.16, 0.08, -0.9, 0.65, 4.54, orange, false);
+      box(root, 0.24, 0.16, 0.08, 0.9, 0.65, 4.54, orange, false);
       // Front steering axle, tandem tractor drive axles, then the lowboy's three axle group.
       wheels.push(addWheel(root, -1.18, 0.64, -4.05), addWheel(root, 1.18, 0.64, -4.05));
       wheels.push(addWheel(root, -1.18, 0.64, -2.35), addWheel(root, 1.18, 0.64, -2.35));
@@ -597,8 +575,7 @@ export function createWorld(host: HTMLElement): World {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     const ore = new THREE.Color(ORES[d.ore].color);
-    const dirt = new THREE.Color(0x6d5644);
-    const floorC = new THREE.Color(0x3a322b);
+    const dirt = new THREE.Color(0x6d5644);    const floorC = new THREE.Color(0x3a322b);
     const tint = new THREE.Color();
     const cutZ = radius * (0.58 - dug * 1.4);
     for (let i = 0; i < pos.count; i++) {
@@ -888,17 +865,13 @@ export function createWorld(host: HTMLElement): World {
       if (!rig) continue;
       rig.root.position.set(v.x, 0, v.z);
       rig.root.rotation.y = v.yaw;
-      if (rig.deckPivot && v.defId === "lowboy") {
-        const phase = state.lowboyPhase ?? "raised";
-        const targetAngle = phase === "detached" || phase === "lowered" || phase === "loaded" ? 0.34 : 0;
-        rig.deckPivot.rotation.x += (targetAngle - rig.deckPivot.rotation.x) * (1 - Math.exp(-3.2 * dt));
-      }
+      // Lowboy deck stays fixed; this game only needs the trailer's visual silhouette.
+      if (rig.deckPivot && v.defId === "lowboy") rig.deckPivot.rotation.x = 0;
       rig.spin += v.speed * dt * 1.7;
       for (const w of rig.wheels) w.rotation.x = rig.spin;
       if (rig.flywheel) {
         const dumped = v.busy;
-        if (dumped) crushLeft = 0.9;
-        crushLeft = Math.max(0, crushLeft - dt);
+        if (dumped) crushLeft = 0.9;        crushLeft = Math.max(0, crushLeft - dt);
         const rate = 1.6 + crushLeft * 7;
         rig.flywheel.rotation.x += dt * rate;
         if (rig.flyHub) rig.flyHub.rotation.x = rig.flywheel.rotation.x;
@@ -1197,8 +1170,7 @@ function textTexture(text: string, accent: string) {
     return tex;
   }
   g.fillStyle = "rgba(20,18,16,0.88)";
-  g.fillRect(0, 0, 512, 220);
-  g.strokeStyle = accent;
+  g.fillRect(0, 0, 512, 220);  g.strokeStyle = accent;
   g.lineWidth = 10;
   g.strokeRect(8, 8, 496, 204);
   g.fillStyle = "#f4efe6";
