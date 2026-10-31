@@ -3,7 +3,7 @@
  * The paid office jump is a separate shortcut.
  */
 
-import { X0 } from "@/game/river";
+import { X0, areaOf, type AreaId } from "@/game/river";
 
 export const DECK_SPOTS = 3;
 
@@ -74,6 +74,21 @@ export function onHaulRoad(x: number, z: number) {
   return inBox(p, HAUL_ROAD) || inBox(p, RIDGE_SPUR) || inBox(p, VALLEY_SPUR);
 }
 
+/** Where the pass turns off the ridge and drops into the valley camp. */
+export const VALLEY_GATE_X = X0 + 24;
+/** High point of the north road, halfway between the ridge yard and the valley gate. */
+export const PASS_SUMMIT_X = Math.round(VALLEY_GATE_X / 2);
+
+/**
+ * Which map a machine counts as being on. The pass belongs to the ridge until
+ * it reaches the valley gate, so the office and shop do not flip halfway along
+ * an empty gravel road.
+ */
+export function areaIn(x: number, z: number): AreaId {
+  if (onHaulRoad(x, z)) return x >= VALLEY_GATE_X ? "river" : "ridge";
+  return areaOf(x);
+}
+
 export function inDropYard(x: number, z: number) {
   if (inBox({ x, z }, RIDGE_YARD)) return true;
   return Math.hypot(x - VALLEY_CAMP.x, z - VALLEY_CAMP.z) <= VALLEY_CAMP.r;
@@ -92,6 +107,10 @@ export function blockRoadGate(defId: string, x: number, z: number) {
 export const HITCH_Z = -0.95;
 /** Trailer axle group, measured back from the hitch along the deck. */
 export const AXLE_BACK = 7.4;
+/** How far the trailer can swing off the cab before it stops articulating. */
+const MAX_ARTICULATION = 1.15;
+/** Height a machine's root sits at when it is strapped to the deck. */
+export const DECK_Y = 0.74;
 
 export function hitchPoint(x: number, z: number, yaw: number) {
   return { x: x + Math.sin(yaw) * HITCH_Z, z: z + Math.cos(yaw) * HITCH_Z };
@@ -101,26 +120,20 @@ export function hitchPoint(x: number, z: number, yaw: number) {
  * Pull the trailer from the fifth wheel. The axle does not slide sideways,
  * so the deck yaws around the hitch instead of staying locked to the cab.
  */
-export function stepHitch(
-  x: number,
-  z: number,
-  yaw: number,
-  trailerYaw: number | undefined,
-  axleX: number | undefined,
-  axleZ: number | undefined,
-) {
+export function stepHitch(x: number, z: number, yaw: number, axleX: number | undefined, axleZ: number | undefined) {
   const h = hitchPoint(x, z, yaw);
-  void trailerYaw;
-  let ax = axleX;
-  let az = axleZ;
-  if (ax == null || az == null || Math.hypot((ax ?? h.x) - h.x, (az ?? h.z) - h.z) > AXLE_BACK * 1.8) {
+  const ax = axleX;
+  const az = axleZ;
+  if (ax == null || az == null || Math.hypot(ax - h.x, az - h.z) > AXLE_BACK * 1.8) {
     return {
       trailerYaw: yaw,
       axleX: h.x + Math.sin(yaw) * AXLE_BACK,
       axleZ: h.z + Math.cos(yaw) * AXLE_BACK,
     };
   }
-  const nextYaw = Math.atan2(ax - h.x, az - h.z);
+  const bearing = Math.atan2(ax - h.x, az - h.z);
+  const delta = Math.atan2(Math.sin(bearing - yaw), Math.cos(bearing - yaw));
+  const nextYaw = yaw + Math.max(-MAX_ARTICULATION, Math.min(MAX_ARTICULATION, delta));
   return {
     trailerYaw: nextYaw,
     axleX: h.x + Math.sin(nextYaw) * AXLE_BACK,

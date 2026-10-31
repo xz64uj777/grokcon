@@ -1,6 +1,7 @@
 import { createAudio } from "@/game/audio";
 import { CLAIMS, ORES, PADS, boundsFor, isVehicleId } from "@/game/catalog";
-import { BRIDGE, RIVER, areaOf } from "@/game/river";
+import { BRIDGE, RIVER, X0, areaOf } from "@/game/river";
+import { PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, onHaulRoad } from "@/game/lowboy";
 import { createWorld } from "@/game/render";
 import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { sticksToCommand, type Stick } from "@/game/controls";
@@ -292,7 +293,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     loadTruck() {
       const seated = state.vehicles[state.active];
       const msg = seated?.defId === "lowboy" ? toggleDeck(state) : loadTruck(state);
-      state.log.unshift(msg);
+      if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
       saveGame(books());
       push();
@@ -325,7 +326,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       let next = state.active;
       for (let k = 1; k <= n; k++) {
         const i = (state.active + dir * k + n * k) % n;
-        if (areaOf(state.vehicles[i].x) === here && !state.deck?.includes(state.vehicles[i].uid)) {
+        if (areaIn(state.vehicles[i].x, state.vehicles[i].z) === here && !state.deck?.includes(state.vehicles[i].uid)) {
           next = i;
           break;
         }
@@ -516,8 +517,32 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     ctx.strokeStyle = "#3f382f";
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, m - 1, m - 1);
     const me = state.vehicles[state.active];
-    const area = me ? areaOf(me.x) : "ridge";
-    const B = boundsFor(me ? me.x : 0);
+    if (me && onHaulRoad(me.x, me.z) && me.x > 40 && me.x < VALLEY_GATE_X - 10) {
+      // On the pass the yard maps are useless; show the whole road as one strip.
+      const left = x0 + 10;
+      const right = x0 + m - 10;
+      const mid = y0 + m - 30;
+      const at = (x: number) => left + (Math.max(0, Math.min(VALLEY_GATE_X, x)) / VALLEY_GATE_X) * (right - left);
+      ctx.fillStyle = "#6d6458";
+      ctx.fillRect(left, mid - 2, right - left, 4);
+      ctx.fillStyle = "#a39888";
+      ctx.font = "9px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("RIDGE", left, mid - 10);
+      ctx.textAlign = "right";
+      ctx.fillText("VALLEY", right, mid - 10);
+      ctx.textAlign = "center";
+      ctx.fillText("SUMMIT", at(PASS_SUMMIT_X), mid + 18);
+      ctx.fillStyle = "#e6b325";
+      for (const x of [0, PASS_SUMMIT_X, VALLEY_GATE_X]) ctx.fillRect(at(x) - 1.5, mid - 6, 3, 12);
+      ctx.fillStyle = "#f4efe6";
+      ctx.beginPath();
+      ctx.arc(at(me.x), mid, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.textAlign = "start";
+    } else {
+    const area = currentArea(state);
+    const B = boundsFor(area === "river" ? X0 : 0);
     const here = (x: number) => areaOf(x) === area;
     const sx = (x: number) => x0 + ((x - B.minX) / (B.maxX - B.minX)) * m;
     const sz = (z: number) => y0 + ((z - B.minZ) / (B.maxZ - B.minZ)) * m;
@@ -562,6 +587,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       ctx.moveTo(sx(p.x), sz(p.z));
       ctx.lineTo(sx(p.x + fx * 8), sz(p.z + fz * 8));
       ctx.stroke();
+    }
     }
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];

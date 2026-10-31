@@ -2,7 +2,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
-import { HAUL_ROAD, HITCH_Z, RIDGE_SPUR, VALLEY_SPUR } from "@/game/lowboy";
+import { DECK_Y, HAUL_ROAD, HITCH_Z, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
 import { X0, areaOf, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
@@ -193,6 +193,20 @@ export function createWorld(host: HTMLElement): World {
   roadSign.position.set(0, 5, 62);
   roadSign.scale.set(8, 3, 1);
   scene.add(roadSign);
+  const summitSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("PASS SUMMIT", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  summitSign.position.set(PASS_SUMMIT_X, 5, 114);
+  summitSign.scale.set(9, 3.2, 1);
+  scene.add(summitSign);
+  const gateSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("RIVER VALLEY", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  gateSign.position.set(VALLEY_GATE_X, 5, 118);
+  gateSign.scale.set(9, 3.2, 1);
+  scene.add(gateSign);
+  // Gravel pull-out at the summit, so the waypoint reads as a place and not just a sign.
+  const pullout = new THREE.Mesh(track(new THREE.PlaneGeometry(18, 11)), std(0x7b6a57, { roughness: 1 }));
+  pullout.rotation.x = -Math.PI / 2;
+  pullout.position.set(PASS_SUMMIT_X, 0.042, 112);
+  pullout.receiveShadow = true;
+  scene.add(pullout);
   const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340)), std(0xffffff, { map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -846,7 +860,7 @@ export function createWorld(host: HTMLElement): World {
     for (const v of state.vehicles) {
       const rig = rigs.get(v.uid);
       if (!rig) continue;
-      rig.root.position.set(v.x, (state.deck ?? []).includes(v.uid) ? 0.74 : 0, v.z);
+      rig.root.position.set(v.x, (state.deck ?? []).includes(v.uid) ? DECK_Y : 0, v.z);
       rig.root.rotation.y = v.yaw;
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;

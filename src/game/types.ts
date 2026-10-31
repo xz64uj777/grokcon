@@ -118,8 +118,6 @@ export type GameState = {
   vehicles: VehicleState[];
   /** Uids strapped to the lowboy deck, load order. */
   deck: string[];
-  /** Current articulation stage of the lowboy. */
-  lowboyPhase?: "raised" | "detached" | "lowered" | "loaded" | "connected";
   active: number;
   deposits: Deposit[];
   pileSeq: number;
@@ -158,6 +156,10 @@ export type UpgradeCard = {
 export type CrewCard = {
   index: number;
   name: string;
+  /** Yard this machine belongs to. The office crew tabs filter on this. */
+  area: "ridge" | "river";
+  /** On the trailer or the north road, so the roster can say so. */
+  where: string;
   status: string;
   cargo: string;
   active: boolean;
@@ -182,6 +184,7 @@ export type GroundCard = {
   affordable: boolean;
   /** This lease is on the map whose office is open. */
   here: boolean;
+  area: "ridge" | "river";
 };
 
 export type HudModel = {
@@ -231,6 +234,8 @@ export type HudModel = {
   /** Which area the active machine is in. */
   area: "ridge" | "river";
   areaName: string;
+  /** Distance readout while on the north road, e.g. "824 m to River Valley". */
+  passLabel: string;
   officeTitle: string;
   /** River Valley is open (Deep bench owned). */
   valleyOpen: boolean;

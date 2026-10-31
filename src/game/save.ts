@@ -98,6 +98,9 @@ function sanitize(raw: unknown): GameState | null {
         bias: 1,
         workClaim: typeof v.workClaim === "number" ? Math.round(num(v.workClaim, 0, 0, 99)) : null,
         busy: false,
+        ...(v.defId === "lowboy" && typeof v.trailerYaw === "number" && typeof v.axleX === "number" && typeof v.axleZ === "number"
+          ? { trailerYaw: num(v.trailerYaw, 0, -40, 40), axleX: posX(v.axleX, 0), axleZ: posZ(v.axleZ, v.axleX, 96) }
+          : {}),
       });
     }
     if (vehicles.length && !vehicles.some((v) => v.defId === "crusher")) {

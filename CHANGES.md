@@ -11,6 +11,7 @@ Old saves still load. Nothing is taken away, and everything you own stays at Rid
 - **Haul this machine** puts the machine you're in on a lowboy trailer and takes it to the other map for **$500**. The machine has to be empty. You can't haul the track crusher, or haul anything while a blast is going.
 - Your first haul gives you the **River bars** lease for free. The **Valley quarry** (hard copper rock behind the valley camp) costs $30,000.
 - **Go to River Valley / Go to Ridge pit** switches maps. It's free, but only works once you have a machine on the other side.
+- **Crew** is a list per map. Once the valley is open, the office shows **Ridge pit** and **River Valley** rosters. Hire, repair, and work source stay on that map. A machine on the trailer stays on the lowboy's list.
 - **Next** only cycles through the machines on the map you're looking at. The minimap shows the map you're on.
 
 ## 2. The bridge (30 tonne limit)
@@ -31,7 +32,9 @@ Once the Deep bench is leased, a **lowboy** sits in the ridge yard. Get in it, p
 - Dump truck, excavator, or heavy haul: the whole deck, and it rides alone.
 - The track crusher does not fit. Beds have to be empty.
 
-Drive it north onto the gravel road and follow it to the valley camp. Mountains stand on both sides of that gravel. Cross the pass and the map becomes River Valley. The office you open is the one for the map you are on. Leases and machines from the other map stay there. Only the lowboy can take that road. Unload only at the ridge yard or the valley camp. The office button is still there: **$500**, one empty machine, no drive.
+Drive it north onto the gravel road and follow it to the valley camp. The road climbs through a mountain pass, with rock walls on both sides, a **PASS SUMMIT** pull-out at the halfway mark, and a **RIVER VALLEY** sign at the gate. The card counts the metres left while you are on it. Only the lowboy can take that road. Tap **Unload** wherever you stop; the machine rolls off behind the trailer onto open ground. The office button is still there: **$500**, one empty machine, no drive.
+
+The pass counts as ridge country until it reaches the valley gate, so the office, shop and price board do not change halfway along an empty road.
 
 ## 3. Mud
 

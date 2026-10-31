@@ -158,7 +158,7 @@ describe("west barge", () => {
 });
 
 describe("driving the lowboy", () => {
-  it("straps a skid and a dozer, carries them east, and will not unload on the road", () => {
+  it("straps a skid and a dozer, carries them east, and unloads where it stops", () => {
     const state = freshGame("Haul");
     state.claims = [1, 4];
     state.cash = 1;
@@ -173,8 +173,6 @@ describe("driving the lowboy", () => {
     skid.z = rig.z;
     assert.equal(toggleDeck(state), "");
     assert.equal(state.deck.length, 2);
-    park(state, "pickup", rig.x + 3, rig.z);
-    assert.equal(toggleDeck(state), "The deck already has two machines.");
 
     rig.x = 220;
     rig.z = 96;
@@ -184,7 +182,8 @@ describe("driving the lowboy", () => {
     assert.ok(rig.x > before + 8, `lowboy should roll east, x=${rig.x}`);
     assert.ok(Math.abs(skid.x - rig.x) < 12);
     assert.ok(Math.abs(dozer.z - rig.z) < 8);
-    assert.equal(toggleDeck(state), "Unload at the ridge yard or the valley camp.");
+    assert.equal(toggleDeck(state), "");
+    assert.equal(state.deck.length, 1);
   });
 });
 

@@ -8,6 +8,7 @@ export function MineScreen() {
   const bridges = useRef({ toggle: () => {}, close: () => {} });
   const [hud, setHud] = useState<ViewModel | null>(null);
   const [panel, setPanel] = useState<null | "machines" | "ground" | "crew" | "prices">(null);
+  const [crewArea, setCrewArea] = useState<"ridge" | "river">("ridge");
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
   const [booksNote, setBooksNote] = useState("");
@@ -304,6 +305,7 @@ export function MineScreen() {
                   {hud.groundLabel && !hud.groundLabel.startsWith("Bogged") ? ` · ${hud.groundLabel}` : ""}
                 </p>
               )}
+              {hud.passLabel && <p className="text-xs text-cash">{hud.passLabel}</p>}
               {hud.bridgeLabel && !hud.bridgeLabel.endsWith("TOO HEAVY") && <p className="text-xs text-fg">{hud.bridgeLabel}</p>}
               <div className="mt-1 h-1.5 bg-bg">
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
@@ -413,7 +415,10 @@ export function MineScreen() {
                     key={id}
                     type="button"
                     className={`inline-flex h-12 flex-1 items-center justify-center gap-1 font-display text-base uppercase tracking-wide md:gap-2 md:text-lg ${panel === id ? "bg-primary text-primary-fg" : "text-muted"}`}
-                    onClick={() => setPanel(id)}
+                    onClick={() => {
+                      setPanel(id);
+                      if (id === "crew") setCrewArea(hud.area);
+                    }}
                   >
                     <Icon className="size-4" aria-hidden />
                     {label}
@@ -479,8 +484,30 @@ export function MineScreen() {
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {panel === "crew" && (
                   <div className="border-b border-border py-3">
-                    <p className="text-sm leading-relaxed text-muted">Hire an operator for each machine you want running. Set Work source to Any leased source or choose a specific leased claim, such as Copper Bench.</p>
-                    {hud.sluice && (
+                    <p className="text-sm leading-relaxed text-muted">Each map has its own crew. Hire an operator for each machine you want running on that yard. Set Work source to Any leased source or choose a claim on that map, such as Copper Bench.</p>
+                    {hud.valleyOpen && (
+                      <div className="mt-3 flex gap-2">
+                        {(
+                          [
+                            ["ridge", "Ridge pit"],
+                            ["river", "River Valley"],
+                          ] as const
+                        ).map(([id, label]) => {
+                          const n = hud.crew.filter((c) => c.area === id).length;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              className={`h-11 flex-1 font-display text-base uppercase tracking-wide ${crewArea === id ? "bg-primary text-primary-fg" : "border border-border text-fg"}`}
+                              onClick={() => setCrewArea(id)}
+                            >
+                              {label} · {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {hud.sluice && crewArea === "ridge" && (
                       <button
                         type="button"
                         className={`mt-3 h-11 px-3 font-display text-lg uppercase tracking-wide ${hud.preferSluice ? "bg-primary text-primary-fg" : "border border-border text-fg"}`}
@@ -489,7 +516,7 @@ export function MineScreen() {
                         {hud.preferSluice ? "Sluice haul on" : "Sluice haul off"}
                       </button>
                     )}
-                    {hud.sluice && (
+                    {hud.sluice && crewArea === "ridge" && (
                       <p className="mt-2 text-sm leading-relaxed text-muted">On: copper and gold always go to the sluice. They pay more there. Iron stays on the crusher.</p>
                     )}
                   </div>
@@ -568,16 +595,19 @@ export function MineScreen() {
                       )}
                     </article>
                   ))}
-                {panel === "crew" && hud.crew.length === 0 && (
-                  <p className="py-4 text-sm text-muted">No machines on this map.</p>
+                {panel === "crew" && hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).length === 0 && (
+                  <p className="py-4 text-sm text-muted">
+                    {crewArea === "river" ? "No machines in River Valley. Haul one over on the lowboy." : "No machines at Ridge pit."}
+                  </p>
                 )}
                 {panel === "crew" &&
-                  hud.crew.map((c) => (
+                  hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).map((c) => (
                     <article key={c.index} className="border-b border-border py-4">
                       <div className="flex items-baseline justify-between gap-3">
                         <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">{c.name}</h2>
                         <p className="text-sm text-muted">{c.cargo}</p>
                       </div>
+                      {c.where && <p className="mt-1 text-sm text-muted">{c.where}</p>}
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
@@ -589,7 +619,7 @@ export function MineScreen() {
                           onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : Number(e.target.value))}
                         >
                           <option value="any">Any leased source</option>
-                          {hud.grounds.filter((g) => g.owned && (g.here || g.id === c.workClaim)).map((g) => (
+                          {hud.grounds.filter((g) => g.owned && g.area === c.area).map((g) => (
                             <option key={g.id} value={g.id}>{g.name}</option>
                           ))}
                         </select>
@@ -597,7 +627,8 @@ export function MineScreen() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="h-11 border border-border px-3 font-display text-lg uppercase tracking-wide text-fg"
+                          disabled={c.where === "On the lowboy"}
+                          className="h-11 border border-border px-3 font-display text-lg uppercase tracking-wide text-fg disabled:opacity-40"
                           onClick={() => {
                             apiRef.current?.drive(c.index);
                             setPanel(null);
