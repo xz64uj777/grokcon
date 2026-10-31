@@ -75,6 +75,8 @@ export const MACHINE_TONS: Record<string, number> = {
   excavator: 22,
   heavy: 28,
   crusher: 45,
+  // Tractor plus empty lowboy trailer.
+  lowboy: 16,
 };
 
 export function grossTons(defId: string, cargo: number) {

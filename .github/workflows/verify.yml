@@ -39,7 +39,7 @@ jobs:
       # fixtures that are intentionally not in the public repository.
       - name: Run repository-portable tests
         run: >-
-          node --experimental-strip-types --test
+          node --experimental-strip-types --import ./scripts/register-alias.mjs --test
           src/lib/app-data/app-data.test.ts
           src/lib/app-data/readiness-schedule.test.ts
           src/lib/auth/gate-identity.test.ts
@@ -49,6 +49,10 @@ jobs:
           src/game/mining.test.ts
           src/game/market.test.ts
           src/game/river.test.ts
+          src/game/save.test.ts
+          src/game/blast.test.ts
+          src/game/lowboy.test.ts
+          src/game/pass.test.ts
 
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts

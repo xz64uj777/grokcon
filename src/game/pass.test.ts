@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { AXLE_BACK, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, stepHitch } from "./lowboy.ts";
 import { homeTool } from "./controls.ts";
+import { BRIDGE } from "./river.ts";
 import { ensureLowboy, freshGame, step, toggleDeck } from "@/game/sim";
 import { readSaveText } from "@/game/save";
 import type { VehicleState } from "@/game/types";
@@ -51,6 +52,30 @@ describe("trailer articulation", () => {
       assert.ok(rel <= 1.151, `jackknifed ${rel}`);
       assert.ok(Math.abs(Math.hypot(ax - x, az - z) - AXLE_BACK) < 1.4);
     }
+  });
+});
+
+describe("the bridge scale counts the lowboy deck", () => {
+  function crossing(defId: VehicleState["defId"]) {
+    const { state, rig } = rigGame();
+    const m = park(state, defId, rig.x + 4, rig.z);
+    assert.equal(toggleDeck(state), "");
+    rig.x = BRIDGE.x - BRIDGE.halfLength - 1.5;
+    rig.z = BRIDGE.z;
+    rig.yaw = -Math.PI / 2;
+    for (let i = 0; i < 60; i++) step(state, { throttle: 1, steer: 0, action: false }, 0.1, true);
+    return { rig, m };
+  }
+
+  it("stops a lowboy carrying a dozer", () => {
+    const { rig } = crossing("dozer");
+    assert.ok(rig.x < BRIDGE.x - BRIDGE.halfLength + 0.5, `dozer load crossed, x=${rig.x}`);
+  });
+
+  it("lets a lowboy carrying a skid steer across", () => {
+    const { rig, m } = crossing("skid");
+    assert.ok(rig.x > BRIDGE.x + BRIDGE.halfLength, `light load should cross, x=${rig.x}`);
+    assert.ok(Math.abs(m.x - rig.x) < 12);
   });
 });
 

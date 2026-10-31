@@ -29,11 +29,11 @@ import {
   areaOf,
   boggedDown,
   BARGE_RATE,
-  bridgeAllows,
   bridgeMaxLoad,
   crossingWorth,
   otherBank,
   grossTons,
+  MACHINE_TONS,
   mudDepth,
   mudSpeedFactor,
   inRiver,
@@ -1307,10 +1307,23 @@ function resolveCircle(v: VehicleState, radius: number) {
 
 const bridgeNag = new WeakMap<VehicleState, number>();
 
+/** Weight the bridge scale sees: the machine, its load, and anything strapped to the lowboy's deck. */
+function crossingWeight(state: GameState, v: VehicleState) {
+  let t = grossTons(v.defId, v.cargo);
+  if (v.defId === "lowboy") {
+    for (const uid of state.deck ?? []) {
+      const m = state.vehicles.find((o) => o.uid === uid);
+      if (m) t += MACHINE_TONS[m.defId] ?? 10;
+    }
+  }
+  return t;
+}
+
 /** Overweight machines are stopped at the end of the bridge. They can always back off. */
 function guardBridge(state: GameState, v: VehicleState, index: number) {
   if (areaOf(v.x) !== "river") return;
-  if (bridgeAllows(v.defId, v.cargo)) return;
+  const tons = crossingWeight(state, v);
+  if (tons <= BRIDGE.limit) return;
   if (!onBridge(v.x, v.z)) return;
   const side = Math.sign(v.x - BRIDGE.x) || 1;
   // Already well onto the deck (e.g. a load landed in the bed mid-crossing): let it finish.
@@ -1320,7 +1333,10 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
   const now = state.seconds;
   if (now - (bridgeNag.get(v) ?? -99) > 4) {
     bridgeNag.set(v, now);
-    const msg = `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${grossTons(v.defId, v.cargo).toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
+    const msg =
+      v.defId === "lowboy"
+        ? `Bridge limit ${BRIDGE.limit} t. The lowboy weighs ${tons.toFixed(0)} t with the deck loaded. The deck counts on the scale — take the north road.`
+        : `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
     if (index === state.active) log(state, msg);
     v.status = "Too heavy for the bridge";
   }
@@ -2563,8 +2579,8 @@ function areaHud(state: GameState) {
   }
   let bridgeLabel = "";
   if (v && area === "river" && Math.abs(v.x - BRIDGE.x) < BRIDGE.halfLength + 14 && Math.abs(v.z - BRIDGE.z) < 14) {
-    const t = grossTons(v.defId, v.cargo);
-    bridgeLabel = bridgeAllows(v.defId, v.cargo)
+    const t = crossingWeight(state, v);
+    bridgeLabel = t <= BRIDGE.limit
       ? `Bridge ${BRIDGE.limit} t limit · you weigh ${t.toFixed(0)} t · OK`
       : `Bridge ${BRIDGE.limit} t limit · you weigh ${t.toFixed(0)} t · TOO HEAVY`;
   }
