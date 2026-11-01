@@ -862,6 +862,11 @@ export function createWorld(host: HTMLElement): World {
       if (!rig) continue;
       rig.root.position.set(v.x, (state.deck ?? []).includes(v.uid) ? DECK_Y : 0, v.z);
       rig.root.rotation.y = v.yaw;
+      if (v.defId === "dozer") {
+        rig.root.rotation.x = v.busy ? Math.sin(clock.t * 11) * 0.05 : 0;
+      } else {
+        rig.root.rotation.x = 0;
+      }
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;
         rig.hitch.rotation.y = Math.atan2(Math.sin(art), Math.cos(art));
@@ -936,9 +941,12 @@ export function createWorld(host: HTMLElement): World {
         rig.house.rotation.y += (target - rig.house.rotation.y) * k;
       }
       if (!v.manual && rig.blade) {
+        const down = v.busy;
+        const bob = down ? Math.sin(clock.t * 11) * 0.05 : 0;
+        const targetY = (down ? 0.08 : 0.62) + bob;
+        rig.blade.position.y += (targetY - rig.blade.position.y) * k;
+        rig.blade.rotation.x += ((down ? 0.28 : 0) - rig.blade.rotation.x) * k;
         rig.blade.rotation.y += (0 - rig.blade.rotation.y) * k;
-        const target = v.busy ? -0.15 : 0.2;
-        rig.blade.position.y += (0.45 + target - rig.blade.position.y) * k;
       }
       if (!v.manual && rig.bed) {
         const target = v.busy && DEFS[v.defId].receives ? 0.62 : 0;
@@ -1019,7 +1027,8 @@ export function createWorld(host: HTMLElement): World {
     // Dust trails behind every moving machine (pooled; the player kicks up the most).
     state.vehicles.forEach((v, vi) => {
       const sp = Math.abs(v.speed);
-      if (sp < 2.2) return;
+      const digging = v.busy && (v.defId === "dozer" || v.defId === "excavator" || v.defId === "skid" || v.defId === "loader");
+      if (sp < 2.2 && !digging) return;
       const fx = -Math.sin(v.yaw);
       const fz = -Math.cos(v.yaw);
       const n = v === player ? 3 : 1;

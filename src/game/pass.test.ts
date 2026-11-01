@@ -184,8 +184,13 @@ describe("valley crew", () => {
       step(state, ZERO, 1 / 30, true);
       if (i > 20 && v.status) seen.add(v.status);
     }
-    const faces = [...seen].filter((s) => /gold|silver/i.test(s));
-    assert.ok(faces.length <= 1, `dozer swapped faces: ${[...seen].join(" | ")}`);
+    const ores = new Set<string>();
+    for (const s of seen) {
+      if (/gold/i.test(s)) ores.add("gold");
+      if (/silver/i.test(s)) ores.add("silver");
+    }
+    assert.deepEqual([...ores], ["gold"]);
+    assert.ok(Math.hypot(v.x - gold.x, v.z - gold.z) > 0.8, "dozer should drive the blade, not sit still");
   });
 
   it("does not walk a dug quarry face into the cliff", () => {

@@ -635,6 +635,7 @@ function behindWestCliff(x: number, z: number) {
 }
 
 const crewJob = new WeakMap<VehicleState, string>();
+const crewPush = new WeakMap<VehicleState, { phase: "in" | "out"; t: number }>();
 
 function veinUsable(state: GameState, v: VehicleState, d: Deposit | null | undefined): d is Deposit {
   return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (v.workClaim == null || d.claim === v.workClaim);
@@ -768,9 +769,33 @@ function aiControl(state: GameState, index: number): Control {
     const vein = commitVein(state, v, bestVein(state, v, null), scoreVein);
     if (vein) {
       const cut = faceOf(vein);
-      target = cut;
-      arrive = Math.max(3, cut.reach * 0.75);
-      label = `Stripping ${ORES[vein.ore].name}`;
+      const name = ORES[vein.ore].name;
+      const dist = distTo(v.x, v.z, cut.x, cut.z);
+      const cycle = crewPush.get(v) ?? { phase: "in" as const, t: 0 };
+      const atFace = dist <= Math.max(5.2, cut.reach + 1.2);
+      if (!atFace && cycle.phase !== "out") {
+        target = cut;
+        arrive = 3.4;
+        label = `Heading to ${name}`;
+      } else {
+        cycle.t += 1 / 60;
+        if (cycle.phase === "in" && (cycle.t > 1.15 || dist < 1.6)) {
+          cycle.phase = "out";
+          cycle.t = 0;
+        } else if (cycle.phase === "out" && cycle.t > 1.15) {
+          cycle.phase = "in";
+          cycle.t = 0;
+        }
+        crewPush.set(v, cycle);
+        const desired = Math.atan2(-(cut.x - v.x), -(cut.z - v.z));
+        const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
+        if (cycle.phase === "in") {
+          v.status = `Pushing ${name}`;
+          return { throttle: 0.42, steer: clamp(diff * 1.3, -1, 1), action: Math.abs(diff) < 0.9, brake: 0 };
+        }
+        v.status = `Backing off ${name}`;
+        return { throttle: -0.48, steer: clamp(-diff * 0.35, -1, 1), action: false, brake: 0 };
+      }
     } else label = "No face in reach";
   } else if (def.dig > 0) {
     if (full && v.cargoOre) haulTarget();
@@ -1220,8 +1245,9 @@ function performAction(
     const src = materialInFront(state, v, def.range);
     if (src && ownsClaim(state, src.claim) && acceptsJob(state, v, src)) {
       const want = st.push * dt * (src.kind === "vein" ? digRate(src) : 1) * (manual ? 1.6 - v.tool.lift * 2 : 1);
-      const dropX = src.kind === "vein" ? src.x + fx * 6 : v.x + fx * (st.radius + 3.4);
-      const dropZ = src.kind === "vein" ? src.z + fz * 6 : v.z + fz * (st.radius + 3.4);
+      // Spoil lands in front of the blade. Dropping it at the vein buried the pile in the hill.
+      const dropX = v.x + fx * (st.radius + 1.8);
+      const dropZ = v.z + fz * (st.radius + 1.8);
       let ore = src.ore;
       let take = 0;
       let purity = src.purity ?? 1;
