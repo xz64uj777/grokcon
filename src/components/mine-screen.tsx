@@ -226,6 +226,13 @@ export function MineScreen() {
               </button>
               <button
                 type="button"
+                className={`pointer-events-auto inline-flex h-11 items-center border px-3 font-display text-lg uppercase tracking-wide ${hud.watching ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
+                onClick={() => apiRef.current?.watch(!hud.watching)}
+              >
+                {hud.watching ? "Watching" : "Watch"}
+              </button>
+              <button
+                type="button"
                 className="pointer-events-auto ml-auto inline-flex h-11 items-center gap-2 border border-border bg-surface px-3 font-display text-lg uppercase tracking-wide text-fg min-[821px]:ml-0"
                 onClick={() => setPanel((p) => (p ? null : "machines"))}
               >
@@ -319,7 +326,33 @@ export function MineScreen() {
               )}
             </div>
           </footer>
-          {hud.twoSticks ? (
+          {hud.watching ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 pb-4">
+              <div className="pointer-events-auto flex items-stretch gap-2">
+                <button
+                  type="button"
+                  className="h-20 shrink-0 bg-primary px-4 font-display text-xl uppercase tracking-wide text-primary-fg"
+                  onClick={() => apiRef.current?.watch(false)}
+                >
+                  Sit
+                </button>
+                <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+                  {hud.crew.filter((c) => c.name !== "Track crusher").map((c) => (
+                    <button
+                      key={c.index}
+                      type="button"
+                      className={`h-20 w-40 shrink-0 border px-2 text-left ${c.active ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
+                      onClick={() => apiRef.current?.look(c.index)}
+                    >
+                      <span className="block truncate font-display text-base uppercase leading-none tracking-wide">{c.name}</span>
+                      <span className="mt-1 block truncate text-xs">{c.operator ? c.status || "On duty" : "Off shift"}</span>
+                      <span className="mt-0.5 block truncate text-xs opacity-80">{c.cargo}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : hud.twoSticks ? (
             <div ref={padRef} key={`twin-${screen}`} className="twin-pad pointer-events-none absolute inset-x-0 bottom-0 z-10 gap-2 p-3 pb-4">
               <div className="twin-btns pointer-events-auto flex flex-wrap content-end justify-center gap-2">
                 <SmallBtn onClick={() => apiRef.current?.cycle(1)}>Next</SmallBtn>
@@ -484,7 +517,7 @@ export function MineScreen() {
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {panel === "crew" && (
                   <div className="border-b border-border py-3">
-                    <p className="text-sm leading-relaxed text-muted">Each map has its own crew. Hire an operator for each machine you want running on that yard. Set Work source to Any leased source or choose a claim on that map, such as Copper Bench.</p>
+                    <p className="text-sm leading-relaxed text-muted">Each map has its own crew. Hire an operator for each machine you want running on that yard. Tap Watch to step out of the seat: they keep working, and you can tap a machine to follow it. Set Work source to Any leased source or choose a claim on that map, such as Copper Bench.</p>
                     {hud.valleyOpen && (
                       <div className="mt-3 flex gap-2">
                         {(

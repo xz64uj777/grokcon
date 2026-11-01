@@ -208,6 +208,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
     },
     drive(index) {
+      state.watching = false;
       setActive(state, index);
       world.snap();
       push();
@@ -287,6 +288,29 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state = practiceBack;
         practiceBack = null;
       }
+      world.snap();
+      push();
+    },
+    watch(on) {
+      state.watching = on;
+      stick.steer = 0;
+      stick.throttle = 0;
+      sticks.left = { x: 0, y: 0 };
+      sticks.right = { x: 0, y: 0 };
+      actionBtn = false;
+      state.log.unshift(on ? "You stepped out. On-duty operators keep working." : "Back in the seat.");
+      if (state.log.length > 5) state.log.length = 5;
+      push();
+    },
+    look(index) {
+      if (!state.vehicles[index]) return;
+      state.watching = true;
+      stick.steer = 0;
+      stick.throttle = 0;
+      sticks.left = { x: 0, y: 0 };
+      sticks.right = { x: 0, y: 0 };
+      actionBtn = false;
+      setActive(state, index);
       world.snap();
       push();
     },
@@ -622,10 +646,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         for (const s of fx.sales) {
           floaters.push({ x: s.x, y: 3.4, z: s.z, text: s.text, life: 1.35 });
           if (floaters.length > 8) floaters.shift();
-          if (s.player) {
-            audio.sell();
-            world.kick(0.16);
-          }
+          if (s.player || state.watching) audio.sell();
+          if (s.player) world.kick(0.16);
         }
         if (fx.sales.length) sold = true;
         for (const b of fx.breaks) world.chip(b.ore, b.x, b.z, b.tx, b.tz);
@@ -646,8 +668,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       digCool = Math.max(0, digCool - dt);
       const v = state.vehicles[state.active];
       const soundKind = (id: string | undefined) => id === "skid" || id === "loader" || id === "excavator" || id === "dozer" || id === "truck" || id === "heavy" ? (id === "heavy" ? "truck" : id) : "other";
-      audio.engine(v?.speed ?? 0, panelOpen ? 0 : input.throttle, soundKind(v?.defId));
-      if (!panelOpen && input.cmd) audio.hydraulics(soundKind(v?.defId), input.cmd.axes.lift, input.cmd.axes.tilt);
+      audio.engine(v?.speed ?? 0, panelOpen || state.watching ? 0 : input.throttle, soundKind(v?.defId));
+      if (!panelOpen && !state.watching && input.cmd) audio.hydraulics(soundKind(v?.defId), input.cmd.axes.lift, input.cmd.axes.tilt);
       saveT += dt;
       if (saveT > 4) {
         saveGame(books());

@@ -125,6 +125,8 @@ export type GameState = {
   contractSeq: number;
   contract: Contract;
   log: string[];
+  /** Out of the seat. Hired operators drive, including the machine the camera is on. Not saved. */
+  watching: boolean;
 };
 
 export type Input = {
@@ -252,6 +254,8 @@ export type HudModel = {
   washPlant: boolean;
   deckLabel: string;
   deckButton: string | null;
+  /** You stepped out. The crew is driving and the camera is only watching. */
+  watching: boolean;
 };
 
 export type PriceRow = {
@@ -286,7 +290,10 @@ export type GameApi = {
   repair: (index: number) => void;
   practice: (on: boolean) => void;
   loadTruck: () => void;
-  /** Send the active machine to the other area on the lowboy. */
+  /** Step out so hired operators drive, or sit back down. */
+  watch: (on: boolean) => void;
+  /** Point the camera at a machine without taking the controls. */
+  look: (index: number) => void;
   haul: () => void;
   /** Jump to a machine that is already in the other area. */
   goOther: () => void;

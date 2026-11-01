@@ -297,6 +297,7 @@ export function freshGame(company: string): GameState {
     wet: 0,
     muted: false,
     deck: [],
+    watching: false,
     vehicles: (() => {
       const pickup = makeVehicle("pickup", 0);
       const plant = makeVehicle("crusher", 1);
@@ -1671,8 +1672,8 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       continue;
     }
     let c: Control;
-    let w: WorkOpts = i === state.active ? AUTO_PLAYER : AUTO_CREW;
-    if (i === state.active && playerEnabled && state.controlMode === "real" && input.cmd) {
+    let w: WorkOpts = i === state.active && !state.watching ? AUTO_PLAYER : AUTO_CREW;
+    if (i === state.active && !state.watching && playerEnabled && state.controlMode === "real" && input.cmd) {
       const cmd = input.cmd;
       const prev = v.tool;
       v.tool = stepTool(prev, cmd.axes, dt, v.defId);
@@ -1706,7 +1707,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       work.push(w);
       continue;
     }
-    if (i === state.active) {
+    if (i === state.active && !state.watching) {
       c = playerEnabled
         ? {
             throttle: input.throttle,
@@ -1755,7 +1756,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   let dig = false;
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
-    if (v.operator && i !== state.active) {
+    if (v.operator && (state.watching || i !== state.active)) {
       const c = controls[i];
       if (c.throttle > 0.45 && Math.abs(v.speed) < 0.45) v.stuck += dt;
       else v.stuck = 0;
@@ -1773,13 +1774,13 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
           x: v.x,
           z: v.z,
           text: `+${formatMoney(pending)}`,
-          player: i === state.active,
+          player: i === state.active && !state.watching,
         });
       }
       saleAcc.delete(v);
       continue;
     }
-    if (i === state.active) v.status = "";
+    if (i === state.active && !state.watching) v.status = "";
     const before = v.cargo;
     const sale = performAction(state, i, dt, breaks, work[i]);
     if (sale) sales.push(sale);
@@ -2457,7 +2458,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       name: def.name,
       area,
       where: onDeck ? "On the lowboy" : onHaulRoad(veh.x, veh.z) && !inDropYard(veh.x, veh.z) ? "On the north road" : "",
-      status: index === state.active ? "In your seat" : veh.operator ? veh.status : "Parked",
+      status: index === state.active && !state.watching ? "In your seat" : veh.operator ? veh.status || "On duty" : "Parked",
       cargo: cargoLine(state, veh),
       active: index === state.active,
       hired: veh.hired,
@@ -2507,7 +2508,9 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     tierProgress: info.progress,
     tierDetail: info.nextAt != null ? `${formatMoney(state.lifetime)} earned · ${formatMoney(info.nextAt)} to ${info.next}` : "The books are closed on a full company.",
     shift: `Shift ${mm}:${ss.toString().padStart(2, "0")}`,
-    hint: realHint(state) ?? hint(state),
+    hint: state.watching
+      ? "You stepped out. On-duty operators keep working. Tap a machine to watch it, or Sit to drive."
+      : realHint(state) ?? hint(state),
     objective: objective(state),
     vehicleName: v ? DEFS[v.defId].name : "—",
     vehicleIndex: state.active,
@@ -2613,6 +2616,7 @@ function areaHud(state: GameState) {
     washPlant: state.washPlant,
     deckLabel: deck.label,
     deckButton: deck.button,
+    watching: state.watching,
   };
 }
 

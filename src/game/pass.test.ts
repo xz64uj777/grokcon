@@ -118,3 +118,33 @@ describe("summit and deck rules", () => {
     assert.equal(lb?.trailerYaw, 0.7);
   });
 });
+
+describe("watching the crew", () => {
+  it("lets the operator drive the machine you are watching", () => {
+    const state = freshGame("Watch");
+    state.claims = [1, 2, 3, 4];
+    const v = state.vehicles[0];
+    v.defId = "skid";
+    v.hired = true;
+    v.operator = true;
+    v.tool = homeTool("skid");
+    const x0 = v.x;
+    const z0 = v.z;
+    state.watching = true;
+    for (let i = 0; i < 90; i++) step(state, { throttle: 1, steer: 1, action: true }, 1 / 30, true);
+    assert.ok(Math.hypot(v.x - x0, v.z - z0) > 1, "the crew should move the machine while you watch");
+  });
+
+  it("does not drive that machine while you are in the seat", () => {
+    const state = freshGame("Seat");
+    const v = state.vehicles[0];
+    v.defId = "skid";
+    v.hired = true;
+    v.operator = true;
+    v.tool = homeTool("skid");
+    const x0 = v.x;
+    const z0 = v.z;
+    for (let i = 0; i < 40; i++) step(state, ZERO, 1 / 30, true);
+    assert.ok(Math.hypot(v.x - x0, v.z - z0) < 0.25);
+  });
+});

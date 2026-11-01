@@ -24,6 +24,10 @@ There's one bridge over the river. The sign says **30 T LIMIT**, and that counts
 - **West barge:** a buyer tied up on the west bank. It pays about 70% of the rail price, and the load never has to cross. Sell there, or take a dump truck over the bridge for the full rail price.
 - A hired dump truck still leaves room for the bridge and hauls to the rail. A hired heavy haul fills the bed and sells at the barge. It cannot take a real load across.
 
+## Watching the crew
+
+Hire an operator for each machine you want running, then tap **Watch**. You step out of the seat and every on-duty operator keeps working, including the machine you were just driving. Cards along the bottom show what each one is doing and what it is carrying. Tap a card to point the camera at that machine. Tap **Sit** to take the wheel again.
+
 ## The north road
 
 Once the Deep bench is leased, a **lowboy** sits in the ridge yard. Get in it, pull up to an empty parked machine, and tap **Load**. The deck has three spots, and it holds two machines at most.
