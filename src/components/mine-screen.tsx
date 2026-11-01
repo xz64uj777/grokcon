@@ -336,8 +336,35 @@ export function MineScreen() {
                 >
                   Sit
                 </button>
+                {hud.valleyOpen && (
+                  <div className="flex shrink-0 flex-col gap-1">
+                    {(
+                      [
+                        ["ridge", "Ridge"],
+                        ["river", "Valley"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`h-9 w-16 font-display text-xs uppercase tracking-wide ${hud.area === id ? "bg-primary text-primary-fg" : "border border-border bg-surface text-fg"}`}
+                        onClick={() => {
+                          const first = hud.crew.find((c) => c.area === id && c.name !== "Track crusher");
+                          if (first) apiRef.current?.look(first.index);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-                  {hud.crew.filter((c) => c.name !== "Track crusher").map((c) => (
+                  {hud.crew.filter((c) => c.name !== "Track crusher" && c.area === hud.area).length === 0 && (
+                    <p className="flex h-20 items-center px-2 text-sm text-muted">No machines on this map.</p>
+                  )}
+                  {hud.crew
+                    .filter((c) => c.name !== "Track crusher" && c.area === hud.area)
+                    .map((c) => (
                     <button
                       key={c.index}
                       type="button"

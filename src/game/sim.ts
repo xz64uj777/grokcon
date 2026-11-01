@@ -128,7 +128,12 @@ export function faceOf(d: Deposit) {
   rz /= len;
   // Fresh ground is at the opening. The cut walks away from the gate as it is mined.
   const along = d.radius * (-0.85 + dug * 1.7);
-  return { x: d.x + rx * along, z: d.z + rz * along, reach: 3.6, yaw: Math.atan2(-rx, -rz) };
+  let x = d.x + rx * along;
+  let z = d.z + rz * along;
+  // The valley quarry is cut into the west cliff. A dug face must stay on the
+  // open side of that wall, or the crew drives through the gap and gets stuck behind it.
+  if (areaOf(d.x) === "river" && x < X0 - 76) x = X0 - 76;
+  return { x, z, reach: 3.6, yaw: Math.atan2(-rx, -rz) };
 }
 
 /** Where faces are approached from: the pit gate on the ridge, the bridge in the valley. */
@@ -594,8 +599,10 @@ function routeTo(v: VehicleState, tx: number, tz: number) {
   return { x: tx, z: tz };
 }
 
-/** In the valley the only way over the river is the bridge. */
+/** In the valley the only way over the river is the bridge, and the only way past the west cliff is the quarry gap. */
 function routeRiver(v: VehicleState, tx: number, tz: number) {
+  const gap = valleyGap(v.x, v.z, tx, tz);
+  if (gap) return gap;
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
   if (side === goal || side === 0 || goal === 0) return { x: tx, z: tz };
@@ -605,6 +612,47 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   // Line up with the deck first, then drive straight over.
   if (Math.abs(v.z - BRIDGE.z) > 2.2 || Math.abs(v.x - near.x) > 5) return near;
   return { x: BRIDGE.x + goal * (end + 2), z: BRIDGE.z };
+}
+
+/** West cliff, with a cut at the quarry. There is no road behind that wall, only a gap in front of the quarry. */
+function valleyGap(x: number, z: number, tx: number, tz: number): { x: number; z: number } | null {
+  const wallEast = X0 - 78;
+  const inGap = (zz: number) => zz >= -16 && zz <= 2;
+  if (x >= wallEast && tx >= wallEast) return null;
+  if (x < wallEast) {
+    if (!inGap(z)) return null;
+    return { x: wallEast + 8, z: -7 };
+  }
+  return { x: wallEast + 8, z: Math.max(-14, Math.min(0, tz)) };
+}
+
+function behindWestCliff(x: number, z: number) {
+  if (onHaulRoad(x, z) || areaOf(x) !== "river") return false;
+  // Only the quarry wall and the dead pocket behind it. The north road and the open west bank are not this.
+  if (x > X0 - 78 || x < X0 - 98) return false;
+  if (z >= -16 && z <= 2) return false;
+  return true;
+}
+
+const crewJob = new WeakMap<VehicleState, string>();
+
+function veinUsable(state: GameState, v: VehicleState, d: Deposit | null | undefined): d is Deposit {
+  return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (v.workClaim == null || d.claim === v.workClaim);
+}
+
+/** Stay on the face you already chose unless another one is clearly better. Stops gold and silver swapping every frame. */
+function commitVein(state: GameState, v: VehicleState, next: Deposit | null, scoreOf: (d: Deposit) => number): Deposit | null {
+  const prev = state.deposits.find((d) => d.id === crewJob.get(v));
+  if (veinUsable(state, v, prev) && next && prev.id !== next.id) {
+    const onIt = distTo(v.x, v.z, prev.x, prev.z) < prev.radius + 16;
+    if (onIt || scoreOf(next) < scoreOf(prev) * 1.45) {
+      return prev;
+    }
+  }
+  const pick = next ?? (veinUsable(state, v, prev) ? prev : null);
+  if (pick) crewJob.set(v, pick.id);
+  else crewJob.delete(v);
+  return pick;
 }
 
 function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control {
@@ -712,10 +760,16 @@ function aiControl(state: GameState, index: number): Control {
   const waitingTruck = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, 80, true) : null;
 
   if (def.push > 0) {
-    const vein = bestVein(state, v, null);
+    const scoreVein = (d: Deposit) => {
+      const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
+      const d0 = distTo(v.x, v.z, d.x, d.z);
+      return (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000) + washScore(state, d.ore);
+    };
+    const vein = commitVein(state, v, bestVein(state, v, null), scoreVein);
     if (vein) {
-      target = vein;
-      arrive = vein.radius * 0.72;
+      const cut = faceOf(vein);
+      target = cut;
+      arrive = Math.max(3, cut.reach * 0.75);
       label = `Stripping ${ORES[vein.ore].name}`;
     } else label = "No face in reach";
   } else if (def.dig > 0) {
@@ -738,6 +792,10 @@ function aiControl(state: GameState, index: number): Control {
         vein = d;
       }
     }
+    vein = commitVein(state, v, vein, (d) => {
+      const dist = distTo(v.x, v.z, d.x, d.z);
+      return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+    });
     if (vein) {
       const cut = faceOf(vein);
       const job = CLAIMS.find((c) => c.id === vein.claim)?.name ?? ORES[vein.ore].name;
@@ -1747,6 +1805,13 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       guardBridge(state, v, i);
     });
     resolveVehicles(state);
+  }
+  for (const v of state.vehicles) {
+    if (!behindWestCliff(v.x, v.z)) continue;
+    v.x = X0 - 68;
+    v.z = -4;
+    v.speed = 0;
+    v.status = "Backed out of the west cliff";
   }
   if (rigBefore && rigPrev) trailerCollide(state, rigBefore, rigPrev);
   pourIntoTrucks(state);

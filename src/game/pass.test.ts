@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { AXLE_BACK, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, stepHitch } from "./lowboy.ts";
 import { homeTool } from "./controls.ts";
-import { BRIDGE } from "./river.ts";
-import { ensureLowboy, freshGame, step, toggleDeck } from "@/game/sim";
+import { BRIDGE, X0 } from "./river.ts";
+import { ensureLowboy, faceOf, freshGame, step, toggleDeck } from "@/game/sim";
 import { readSaveText } from "@/game/save";
 import type { VehicleState } from "@/game/types";
 
@@ -146,5 +146,53 @@ describe("watching the crew", () => {
     const z0 = v.z;
     for (let i = 0; i < 40; i++) step(state, ZERO, 1 / 30, true);
     assert.ok(Math.hypot(v.x - x0, v.z - z0) < 0.25);
+  });
+});
+
+describe("valley crew", () => {
+  it("brings a skid steer back through the quarry gap instead of leaving it behind the cliff", () => {
+    const state = freshGame("Gap");
+    state.claims = [1, 5, 6];
+    const v = state.vehicles[0];
+    v.defId = "skid";
+    v.tool = homeTool("skid");
+    v.hired = true;
+    v.operator = true;
+    v.x = X0 - 100;
+    v.z = 36;
+    state.watching = true;
+    for (let i = 0; i < 150; i++) step(state, ZERO, 1 / 30, true);
+    assert.ok(v.x > X0 - 80, `skid still behind the cliff at x ${(v.x - X0).toFixed(1)}`);
+  });
+
+  it("keeps a dozer on one river face", () => {
+    const state = freshGame("Dozer");
+    state.claims = [1, 5];
+    state.sluice = true;
+    const gold = state.deposits.find((d) => d.id === "bar-gold");
+    assert.ok(gold);
+    const v = state.vehicles[0];
+    v.defId = "dozer";
+    v.tool = homeTool("dozer");
+    v.hired = true;
+    v.operator = true;
+    v.x = gold.x;
+    v.z = gold.z;
+    state.watching = true;
+    const seen = new Set<string>();
+    for (let i = 0; i < 180; i++) {
+      step(state, ZERO, 1 / 30, true);
+      if (i > 20 && v.status) seen.add(v.status);
+    }
+    const faces = [...seen].filter((s) => /gold|silver/i.test(s));
+    assert.ok(faces.length <= 1, `dozer swapped faces: ${[...seen].join(" | ")}`);
+  });
+
+  it("does not walk a dug quarry face into the cliff", () => {
+    const state = freshGame("Face");
+    const quarry = state.deposits.find((d) => d.id === "quarry");
+    assert.ok(quarry);
+    quarry.tons = 1;
+    assert.ok(faceOf(quarry).x >= X0 - 76);
   });
 });
