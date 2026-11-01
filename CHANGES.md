@@ -26,7 +26,7 @@ There's one bridge over the river. The sign says **30 T LIMIT**, and that counts
 
 ## Watching the crew
 
-Hire an operator for each machine you want running, then tap **Watch**. You step out of the seat and every on-duty operator keeps working, including the machine you were just driving. The cards along the bottom are only the machines on the map you are looking at. **Ridge** and **Valley** switch which yard that list shows. Tap a card to point the camera at that machine. Tap **Sit** to take the wheel again.
+Hire an operator for each machine you want running, then tap **Watch**. You step out of the seat and every on-duty operator keeps working, including the machine you were just driving. The cards along the bottom are only the machines on the map you picked, and that includes the track crusher. **Ridge** and **Valley** show how many machines are on that yard and switch the list. Tap a card to point the camera at that machine. Tap **Sit** to take the wheel again.
 
 ## The north road
 

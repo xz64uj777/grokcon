@@ -9,6 +9,7 @@ export function MineScreen() {
   const [hud, setHud] = useState<ViewModel | null>(null);
   const [panel, setPanel] = useState<null | "machines" | "ground" | "crew" | "prices">(null);
   const [crewArea, setCrewArea] = useState<"ridge" | "river">("ridge");
+  const [watchMap, setWatchMap] = useState<"ridge" | "river" | null>(null);
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
   const [booksNote, setBooksNote] = useState("");
@@ -227,7 +228,10 @@ export function MineScreen() {
               <button
                 type="button"
                 className={`pointer-events-auto inline-flex h-11 items-center border px-3 font-display text-lg uppercase tracking-wide ${hud.watching ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
-                onClick={() => apiRef.current?.watch(!hud.watching)}
+                onClick={() => {
+                  if (!hud.watching) setWatchMap(hud.area);
+                  apiRef.current?.watch(!hud.watching);
+                }}
               >
                 {hud.watching ? "Watching" : "Watch"}
               </button>
@@ -343,27 +347,32 @@ export function MineScreen() {
                         ["ridge", "Ridge"],
                         ["river", "Valley"],
                       ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={`h-9 w-16 font-display text-xs uppercase tracking-wide ${hud.area === id ? "bg-primary text-primary-fg" : "border border-border bg-surface text-fg"}`}
-                        onClick={() => {
-                          const first = hud.crew.find((c) => c.area === id && c.name !== "Track crusher");
-                          if (first) apiRef.current?.look(first.index);
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    ).map(([id, label]) => {
+                      const n = hud.crew.filter((c) => c.area === id).length;
+                      const on = (watchMap ?? hud.area) === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className={`h-9 w-[4.5rem] font-display text-xs uppercase tracking-wide ${on ? "bg-primary text-primary-fg" : "border border-border bg-surface text-fg"}`}
+                          onClick={() => {
+                            setWatchMap(id);
+                            const first = hud.crew.find((c) => c.area === id);
+                            if (first) apiRef.current?.look(first.index);
+                          }}
+                        >
+                          {label} {n}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-                  {hud.crew.filter((c) => c.name !== "Track crusher" && c.area === hud.area).length === 0 && (
+                  {hud.crew.filter((c) => c.area === (watchMap ?? hud.area)).length === 0 && (
                     <p className="flex h-20 items-center px-2 text-sm text-muted">No machines on this map.</p>
                   )}
                   {hud.crew
-                    .filter((c) => c.name !== "Track crusher" && c.area === hud.area)
+                    .filter((c) => c.area === (watchMap ?? hud.area))
                     .map((c) => (
                     <button
                       key={c.index}
