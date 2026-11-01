@@ -145,6 +145,17 @@ function sameArea(a: { x: number }, b: { x: number }) {
   return areaOf(a.x) === areaOf(b.x);
 }
 
+function assignedClaim(v: VehicleState): number | null {
+  if (v.workClaim == null) return null;
+  const claimArea = v.workClaim >= VALLEY_CLAIMS.bars ? "river" : "ridge";
+  if (claimArea !== areaOf(v.x)) return null;
+  return v.workClaim;
+}
+
+function prettySign(sign: string) {
+  return sign.toLowerCase().replace(/(^|[\s·])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
+}
+
 function closestFace(state: GameState, x: number, z: number, v?: VehicleState) {
   let best: Deposit | null = null;
   let bestD = Infinity;
@@ -162,8 +173,8 @@ function closestFace(state: GameState, x: number, z: number, v?: VehicleState) {
 }
 
 function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
-  if (v.workClaim != null && d.claim !== v.workClaim) return false;
-  if (d.id === "starter" && v.workClaim != null) return false;
+  if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
+  if (d.id === "starter" && assignedClaim(v) != null) return false;
   if (v.workClaim == null && state.sluice && state.preferSluice && d.kind === "pile" && !prefersSluice(state, d.ore)) {
     const washing = state.deposits.some(
       (o) => o.kind === "vein" && o.tons > 1 && ownsClaim(state, o.claim) && prefersSluice(state, o.ore),
@@ -545,7 +556,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
   for (const d of state.deposits) {
     if (d.kind !== "vein" || d.tons < 1) continue;
     if (!ownsClaim(state, d.claim)) continue;
-    if (v.workClaim != null && d.claim !== v.workClaim) continue;
+    if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
     if (ore && d.ore !== ore) continue;
     if (!sameArea(d, v)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
@@ -638,7 +649,7 @@ const crewJob = new WeakMap<VehicleState, string>();
 const crewPush = new WeakMap<VehicleState, { phase: "in" | "out"; t: number }>();
 
 function veinUsable(state: GameState, v: VehicleState, d: Deposit | null | undefined): d is Deposit {
-  return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (v.workClaim == null || d.claim === v.workClaim);
+  return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (assignedClaim(v) == null || d.claim === assignedClaim(v));
 }
 
 /** Stay on the face you already chose unless another one is clearly better. Stops gold and silver swapping every frame. */
@@ -692,6 +703,8 @@ function driveFace(vein: Deposit) {
   if (areaOf(vein.x) !== "river") {
     z = Math.max(z, -46);
     x = Math.max(-48, Math.min(36, x));
+  } else if (vein.id === "quarry") {
+    x = Math.max(x, X0 - 76);
   }
   return { x, z, reach: Math.max(cut.reach, 6) };
 }
@@ -750,6 +763,15 @@ function aiControl(state: GameState, index: number): Control {
     return seek(v, digger.x - (dx / dist) * 14, digger.z - (dz / dist) * 14, 6);
   }
 
+  if (v.cargoOre && v.cargo > 0.35) {
+    const pad = nearestPad(state, v.x, v.z);
+    const planned = bestPad(state, v.cargoOre, v.x, v.z, v);
+    if (pad && planned && pad.id === planned.id && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) > 0) {
+      v.status = `Dumping at ${pad.name}`;
+      return { throttle: 0, steer: 0, action: true, brake: 1 };
+    }
+  }
+
   const haulTarget = () => {
     if (!v.cargoOre) return;
     const loaderLike = def.id === "loader";
@@ -781,7 +803,7 @@ function aiControl(state: GameState, index: number): Control {
     const vein = commitVein(state, v, bestVein(state, v, null), scoreVein);
     if (vein) {
       const cut = faceOf(vein);
-      const name = ORES[vein.ore].name;
+      const name = prettySign(vein.sign);
       const dist = distTo(v.x, v.z, cut.x, cut.z);
       const cycle = crewPush.get(v) ?? { phase: "in" as const, t: 0 };
       const atFace = dist <= Math.max(5.2, cut.reach + 1.2);
@@ -821,7 +843,7 @@ function aiControl(state: GameState, index: number): Control {
     for (const d of state.deposits) {
       if (d.kind !== "vein" || d.tons < 0.35) continue;
       if (!ownsClaim(state, d.claim)) continue;
-      if (v.workClaim != null && d.claim !== v.workClaim) continue;
+      if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
       const dist = distTo(v.x, v.z, d.x, d.z);
       const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
       if (s > veinS) {
@@ -834,8 +856,16 @@ function aiControl(state: GameState, index: number): Control {
       return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
     });
     if (vein) {
+      const job = prettySign(vein.sign);
+      if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
+        haulTarget();
+        const pad = target as { x: number; z: number } | null;
+        if (pad) {
+          v.status = `Hauling ${ORES[v.cargoOre].name}`;
+          return seek(v, pad.x, pad.z, arrive);
+        }
+      }
       const cut = driveFace(vein);
-      const job = CLAIMS.find((c) => c.id === vein.claim)?.name ?? ORES[vein.ore].name;
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
         v.status = `Working ${job}`;
@@ -880,8 +910,29 @@ function aiControl(state: GameState, index: number): Control {
         v.status = `Pulling up to the ${DEFS[digger.defId].name}`;
         return seek(v, digger.x, digger.z, 6);
       }
+      if (v.cargo < 0.2) {
+        let park: VehicleState | null = null;
+        let parkD = Infinity;
+        for (let i = 0; i < state.vehicles.length; i++) {
+          if (i === index) continue;
+          const o = state.vehicles[i];
+          if (!(o.operator || i === state.active)) continue;
+          if (!sameArea(o, v)) continue;
+          const od = DEFS[o.defId];
+          if (od.dig <= 0 && od.push <= 0 && o.defId !== "loader") continue;
+          const d = distTo(v.x, v.z, o.x, o.z);
+          if (d < parkD) {
+            parkD = d;
+            park = o;
+          }
+        }
+        if (park && parkD > 10) {
+          v.status = `Waiting on the ${DEFS[park.defId].name}`;
+          return seek(v, park.x, park.z, 9);
+        }
+      }
       v.status = "Needs a payloader";
-      if (v.cargoOre && v.cargo >= cap * 0.35) haulTarget();
+      if (v.cargoOre && v.cargo >= Math.min(1.5, cap * 0.35)) haulTarget();
       const truckHaul = target as { x: number; z: number } | null;
       if (truckHaul) {
         v.status = label;
@@ -927,35 +978,39 @@ function aiControl(state: GameState, index: number): Control {
       arrive = Math.max(3.5, pile.radius * 0.72);
       label = pile.id === "starter" ? "Scooping the gate pile" : `Scooping ${ORES[pile.ore].name}`;
     } else if (vein) {
-      const cut = faceOf(vein);
+      if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
+        haulTarget();
+      } else {
+      const cut = driveFace(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
-        v.status = `Digging ${ORES[vein.ore].name}`;
+        v.status = `Working ${prettySign(vein.sign)}`;
         return held;
       }
       target = cut;
-      arrive = Math.max(3, cut.reach * 0.75);
-      label = `Digging ${ORES[vein.ore].name}`;
-    } else if (def.scoop > 0 && v.operator && v.workClaim != null) {
+      arrive = Math.max(4, cut.reach * 0.7);
+      label = `Heading to ${prettySign(vein.sign)}`;
+      }
+    } else if (def.scoop > 0 && v.operator && assignedClaim(v) != null) {
       const spot = bestVein(state, v, null);
-      const cut = spot ? faceOf(spot) : null;
+      const cut = spot ? driveFace(spot) : null;
       if (spot && cut) {
         const held = workHere(v, cut.x, cut.z, cut.reach);
         if (held) {
-          v.status = `Working ${ORES[spot.ore].name} face`;
+          v.status = `Working ${prettySign(spot.sign)}`;
           return held;
         }
         target = cut;
-        arrive = cut.reach * 0.75;
-        label = `Working ${ORES[spot.ore].name} face`;
+        arrive = Math.max(4, cut.reach * 0.7);
+        label = `Heading to ${prettySign(spot.sign)}`;
       } else label = "No material at assigned source";
     } else if (def.scoop > 0) {
       const spot = bestVein(state, v, null);
-      const cut = spot ? faceOf(spot) : null;
+      const cut = spot ? driveFace(spot) : null;
       if (spot && cut) {
         target = cut;
-        arrive = 8;
-        label = `Heading to the ${ORES[spot.ore].name} face`;
+        arrive = Math.max(4, cut.reach * 0.7);
+        label = `Heading to ${prettySign(spot.sign)}`;
       } else label = "Looking for a pile";
     } else label = "No face in reach";
   }
@@ -1066,14 +1121,18 @@ function performAction(
 
   if (opts.phase !== "fill") {
     const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
+    const planned = v.cargoOre ? bestPad(state, v.cargoOre, v.x, v.z, v) : null;
+    const onPlan = !!pad && !!planned && pad.id === planned.id;
+    const washStop = !!v.cargoOre && !!pad && pad.kind === "wash" && prefersWash(state, v.cargoOre, v.x);
     const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
     const holdForSluice =
       !!v.cargoOre &&
       !!pad &&
+      !washStop &&
       ((prefersSluice(state, v.cargoOre) && pad.kind !== "sluice") ||
         (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
-    const crewShort = !player && st.capacity > 0 && v.cargo < st.capacity * 0.9;
+    const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9;
     const reclaimWaste = precious && pad?.kind === "reclaim";
     // A hand-worked excavator dumps where the bucket is, not where the tracks are.
     const excavatorHand = manual && kind === "excavator";

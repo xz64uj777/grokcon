@@ -221,6 +221,36 @@ describe("valley crew", () => {
     assert.ok(spin < 5, `spun in place, ${spin.toFixed(1)} rad`);
   });
 
+  it("sells river gold at the wash plant instead of parking on it", () => {
+    const state = freshGame("Wash");
+    state.claims = [1, 4, 5];
+    state.washPlant = true;
+    state.sluice = true;
+    state.preferSluice = true;
+    state.watching = true;
+    const v = state.vehicles[0];
+    v.hired = true;
+    v.operator = true;
+    v.x = 1000 + 58;
+    v.z = 18;
+    v.cargoOre = "gold";
+    v.cargo = 2;
+    const before = state.cash;
+    for (let i = 0; i < 90; i++) step(state, ZERO, 1 / 30, true);
+    assert.equal(v.cargo, 0, v.status);
+    assert.ok(state.cash > before);
+    assert.ok(!/sluice/i.test(v.status));
+  });
+
+  it("names the river faces after their leases", () => {
+    const state = freshGame("Names");
+    const sign = (id: string) => state.deposits.find((d) => d.id === id)?.sign;
+    assert.equal(sign("silver-bar"), "RIVER BARS");
+    assert.equal(sign("silver-north"), "RIVER BARS N");
+    assert.equal(sign("bar-gold"), "RIVER BARS · GOLD");
+    assert.equal(sign("quarry"), "VALLEY QUARRY");
+  });
+
   it("does not walk a dug quarry face into the cliff", () => {
     const state = freshGame("Face");
     const quarry = state.deposits.find((d) => d.id === "quarry");
