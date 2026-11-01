@@ -617,6 +617,8 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
   if (side === goal || side === 0 || goal === 0) return { x: tx, z: tz };
+  // The heavy haul stays on its bank. A dozer or payloader is light enough to cross.
+  if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
   const end = BRIDGE.halfLength + 4;
   if (onBridge(v.x, v.z, 1)) return { x: BRIDGE.x + goal * (end + 2), z: BRIDGE.z };
   const near = { x: BRIDGE.x + side * end, z: BRIDGE.z };
@@ -673,6 +675,7 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const dx = routed.x - v.x;
   const dz = routed.z - v.z;
   const d = Math.hypot(dx, dz) || 0.0001;
+  if (via && d < 1.5) return { throttle: 0, steer: 0, action: false, brake: 1 };
   const desired = Math.atan2(-dx, -dz);
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
   // Close in, keep moving. Stopping to spin is what made a skid do 360s beside a face.
@@ -896,6 +899,7 @@ function aiControl(state: GameState, index: number): Control {
         if (!(o.operator || i === state.active)) continue;
         if (o.defId !== "loader" && o.defId !== "excavator") continue;
         if (o.cargo < 0.4) continue;
+        if (v.defId === "heavy" && otherBank(v.x, o.x)) continue;
         const d = distTo(v.x, v.z, o.x, o.z);
         if (d < diggerD) {
           diggerD = d;
@@ -918,6 +922,7 @@ function aiControl(state: GameState, index: number): Control {
           const o = state.vehicles[i];
           if (!(o.operator || i === state.active)) continue;
           if (!sameArea(o, v)) continue;
+          if (v.defId === "heavy" && otherBank(v.x, o.x)) continue;
           const od = DEFS[o.defId];
           if (od.dig <= 0 && od.push <= 0 && o.defId !== "loader") continue;
           const d = distTo(v.x, v.z, o.x, o.z);
@@ -939,7 +944,7 @@ function aiControl(state: GameState, index: number): Control {
         return seek(v, truckHaul.x, truckHaul.z, arrive);
       }
       const pile = bestPile(state, v);
-      if (pile) return seek(v, pile.x, pile.z, Math.max(4, pile.radius * 0.5));
+      if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) return seek(v, pile.x, pile.z, Math.max(4, pile.radius * 0.5));
       return { ...ZERO };
     }
   } else if (waitingTruck) {

@@ -44,11 +44,19 @@ describe("bridge", () => {
     for (const id of ["pickup", "skid", "dozer", "loader", "truck", "excavator", "heavy"]) assert.ok(bridgeAllows(id, 0), id);
     assert.ok(!bridgeAllows("crusher", 0));
   });
-  it("does not plan a heavy-haul crossing for two tonnes", () => {
+  it("gives the dozer and the payloader room on a 32 t bridge", () => {
+    assert.equal(BRIDGE.limit, 32);
+    assert.ok(bridgeAllows("dozer", 0));
+    assert.ok(bridgeAllows("loader", 8));
+    assert.ok(crossingWorth("dozer", 0, 0));
+    assert.ok(crossingWorth("loader", 8, 0));
+  });
+  it("does not plan a heavy-haul crossing", () => {
     assert.equal(crossingWorth("heavy", 40, 0), false);
     assert.equal(crossingWorth("heavy", 40, 20), false);
     assert.equal(crossingWorth("truck", 22, 0), true);
-    assert.equal(crossingWorth("truck", 22, 20), false);
+    assert.equal(crossingWorth("truck", 22, 20), true);
+    assert.equal(crossingWorth("truck", 22, 22), false);
   });
   it("knows where the deck is, and the deck isn't river", () => {
     assert.ok(onBridge(BRIDGE.x, BRIDGE.z));

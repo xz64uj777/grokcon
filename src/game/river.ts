@@ -21,7 +21,7 @@ export const RIVER_BOUNDS = { minX: X0 - 92, maxX: X0 + 92, minZ: -72, maxZ: 70 
 export const RIVER = { x: X0, halfWidth: 7, minZ: -72, maxZ: 70 };
 
 /** The one bridge across. Deck runs east-west, centred on z = BRIDGE.z. */
-export const BRIDGE = { x: X0, z: 8, halfLength: 11, halfWidth: 4.2, limit: 30 };
+export const BRIDGE = { x: X0, z: 8, halfLength: 11, halfWidth: 4.2, limit: 32 };
 
 /** Camp on the east bank, where machines arrive on the lowboy. */
 export const RIVER_CAMP = { x: X0 + 46, z: 44 };
@@ -107,7 +107,7 @@ export function otherBank(ax: number, bx: number) {
 
 /**
  * A crossing is worth planning when the bridge will take the load already in the bed,
- * or at least half an empty bed. A heavy haul's 2 t allowance is not a plan.
+ * or at least half an empty bed. A heavy haul's few tonnes of allowance is not a plan.
  */
 export function crossingWorth(defId: string, capacity: number, cargo: number) {
   const legal = cargo > 0.2 ? cargo : bridgeMaxLoad(defId);

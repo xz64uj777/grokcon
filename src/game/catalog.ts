@@ -475,7 +475,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   heavy: {
     id: "heavy",
     name: "Heavy haul",
-    blurb: "Forty tons a trip, on one bank. In the valley it sells at the west barge. The bridge only allows 2 t in this bed.",
+    blurb: "Forty tons a trip, on one bank. In the valley it sells at the west barge. It does not take the bridge.",
     price: 125000,
     capacity: 40,
     maxSpeed: 13,

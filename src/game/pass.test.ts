@@ -251,6 +251,25 @@ describe("valley crew", () => {
     assert.equal(sign("quarry"), "VALLEY QUARRY");
   });
 
+  it("keeps the heavy haul off the bridge", () => {
+    const state = freshGame("Heavy");
+    state.claims = [1, 4, 5, 6];
+    state.watching = true;
+    const heavy = park(state, "heavy", X0 + 46, 20);
+    heavy.hired = true;
+    heavy.operator = true;
+    heavy.cargoOre = "copper";
+    heavy.cargo = 12;
+    const digger = park(state, "excavator", X0 - 30, 4);
+    digger.hired = true;
+    digger.operator = true;
+    digger.cargoOre = "copper";
+    digger.cargo = 2;
+    for (let i = 0; i < 30 * 10; i++) step(state, ZERO, 1 / 30, true);
+    assert.ok(heavy.x > X0 + 20, `heavy headed for the bridge, x=${(heavy.x - X0).toFixed(1)} ${heavy.status}`);
+    assert.ok(Math.abs(heavy.x - BRIDGE.x) > BRIDGE.halfLength);
+  });
+
   it("does not walk a dug quarry face into the cliff", () => {
     const state = freshGame("Face");
     const quarry = state.deposits.find((d) => d.id === "quarry");
