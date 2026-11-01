@@ -193,6 +193,34 @@ describe("valley crew", () => {
     assert.ok(Math.hypot(v.x - gold.x, v.z - gold.z) > 0.8, "dozer should drive the blade, not sit still");
   });
 
+  it("drives a skid onto the deep bench instead of spinning beside it", () => {
+    const state = freshGame("Deep");
+    state.claims = [1, 4];
+    state.watching = true;
+    const iron = state.deposits.find((d) => d.id === "deep-iron");
+    assert.ok(iron);
+    const face = faceOf(iron);
+    const v = state.vehicles[0];
+    v.defId = "skid";
+    v.tool = homeTool("skid");
+    v.hired = true;
+    v.operator = true;
+    v.workClaim = 4;
+    v.x = face.x + 7;
+    v.z = face.z;
+    v.yaw = 0;
+    let spin = 0;
+    for (let i = 0; i < 90; i++) {
+      const y0 = v.yaw;
+      step(state, ZERO, 1 / 30, true);
+      spin += Math.abs(Math.atan2(Math.sin(v.yaw - y0), Math.cos(v.yaw - y0)));
+    }
+    const d = Math.hypot(v.x - face.x, v.z - face.z);
+    assert.ok(d < 6.5, `still beside the bench, ${d.toFixed(1)} m out, ${v.status}`);
+    assert.match(v.status, /Working|Breaking|Stripped/);
+    assert.ok(spin < 5, `spun in place, ${spin.toFixed(1)} rad`);
+  });
+
   it("does not walk a dug quarry face into the cliff", () => {
     const state = freshGame("Face");
     const quarry = state.deposits.find((d) => d.id === "quarry");

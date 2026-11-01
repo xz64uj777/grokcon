@@ -664,24 +664,36 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   const d = Math.hypot(dx, dz) || 0.0001;
   const desired = Math.atan2(-dx, -dz);
   const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
-  // Fast machines (the skid steer especially) were bang-bang steering around
-  // the target and drawing figure-eights. Scale the gain to the turn rate.
-  const steer = clamp(diff / Math.max(0.9, vehicleStats(v).turn * 0.5), -1, 1);
+  // Close in, keep moving. Stopping to spin is what made a skid do 360s beside a face.
+  const near = d < arrive + 7;
+  const steer = clamp(diff / (near ? 2.2 : Math.max(0.9, vehicleStats(v).turn * 0.5)), -1, 1);
   let throttle = 1;
   let brake = 0;
-  if (Math.abs(diff) > 0.7) {
+  if (Math.abs(diff) > 1.15 && !near) {
     throttle = 0;
-    brake = 0.7;
-  } else if (Math.abs(diff) > 0.32) {
-    throttle = 0.25;
+    brake = 0.55;
+  } else if (Math.abs(diff) > 0.5) {
+    throttle = near ? 0.34 : 0.22;
   }
-  if (d < arrive + 6) throttle = Math.min(throttle, 0.4);
+  if (d < arrive + 6) throttle = Math.min(throttle, near ? 0.4 : 0.55);
   if (d < arrive) {
     if (via) return { throttle: 0.55, steer: clamp(diff, -1, 1), action: false, brake: 0 };
-    if (Math.abs(diff) > 1) return { throttle: 0, steer: clamp(diff, -1, 1), action: false, brake: 1 };
+    if (Math.abs(diff) > 1.4) return { throttle: 0.2, steer: clamp(diff, -1, 1), action: false, brake: 0 };
     return { throttle: 0, steer: 0, action: true, brake: 1 };
   }
   return { throttle, steer, action: false, brake };
+}
+
+/** A face the crew can actually drive onto. The ridge back wall is solid, so a cut walked into it is pulled back out. */
+function driveFace(vein: Deposit) {
+  const cut = faceOf(vein);
+  let x = cut.x;
+  let z = cut.z;
+  if (areaOf(vein.x) !== "river") {
+    z = Math.max(z, -46);
+    x = Math.max(-48, Math.min(36, x));
+  }
+  return { x, z, reach: Math.max(cut.reach, 6) };
 }
 
 function workHere(v: VehicleState, x: number, z: number, radius: number): Control | null {
@@ -822,7 +834,7 @@ function aiControl(state: GameState, index: number): Control {
       return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
     });
     if (vein) {
-      const cut = faceOf(vein);
+      const cut = driveFace(vein);
       const job = CLAIMS.find((c) => c.id === vein.claim)?.name ?? ORES[vein.ore].name;
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
@@ -830,7 +842,7 @@ function aiControl(state: GameState, index: number): Control {
         return held;
       }
       v.status = `Heading to ${job}`;
-      return seek(v, cut.x, cut.z, Math.max(3, cut.reach * 0.75));
+      return seek(v, cut.x, cut.z, 4);
     }
     if (v.cargo > 0.25 && v.cargoOre) haulTarget();
     else {
@@ -1849,7 +1861,8 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     const v = state.vehicles[i];
     if (v.operator && (state.watching || i !== state.active)) {
       const c = controls[i];
-      if (c.throttle > 0.45 && Math.abs(v.speed) < 0.45) v.stuck += dt;
+      const spinning = Math.abs(c.steer) > 0.75 && Math.abs(c.throttle) < 0.15 && Math.abs(v.speed) < 0.8;
+      if ((c.throttle > 0.45 && Math.abs(v.speed) < 0.45) || spinning) v.stuck += dt;
       else v.stuck = 0;
       if (v.stuck > 1.25) {
         v.stuck = 0;
