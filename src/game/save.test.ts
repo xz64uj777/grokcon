@@ -57,3 +57,20 @@ describe("silver survives a reload", () => {
     assert.equal(back.tons, 12);
   });
 });
+
+describe("bought assets outweigh an older backup", () => {
+  it("a save after buying the wash plant beats the backup from before", async () => {
+    const { bookWorth } = await import("@/game/save");
+    const { buyWashPlant, buyUpgrade } = await import("@/game/sim");
+    const before = freshGame("Worth Test");
+    before.claims = [1, 4, 5];
+    before.cash = 150000;
+    const after = structuredClone(before);
+    assert.equal(buyWashPlant(after), "");
+    assert.equal(after.washPlant, true);
+    assert.ok(bookWorth(after) >= bookWorth(before), "wash plant purchase must not lose to the backup");
+    const upgraded = structuredClone(after);
+    buyUpgrade(upgraded, 0, "engine");
+    assert.ok(bookWorth(upgraded) >= bookWorth(after), "upgrade purchase must not lose to the backup");
+  });
+});

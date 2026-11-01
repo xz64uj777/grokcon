@@ -291,17 +291,17 @@ export function MineScreen() {
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="font-display text-lg uppercase leading-none tracking-wide text-fg">{hud.vehicleName}</p>
-                {compact && (
-                  <p className="min-w-0 flex-1 truncate text-xs text-fg">
-                    {hud.cargoLabel.replace(/^Empty · /, "0 / ")}
-                    {hud.purityLabel && <span className="text-cash"> · {hud.purityLabel}</span>}
-                  </p>
-                )}
                 <p className="flex shrink-0 items-center gap-1 text-sm text-muted">
                   {!compact && <Gauge className="size-4" aria-hidden />}
                   {hud.speedLabel}
                 </p>
               </div>
+              {compact && (
+                <p className="mt-1 truncate text-xs text-fg">
+                  {hud.cargoLabel.replace(/^Empty · /, "0 / ")}
+                  {hud.purityLabel && <span className="text-cash"> · {hud.purityLabel}</span>}
+                </p>
+              )}
               {!compact && (
               <div>
               <p className="mt-0.5 text-sm text-fg">

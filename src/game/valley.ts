@@ -104,8 +104,9 @@ export function buildValley(
     scene.add(pier);
   }
   const limit = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(`BRIDGE  ${BRIDGE.limit} T LIMIT`, "#e26a2c"), transparent: true, depthWrite: false, fog: false })));
-  limit.position.set(BRIDGE.x + BRIDGE.halfLength + 3, 4.2, BRIDGE.z - BRIDGE.halfWidth - 1);
-  limit.scale.set(6.4, 2.8, 1);
+  // Hung over the bridge entry so it stays inside a narrow folded screen.
+  limit.position.set(BRIDGE.x + BRIDGE.halfLength, 5.2, BRIDGE.z);
+  limit.scale.set(4.6, 2, 1);
   scene.add(limit);
 
   // Mud: glossy dark patches that grow as the ground soaks. Flood zones fill with brown water.

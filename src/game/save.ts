@@ -1,6 +1,6 @@
-import { boundsFor, isOreId, isVehicleId } from "@/game/catalog";
+import { CLAIMS, DEFS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
 import { onHaulRoad } from "@/game/lowboy";
-import { areaOf } from "@/game/river";
+import { WASH_PLANT, areaOf } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
 import { MARKET_KEYS, ensureLowboy, freshGame } from "@/game/sim";
@@ -273,7 +273,17 @@ function readMarket(raw: unknown, seconds: number): Market {
 
 export function bookWorth(state: GameState) {
   const machines = state.vehicles.filter((v) => v.defId !== "pickup" && v.defId !== "crusher").length;
-  return state.seconds + state.lifetime / 10 + state.cash / 50 + machines * 800 + state.claims.length * 400 + (state.sluice ? 2500 : 0);
+  // Bought assets count at what they cost, on the same scale as cash, so spending
+  // money on something never makes an older backup look richer.
+  let assets = (state.sluice ? SLUICE.price : 0) + (state.washPlant ? WASH_PLANT.price : 0);
+  for (const id of state.claims) assets += CLAIMS.find((c) => c.id === id)?.price ?? 0;
+  for (const v of state.vehicles) {
+    assets += DEFS[v.defId]?.price ?? 0;
+    for (const kind of ["engine", "body", "hydro"] as const) {
+      for (let level = 0; level < (v.upgrades?.[kind] ?? 0); level++) assets += upgradeCost(v.defId, kind, level) ?? 0;
+    }
+  }
+  return state.seconds + state.lifetime / 10 + (state.cash + assets) / 50 + machines * 800 + state.claims.length * 400 + (state.sluice ? 2500 : 0) + (state.washPlant ? 2500 : 0);
 }
 
 function readRaw(raw: string | null) {
