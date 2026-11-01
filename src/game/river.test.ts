@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   BRIDGE,
+  RIVER,
+  WEST_BARGE,
   MUD_FLOOR,
   MUD_ZONES,
   X0,
@@ -58,6 +60,19 @@ describe("bridge", () => {
     assert.equal(crossingWorth("truck", 22, 20), true);
     assert.equal(crossingWorth("truck", 22, 22), false);
   });
+  it("keeps the west barge off the bridge", () => {
+    const deckNorth = BRIDGE.z + BRIDGE.halfWidth;
+    const deckWest = BRIDGE.x - BRIDGE.halfLength;
+    assert.ok(WEST_BARGE.z - WEST_BARGE.r > deckNorth + 6, "sell ring overlaps the deck");
+    assert.ok(WEST_BARGE.x + WEST_BARGE.r < deckWest - 4, "sell ring sits on the west ramp");
+    const hullSouth = WEST_BARGE.z - 8;
+    const hullWest = RIVER.x - 2.2 - 3.5;
+    const hullEast = RIVER.x - 2.2 + 3.5;
+    assert.ok(hullSouth > deckNorth + 4, "hull still covers the bridge");
+    assert.ok(hullEast < RIVER.x + RIVER.halfWidth);
+    assert.ok(hullWest > RIVER.x - RIVER.halfWidth - 1);
+  });
+
   it("knows where the deck is, and the deck isn't river", () => {
     assert.ok(onBridge(BRIDGE.x, BRIDGE.z));
     assert.ok(!onBridge(BRIDGE.x, BRIDGE.z + 20));

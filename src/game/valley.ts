@@ -160,7 +160,7 @@ export function buildValley(
   if (barge) {
     const g = new THREE.Group();
     const hull = new THREE.Mesh(track(new THREE.BoxGeometry(7, 1.1, 16)), std(0x3e4a42, { roughness: 0.55, metalness: 0.25 }));
-    hull.position.set(RIVER.x - RIVER.halfWidth - 1.2, 0.35, barge.z);
+    hull.position.set(RIVER.x - 2.2, 0.35, barge.z);
     hull.castShadow = true;
     g.add(hull);
     const cabin = new THREE.Mesh(track(new THREE.BoxGeometry(3.2, 1.6, 3.2)), std(0x8a6f3a, { roughness: 0.7 }));

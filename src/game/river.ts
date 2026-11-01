@@ -45,12 +45,12 @@ export const VALLEY_CLAIMS = { bars: 5, quarry: 6 } as const;
 /** Share of the crusher price the west-bank buyer pays. Crossing still pays full rail price. */
 export const BARGE_RATE = 0.7;
 
-/** Buyer tied up on the west bank. The sell ring is on firm ground; the hull sits in the river. */
+/** Buyer tied up on the west bank, north of the bridge so the hull does not block the deck. */
 export const WEST_BARGE = {
   id: "barge",
   name: "West barge",
-  x: X0 - 28,
-  z: 16,
+  x: X0 - 46,
+  z: 34,
   r: 9,
   blurb: "A buyer on the west bank. Pays less than the rail, and the load never crosses the bridge.",
 };
