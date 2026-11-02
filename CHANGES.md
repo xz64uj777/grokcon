@@ -101,7 +101,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 | **Excavator** | Drive ↕ · steer ↔ | Boom up ↑ · curl ← dump → |
 | **Excavator, park on** | Slew ↔ · dipper ↕ | Boom up ↑ · curl ← dump → |
 | **Payloader** | Drive/reverse ↕ · steer ↔ | Arms ↕ · bucket ↔ |
-| **Bulldozer** | Left track ↕ · blade ↔ | Right track ↕ · angle ↔ |
+| **Bulldozer** | Drive/reverse ↕ · steer ↔ | Blade ↕ · angle ↔ |
 | **Dump truck / Heavy haul** | Drive/reverse ↕ · steer ↔ | Bed up/down ↕ |
 | **Claim truck / Track crusher** | Drive | — |
 <!-- cheat-sheet:end -->
@@ -109,7 +109,7 @@ On a digging machine the screen shows **two big sticks**, one for each thumb. A 
 - **Reversing:** pull the drive stick back. There is no gear button.
 - **Excavator park:** tap **Park** to lock the tracks. The left stick then slews the house and crowds the dipper. Tap it again to drive.
 - **Claim truck and track crusher:** one stick drives. In Simple mode, hold **DIG** to scoop. Realistic mode does not give them a bucket stick.
-- **Skid steer and dozer:** push both sticks forward to go straight. Push one to turn. Push them opposite ways to spin in place.
+- **Skid steer, payloader and bulldozer:** the left stick drives. Push it forward to go, pull it back to reverse, and push it sideways to turn. The right stick runs the bucket or the blade.
 - **Buttons above the sticks:** **Next** (switch machines), **Load** (load a truck), **Test hole**, **Blast** (only when you're at a face) and **Auto** (hold it to let the machine work).
 - **Folding the phone** lets go of every stick, so the machine does not keep the last thumb input.
 - **Top of the screen:** **Office**, **View** (change the camera), and sound on/off. Drag on the open ground to turn the camera, and pinch to zoom.

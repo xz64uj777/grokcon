@@ -2508,9 +2508,9 @@ function realHint(state: GameState): string | null {
     return "Tap Sticks: tracks to drive. Swing and reach the bucket into a face.";
   }
   if (k === "dozer") {
-    if (t.lift < 0.08) return "Blade is buried and stalling. Lift it a little (left stick right).";
-    if (t.lift >= 0.3) return "Lower the blade (left stick left) and drive into a face or pile.";
-    return "Blade on the ground. Push both sticks forward into the face.";
+    if (t.lift < 0.08) return "Blade is buried and stalling. Lift it a little (right stick up).";
+    if (t.lift >= 0.3) return "Lower the blade (right stick down) and drive into a face or pile.";
+    return "Blade on the ground. Push the left stick forward into the face.";
   }
   if (k === "truck") {
     if (v.cargo > 0.08 && pad) return t.lift < 0.6 ? `At the ${pad.name.toLowerCase()}. Raise the bed (right stick up).` : "Dumping…";

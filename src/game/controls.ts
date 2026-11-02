@@ -84,8 +84,11 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
         axes: { ...NO_AXES, lift: R.y, tilt: -R.x },
       };
     case "dozer":
-      // Left and right track levers. Left stick sideways = blade up/down, right = blade angle.
-      return { drive: { kind: "tank", left: L.y, right: R.y }, axes: { ...NO_AXES, lift: L.x, tilt: R.x } };
+      // Left stick drives and steers. Right stick is the blade: up/down raises and lowers, sideways angles.
+      return {
+        drive: { kind: "tank", left: c1(L.y + L.x), right: c1(L.y - L.x) },
+        axes: { ...NO_AXES, lift: R.y, tilt: R.x },
+      };
     case "excavator": {
       // Right stick always: up raises the boom, left curls the bucket, right dumps it.
       const axes: ToolAxes = { ...NO_AXES, lift: R.y, tilt: -R.x };
@@ -240,7 +243,7 @@ export function controlHelp(defId: string, parked = false): HelpCard {
     case "loader":
       return { title: "Payloader", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Arms ↕ · bucket ↔" };
     case "dozer":
-      return { title: "Bulldozer", phoneLeft: "Left track ↕ · blade ↔", phoneRight: "Right track ↕ · angle ↔" };
+      return { title: "Bulldozer", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Blade ↕ · angle ↔" };
     case "truck":
       return { title: "Dump truck", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Bed up/down ↕" };
     default:
