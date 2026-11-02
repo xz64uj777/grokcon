@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PADS } from "@/game/catalog";
-import { BRIDGE, MUD_ZONES, RIVER, RIVER_BOUNDS, RIVER_CAMP, WASH_PLANT, WEST_BARGE, X0 } from "@/game/river";
+import { BRIDGE, BRIDGE_TOP, MUD_ZONES, RIVER, RIVER_BOUNDS, RIVER_CAMP, WASH_PLANT, WEST_BARGE, X0 } from "@/game/river";
 import { buildBackdrop, buildPitWalls, buildScatter, dirtTexture, gravelTexture } from "@/game/scenery";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
@@ -75,32 +75,38 @@ export function buildValley(
   water.receiveShadow = true;
   scene.add(water);
 
-  // Bridge: deck, ramps, rails and piers.
+  // Bridge: a raised timber road. Ramps climb onto the deck; rails sit on the planks, not through the cabs.
   const wood = std(0x7a5a3c, { roughness: 0.9 });
   const steel = std(0x6f767c, { roughness: 0.4, metalness: 0.6 });
-  const deckLen = BRIDGE.halfLength * 2;
   const deckW = BRIDGE.halfWidth * 2;
-  const deck = new THREE.Mesh(track(new THREE.BoxGeometry(deckLen - 6, 0.35, deckW)), wood);
-  deck.position.set(BRIDGE.x, 0.55, BRIDGE.z);
+  const thick = 0.2;
+  const flat = RIVER.halfWidth + 1;
+  const toe = BRIDGE.halfLength + 3;
+  const deck = new THREE.Mesh(track(new THREE.BoxGeometry(flat * 2, thick, deckW)), wood);
+  deck.position.set(BRIDGE.x, BRIDGE_TOP - thick / 2, BRIDGE.z);
   deck.castShadow = true;
   deck.receiveShadow = true;
   scene.add(deck);
+  const run = toe - flat;
+  const angle = Math.atan2(BRIDGE_TOP, run);
+  const rampLen = Math.hypot(run, BRIDGE_TOP);
   for (const side of [-1, 1]) {
-    const ramp = new THREE.Mesh(track(new THREE.BoxGeometry(3.4, 0.3, deckW)), wood);
-    ramp.position.set(BRIDGE.x + side * (deckLen / 2 - 1.5), 0.3, BRIDGE.z);
-    ramp.rotation.z = side * 0.18;
+    const ramp = new THREE.Mesh(track(new THREE.BoxGeometry(rampLen, thick, deckW)), wood);
+    ramp.position.set(BRIDGE.x + side * (flat + run / 2), BRIDGE_TOP / 2 - thick / 2, BRIDGE.z);
+    // Outer end down on the bank. The old sign put the high end outboard, so machines drove into the wood.
+    ramp.rotation.z = -side * angle;
     ramp.receiveShadow = true;
     scene.add(ramp);
-    const rail = new THREE.Mesh(track(new THREE.BoxGeometry(deckLen - 6, 0.12, 0.12)), steel);
-    rail.position.set(BRIDGE.x, 1.55, BRIDGE.z + side * (BRIDGE.halfWidth - 0.15));
+    const rail = new THREE.Mesh(track(new THREE.BoxGeometry(flat * 2, 0.12, 0.12)), steel);
+    rail.position.set(BRIDGE.x, BRIDGE_TOP + 0.42, BRIDGE.z + side * (BRIDGE.halfWidth - 0.2));
     scene.add(rail);
     for (let i = -2; i <= 2; i++) {
-      const post = new THREE.Mesh(track(new THREE.BoxGeometry(0.14, 1.0, 0.14)), steel);
-      post.position.set(BRIDGE.x + i * ((deckLen - 7) / 4), 1.05, BRIDGE.z + side * (BRIDGE.halfWidth - 0.15));
+      const post = new THREE.Mesh(track(new THREE.BoxGeometry(0.14, 0.7, 0.14)), steel);
+      post.position.set(BRIDGE.x + i * (flat / 2), BRIDGE_TOP + 0.28, BRIDGE.z + side * (BRIDGE.halfWidth - 0.2));
       scene.add(post);
     }
-    const pier = new THREE.Mesh(track(new THREE.CylinderGeometry(0.45, 0.6, 1.4, 8)), std(0x77726a, { roughness: 0.95 }));
-    pier.position.set(BRIDGE.x + side * (RIVER.halfWidth - 1), 0.1, BRIDGE.z);
+    const pier = new THREE.Mesh(track(new THREE.CylinderGeometry(0.45, 0.6, BRIDGE_TOP, 8)), std(0x77726a, { roughness: 0.95 }));
+    pier.position.set(BRIDGE.x + side * (RIVER.halfWidth - 1), BRIDGE_TOP / 2 - 0.05, BRIDGE.z);
     scene.add(pier);
   }
   const limit = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(`BRIDGE  ${BRIDGE.limit} T LIMIT`, "#e26a2c"), transparent: true, depthWrite: false, fog: false })));

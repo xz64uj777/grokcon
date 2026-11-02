@@ -96,9 +96,10 @@ describe("bridge", () => {
     assert.ok(inRiver(BRIDGE.x, BRIDGE.z + 20));
   });
   it("puts the deck above the water and keeps the crossing firm in the rain", () => {
-    assert.ok(bridgeDeckY(BRIDGE.x, BRIDGE.z) > 0.7);
+    assert.ok(bridgeDeckY(BRIDGE.x, BRIDGE.z) > 1);
     assert.equal(bridgeDeckY(BRIDGE.x + 40, BRIDGE.z), 0);
     assert.equal(bridgeDeckY(BRIDGE.x, BRIDGE.z + 20), 0);
+    assert.ok(bridgeDeckY(BRIDGE.x + 11, BRIDGE.z) > 0.2, "ramp is still up part way");
     assert.equal(mudDepth(BRIDGE.x + 14, BRIDGE.z, 1), 0);
     assert.ok(mudDepth(X0 - 12, -30, 1) > 0.4);
   });

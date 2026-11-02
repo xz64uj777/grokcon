@@ -84,21 +84,28 @@ export function grossTons(defId: string, cargo: number) {
   return (MACHINE_TONS[defId] ?? 10) + Math.max(0, cargo);
 }
 
+/** Deck surface above the water. Machines are lifted to this so they ride the planks. */
+export const BRIDGE_TOP = 1.15;
+
 /** Is (x, z) on the bridge deck or its approach ramps? */
 export function onBridge(x: number, z: number, pad = 0) {
   return Math.abs(x - BRIDGE.x) <= BRIDGE.halfLength + pad && Math.abs(z - BRIDGE.z) <= BRIDGE.halfWidth;
 }
 
-/** Deck surface under a machine. 0 off the bridge, so wheels sit on the planks instead of inside them. */
+/** Road corridor, a little wider than the planks, so the river wall doesn't grab a machine lining up. */
+export function bridgeLane(x: number, z: number) {
+  return Math.abs(x - BRIDGE.x) <= BRIDGE.halfLength + 5 && Math.abs(z - BRIDGE.z) <= BRIDGE.halfWidth + 2.5;
+}
+
+/** Deck surface under a machine. 0 off the bridge. */
 export function bridgeDeckY(x: number, z: number) {
-  if (Math.abs(z - BRIDGE.z) > BRIDGE.halfWidth) return 0;
+  if (Math.abs(z - BRIDGE.z) > BRIDGE.halfWidth + 0.4) return 0;
   const dx = Math.abs(x - BRIDGE.x);
-  const flat = BRIDGE.halfLength - 3;
-  const top = 0.74;
-  if (dx <= flat) return top;
-  const toe = BRIDGE.halfLength + 2.2;
+  const flat = RIVER.halfWidth + 1;
+  const toe = BRIDGE.halfLength + 3;
+  if (dx <= flat) return BRIDGE_TOP;
   if (dx >= toe) return 0;
-  return top * (1 - (dx - flat) / (toe - flat));
+  return BRIDGE_TOP * (1 - (dx - flat) / (toe - flat));
 }
 
 export function bridgeAllows(defId: string, cargo: number) {
@@ -131,7 +138,7 @@ export function crossingWorth(defId: string, capacity: number, cargo: number) {
 }
 
 export function inRiver(x: number, z: number) {
-  return Math.abs(x - RIVER.x) < RIVER.halfWidth && !onBridge(x, z);
+  return Math.abs(x - RIVER.x) < RIVER.halfWidth && !onBridge(x, z) && !bridgeLane(x, z);
 }
 
 /** Soft ground. Each zone is an ellipse; depth fades to 0 at the edge. */

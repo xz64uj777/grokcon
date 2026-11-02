@@ -38,6 +38,7 @@ import {
   mudSpeedFactor,
   inRiver,
   onBridge,
+  bridgeLane,
   rainAt,
   RIVER,
   stepWet,
@@ -1415,7 +1416,7 @@ function clampLowboy(v: VehicleState) {
 function resolveCircle(v: VehicleState, radius: number) {
   for (const b of BLOCKS) {
     // A machine whose middle is on the deck overhangs the water. Don't shove it back into a crawl.
-    if (b.kind === "water" && onBridge(v.x, v.z)) continue;
+    if (b.kind === "water" && (onBridge(v.x, v.z) || bridgeLane(v.x, v.z))) continue;
     const hx = b.sx / 2;
     const hz = b.sz / 2;
     const minX = b.x - hx;
@@ -1479,11 +1480,12 @@ function resolveCircle(v: VehicleState, radius: number) {
 /** Keep a machine on the planks while it crosses, instead of letting the body rub the river. */
 function holdDeck(v: VehicleState) {
   if (areaOf(v.x) !== "river") return;
-  if (!onBridge(v.x, v.z, 1)) return;
-  const room = BRIDGE.halfWidth - vehicleStats(v).radius - 0.35;
-  const limit = Math.max(0.5, room);
+  if (!bridgeLane(v.x, v.z)) return;
+  const room = Math.max(0.7, BRIDGE.halfWidth - vehicleStats(v).radius - 0.45);
   const dz = v.z - BRIDGE.z;
-  if (Math.abs(dz) > limit) v.z = BRIDGE.z + Math.sign(dz) * limit;
+  if (Math.abs(dz) <= room) return;
+  const edge = BRIDGE.z + Math.sign(dz) * room;
+  v.z += (edge - v.z) * 0.22;
 }
 
 const bridgeNag = new WeakMap<VehicleState, number>();
@@ -1500,17 +1502,21 @@ function crossingWeight(state: GameState, v: VehicleState) {
   return t;
 }
 
-/** Overweight machines are stopped at the end of the bridge. They can always back off. */
+/** Overweight machines are held on the bank. Snapping them every frame was the dance at the lip. */
 function guardBridge(state: GameState, v: VehicleState, index: number) {
   if (areaOf(v.x) !== "river") return;
   const tons = crossingWeight(state, v);
   if (tons <= BRIDGE.limit) return;
-  if (!onBridge(v.x, v.z)) return;
   const side = Math.sign(v.x - BRIDGE.x) || 1;
-  // Already well onto the deck (e.g. a load landed in the bed mid-crossing): let it finish.
-  if (Math.abs(v.x - BRIDGE.x) < BRIDGE.halfLength - 3) return;
-  v.x = BRIDGE.x + side * (BRIDGE.halfLength + 0.2);
-  v.speed = 0;
+  const near =
+    Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 3 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 2;
+  if (!near) return;
+  // Already committed to the middle (a load landed in the bed): let it finish.
+  if (Math.abs(v.x - BRIDGE.x) < BRIDGE.halfLength - 4) return;
+  const vx = -Math.sin(v.yaw) * v.speed;
+  if (vx * side < 0) v.speed = 0;
+  if (onBridge(v.x, v.z)) v.x = BRIDGE.x + side * (BRIDGE.halfLength + 1.2);
+  v.status = "Too heavy for the bridge";
   const now = state.seconds;
   if (now - (bridgeNag.get(v) ?? -99) > 4) {
     bridgeNag.set(v, now);
@@ -1519,7 +1525,6 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
         ? `Bridge limit ${BRIDGE.limit} t. The lowboy weighs ${tons.toFixed(0)} t with the deck loaded. The deck counts on the scale — take the north road.`
         : `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
     if (index === state.active) log(state, msg);
-    v.status = "Too heavy for the bridge";
   }
 }
 

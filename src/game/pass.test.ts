@@ -343,4 +343,46 @@ describe("valley crew", () => {
       v.cargo = 12;
     });
   });
+
+  it("lets the player drive a skid across without the river stalling it", () => {
+    const state = freshGame("Drive");
+    state.claims = [1, 4, 5];
+    state.watching = false;
+    state.controlMode = "simple";
+    const skid = park(state, "skid", X0 + 22, BRIDGE.z + 3);
+    skid.yaw = Math.PI / 2;
+    state.active = state.vehicles.indexOf(skid);
+    let slow = 0;
+    let samples = 0;
+    for (let i = 0; i < 30 * 8; i++) {
+      step(state, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+      if (Math.abs(skid.x - X0) < 10) {
+        samples += 1;
+        if (skid.speed < 4) slow += 1;
+      }
+      if (skid.x < X0 - 16) break;
+    }
+    assert.ok(skid.x < X0 - 16, `skid stuck at x=${(skid.x - X0).toFixed(1)} spd=${skid.speed.toFixed(1)}`);
+    assert.ok(slow < samples * 0.35, `stalled on the deck ${slow}/${samples}`);
+  });
+
+  it("holds a full dump truck on the bank instead of bouncing it on the lip", () => {
+    const state = freshGame("Heavy truck");
+    state.claims = [1, 4, 5];
+    state.watching = false;
+    state.controlMode = "simple";
+    const truck = park(state, "truck", X0 + 16, BRIDGE.z);
+    truck.yaw = Math.PI / 2;
+    truck.cargoOre = "gold";
+    truck.cargo = 22;
+    state.active = state.vehicles.indexOf(truck);
+    let inside = 0;
+    for (let i = 0; i < 30 * 4; i++) {
+      step(state, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+      if (Math.abs(truck.x - X0) < BRIDGE.halfLength - 1) inside += 1;
+    }
+    assert.equal(inside, 0, "full truck drove onto the deck");
+    assert.ok(truck.x > X0 + BRIDGE.halfLength, `truck ended inside, x=${(truck.x - X0).toFixed(1)}`);
+    assert.match(truck.status, /heavy/i);
+  });
 });
