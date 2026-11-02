@@ -1386,7 +1386,10 @@ function integrate(v: VehicleState, c: Control, dt: number) {
   const steer = clamp(c.steer, -1, 1);
   const target = drive >= 0 ? drive * st.maxSpeed : drive * st.maxSpeed * 0.45;
   const opposing = Math.sign(target) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.25;
-  const accel = st.accel * (opposing || c.brake > 0.5 ? 1.75 : 1);
+  // A dump truck used to coast the length of the bridge after the stick was let go.
+  const hauler = v.defId === "truck" || v.defId === "heavy";
+  const stopping = c.brake > 0.5 || (hauler && Math.abs(drive) < 0.05);
+  const accel = st.accel * (opposing || stopping ? (hauler && stopping ? 4 : 1.75) : 1);
   if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
   else v.speed = Math.max(target, v.speed - accel * dt);
   if (Math.abs(v.speed) < 0.05 && Math.abs(drive) < 0.05) v.speed = 0;
@@ -1797,7 +1800,8 @@ export function blastPilePoint(faceX: number, faceZ: number, side = 0) {
 
 function blastEvacuationControl(state: GameState, index: number): Control | null {
   const blast = state.blast;
-  if (!blast || index === state.active) return null;
+  // The machine in the player's hands is theirs to drive out. A watched crew truck is not.
+  if (!blast || (index === state.active && !state.watching)) return null;
   const deposit = state.deposits.find((d) => d.id === blast.deposit);
   const v = state.vehicles[index];
   if (!deposit || !v) return null;
@@ -1806,7 +1810,9 @@ function blastEvacuationControl(state: GameState, index: number): Control | null
   const safeDistance = BLAST_RADIUS + vehicleStats(v).radius + 3;
   if (distance >= safeDistance) {
     blastSheltered.delete(v);
-    return null;
+    // Stay put. Driving back to the face is how the dump truck kept eating the blast.
+    v.status = "Holding clear of the blast";
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
   const target = blastEscapeTarget(face, v);
   if (!target) {
@@ -1907,7 +1913,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
             throttle: input.throttle,
             steer: input.steer,
             action: input.action,
-            brake: Math.abs(input.throttle) < 0.05 ? 0.4 : 0,
+            brake: Math.abs(input.throttle) < 0.05 ? 1 : 0,
           }
         : { ...ZERO };
     } else {

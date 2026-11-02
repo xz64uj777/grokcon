@@ -92,6 +92,31 @@ describe("valley blasts", () => {
     assert.ok(Math.hypot(crew.x - face.x, crew.z - face.z) >= BLAST_RADIUS);
   });
 
+  it("holds a dump truck outside the blast instead of letting it roll back in", () => {
+    const state = freshGame("Truck blast");
+    state.cash = 8000;
+    state.claims = [1, 4, 5, 6];
+    const quarry = state.deposits.find((d) => d.id === "quarry");
+    assert.ok(quarry);
+    const face = faceOf(quarry);
+    const player = state.vehicles[0];
+    player.x = face.x;
+    player.z = face.z;
+    player.speed = 0;
+    const truck = park(state, "truck", face.x + 6, face.z);
+    truck.hired = true;
+    truck.operator = true;
+    truck.speed = 8;
+    assert.equal(startBlast(state), "");
+    for (let i = 0; i < 80; i++) {
+      step(state, ZERO, 0.25, true);
+      if (!state.blast) break;
+    }
+    assert.equal(state.blast, null);
+    assert.equal(truck.damage, 0, `truck took ${Math.round((truck.damage ?? 0) * 100)}% and would need a repair`);
+    assert.ok(Math.hypot(truck.x - face.x, truck.z - face.z) > BLAST_RADIUS, truck.status);
+  });
+
   it("prices a silver contract off the crusher until the wash plant exists", () => {
     assert.equal(contractUnit("silver", { sluice: false, washPlant: false }), 60);
     assert.equal(contractUnit("silver", { sluice: false, washPlant: true }), 420);

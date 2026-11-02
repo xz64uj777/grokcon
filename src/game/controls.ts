@@ -105,7 +105,7 @@ export function sticksToCommand(defId: string, left: Stick, right: Stick, parked
       };
     case "truck":
       return {
-        drive: { kind: "car", throttle: L.y, steer: L.x === 0 ? 0 : -L.x, brake: 0 },
+        drive: { kind: "car", throttle: L.y, steer: L.x === 0 ? 0 : -L.x, brake: L.y === 0 ? 1 : 0 },
         axes: { ...NO_AXES, lift: R.y },
       };
     default:
