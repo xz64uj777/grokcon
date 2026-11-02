@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { AXLE_BACK, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, stepHitch } from "./lowboy.ts";
 import { homeTool } from "./controls.ts";
 import { BRIDGE, X0 } from "./river.ts";
-import { ensureLowboy, faceOf, freshGame, step, toggleDeck } from "@/game/sim";
+import { ensureLowboy, faceOf, freshGame, plannedPad, step, toggleDeck, buyClaim } from "@/game/sim";
 import { readSaveText } from "@/game/save";
 import type { VehicleState } from "@/game/types";
 
@@ -249,6 +249,7 @@ describe("valley crew", () => {
     assert.equal(sign("silver-north"), "RIVER BARS N");
     assert.equal(sign("bar-gold"), "RIVER BARS · GOLD");
     assert.equal(sign("quarry"), "VALLEY QUARRY");
+    assert.equal(sign("east-rim"), "EAST RIM");
   });
 
   it("keeps the heavy haul off the bridge", () => {
@@ -276,5 +277,27 @@ describe("valley crew", () => {
     assert.ok(quarry);
     quarry.tons = 1;
     assert.ok(faceOf(quarry).x >= X0 - 76);
+  });
+
+  it("leases the east rim only after the valley is open, and sells that copper at the rail", () => {
+    const locked = freshGame("Rim");
+    locked.cash = 200000;
+    assert.match(buyClaim(locked, 7), /Deep bench/);
+    locked.claims.push(4);
+    assert.equal(buyClaim(locked, 7), "");
+    assert.ok(locked.claims.includes(7));
+    const rim = locked.deposits.find((d) => d.id === "east-rim");
+    assert.ok(rim);
+    assert.equal(rim.ore, "copper");
+    assert.equal(rim.hard, true);
+    rim.tons = 1;
+    assert.ok(faceOf(rim).x <= X0 + 82);
+    locked.sluice = true;
+    locked.preferSluice = true;
+    locked.washPlant = true;
+    const heavy = park(locked, "heavy", X0 + 68, -18);
+    heavy.cargoOre = "copper";
+    heavy.cargo = 20;
+    assert.equal(plannedPad(locked, locked.vehicles.indexOf(heavy)), "loadout");
   });
 });

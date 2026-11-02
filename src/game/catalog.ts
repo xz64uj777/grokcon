@@ -49,6 +49,7 @@ export const BLOCKS: Block[] = [
   // Valley wall on the west side, with the quarry cut into it.
   { id: "cliff-nw", x: X0 - 84, z: 36, sx: 10, sy: 14, sz: 64, kind: "cliff" },
   { id: "cliff-sw", x: X0 - 84, z: -44, sx: 10, sy: 14, sz: 52, kind: "cliff" },
+  { id: "rim-wall", x: X0 + 88, z: -22, sx: 6, sy: 10, sz: 22, kind: "cliff" },
   { id: "camp-shed", x: X0 + 70, z: 60, sx: 14, sy: 4.5, sz: 7, kind: "building" },
   { id: "v-rock-1", x: X0 - 34, z: -2, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
   { id: "v-rock-2", x: X0 + 34, z: 4, sx: 5, sy: 2.6, sz: 4, kind: "rock" },
@@ -331,6 +332,28 @@ export const BASE_DEPOSITS = [
     tested: false,
     lastBlastDay: -1,
   },
+  {
+    id: "east-rim",
+    kind: "vein" as const,
+    ore: "copper" as const,
+    tons: 740,
+    max: 740,
+    x: X0 + 74,
+    z: -22,
+    regen: 0.85,
+    claim: 7,
+    radius: 8,
+    sign: "EAST RIM",
+    purity: 1,
+    overburden: 36,
+    grade: 0.92,
+    stress: 0,
+    bench: 1,
+    benchProgress: 0,
+    hard: true,
+    tested: false,
+    lastBlastDay: -1,
+  },
 ];
 
 export type VehicleDef = {
@@ -571,6 +594,12 @@ export const CLAIMS = [
     name: "Valley quarry",
     price: 30000,
     blurb: "Hard copper in the west wall. Sell it at the west barge, or cross with a dump truck for the better rail price.",
+  },
+  {
+    id: 7,
+    name: "East rim",
+    price: 80000,
+    blurb: "Hard copper on the east bank, past the wash plant. Blast it or strip it, then sell at the rail. The load stays on this side of the river.",
   },
 ];
 

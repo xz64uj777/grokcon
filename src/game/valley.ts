@@ -227,7 +227,8 @@ export function buildValley(
     Math.hypot(x - WASH_PLANT.x, z - WASH_PLANT.z) < 18 ||
     Math.hypot(x - WEST_BARGE.x, z - WEST_BARGE.z) < 16 ||
     Math.abs(z - BRIDGE.z) < 9 ||
-    Math.hypot(x - (X0 - 72), z) < 16;
+    Math.hypot(x - (X0 - 72), z) < 16 ||
+    Math.hypot(x - (X0 + 74), z + 22) < 20;
   buildScatter(scene, track, [], rich, { cx: X0, bounds: RIVER_BOUNDS, avoid, seed: 311 });
   buildScatter(scene, track, [], rich, { cx: X0, bounds: RIVER_BOUNDS, avoid, seed: 977 });
   buildBackdrop(scene, track, X0, false, 0x7f7a5a);

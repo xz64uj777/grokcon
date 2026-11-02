@@ -40,7 +40,7 @@ export const RIVER_SPAWNS = [
 export const HAUL_FEE = 500;
 /** The ridge claim you must own before the valley opens. */
 export const UNLOCK_CLAIM = 4;
-export const VALLEY_CLAIMS = { bars: 5, quarry: 6 } as const;
+export const VALLEY_CLAIMS = { bars: 5, quarry: 6, rim: 7 } as const;
 
 /** Share of the crusher price the west-bank buyer pays. Crossing still pays full rail price. */
 export const BARGE_RATE = 0.7;

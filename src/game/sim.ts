@@ -133,6 +133,8 @@ export function faceOf(d: Deposit) {
   // The valley quarry is cut into the west cliff. A dug face must stay on the
   // open side of that wall, or the crew drives through the gap and gets stuck behind it.
   if (areaOf(d.x) === "river" && x < X0 - 76) x = X0 - 76;
+  // East rim is cut into the east wall. Keep the face on the bank side of it.
+  if (d.id === "east-rim" && x > X0 + 82) x = X0 + 82;
   return { x, z, reach: 3.6, yaw: Math.atan2(-rx, -rz) };
 }
 
@@ -708,6 +710,8 @@ function driveFace(vein: Deposit) {
     x = Math.max(-48, Math.min(36, x));
   } else if (vein.id === "quarry") {
     x = Math.max(x, X0 - 76);
+  } else if (vein.id === "east-rim") {
+    x = Math.min(x, X0 + 82);
   }
   return { x, z, reach: Math.max(cut.reach, 6) };
 }
@@ -2309,7 +2313,7 @@ export function buySluicePlant(state: GameState) {
 
 export function buyClaim(state: GameState, id: number) {
   if (ownsClaim(state, id)) return "Already leased.";
-  if ((id === VALLEY_CLAIMS.bars || id === VALLEY_CLAIMS.quarry) && !valleyOpen(state)) return "River Valley opens once you lease the Deep bench.";
+  if (id >= VALLEY_CLAIMS.bars && !valleyOpen(state)) return "River Valley opens once you lease the Deep bench.";
   const claim = CLAIMS.find((c) => c.id === id);
   if (!claim) return "No such ground.";
   if (!spend(state, claim.price, `${claim.name} is leased.`)) return "Not enough cash.";
