@@ -21,6 +21,9 @@ export const MOUNTAIN_SPAWNS = [
 /** Ore mill at the camp, where everything from the summit is sold. */
 export const MILL = { x: X1 + 52, z: 50, r: 10 };
 
+/** Summit mill pays per ton. Hard-rock gold is milled on site, close to the sluice's $300/t. */
+export const MILL_PRICE = { dirt: 10, iron: 80, copper: 175, gold: 285, silver: 150 } as const;
+
 /** Bench walls of the switchback. Each leaves one gap, alternating east and west. */
 export const SWITCHBACKS = [
   { z: 30, gapX: X1 + 62 },

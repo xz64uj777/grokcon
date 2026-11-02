@@ -55,8 +55,21 @@ export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
 
   // Snow caps on the bench walls.
   const snow = std(0xf4f7f9, { roughness: 0.9 });
+  // Bench walls: rock that stays inside its collision footprint (two set-back steps).
+  const wallRock = std(0x6b5a4a, { roughness: 0.95, flatShading: true });
   for (const b of switchbackBlocks()) {
-    const cap = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx + 0.4, 0.5, b.sz + 0.6)), snow);
+    const low = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx, b.sy * 0.6, b.sz)), wallRock);
+    low.position.set(b.x, b.sy * 0.3, b.z);
+    const high = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx - 0.6, b.sy * 0.4, b.sz * 0.7)), wallRock);
+    high.position.set(b.x, b.sy * 0.8, b.z);
+    for (const m of [low, high]) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+    }
+  }
+  for (const b of switchbackBlocks()) {
+    const cap = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx - 0.6, 0.4, b.sz * 0.7)), snow);
     cap.position.set(b.x, b.sy + 0.2, b.z);
     cap.castShadow = true;
     scene.add(cap);

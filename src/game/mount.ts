@@ -335,8 +335,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       audio.setMuted(state.muted);
       push();
     },
-    haul() {
-      const msg = haulMachine(state);
+    haul(to) {
+      const msg = haulMachine(state, to);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
       world.snap();

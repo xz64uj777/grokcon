@@ -17,7 +17,7 @@ export type VehicleId =
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 
-export type PadKind = "crusher" | "reclaim" | "sluice" | "loadout" | "wash" | "barge";
+export type PadKind = "crusher" | "reclaim" | "sluice" | "loadout" | "wash" | "barge" | "mill";
 
 export type Deposit = {
   id: string;
@@ -246,6 +246,9 @@ export type HudModel = {
   valleyOpen: boolean;
   /** High mountain leased. */
   mountainOpen: boolean;
+  /** Direct ridge-to-mountain lowboy line, or null when not offered here. */
+  mountainHaul: string | null;
+  canHaulMountain: boolean;
   /** Short travel line for the office, e.g. "Haul Skid steer to River Valley · $500". */
   travelLabel: string;
   canHaul: boolean;
@@ -305,7 +308,7 @@ export type GameApi = {
   watch: (on: boolean) => void;
   /** Point the camera at a machine without taking the controls. */
   look: (index: number) => void;
-  haul: () => void;
+  haul: (to?: "ridge" | "river" | "mountain") => void;
   /** Jump to a machine that is already in the other area. */
   goOther: () => void;
   toggleMute: () => void;

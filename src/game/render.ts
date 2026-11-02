@@ -862,6 +862,11 @@ export function createWorld(host: HTMLElement): World {
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
     _desired.set(v.x - fx * dist, 3 + dist * 0.5 * tall, v.z - fz * dist);
+    // Never park the camera inside a wall or cliff: lift it over the top instead.
+    for (const b of BLOCKS) {
+      if (b.kind !== "wall" && b.kind !== "cliff") continue;
+      if (Math.abs(_desired.x - b.x) < b.sx / 2 + 2 && Math.abs(_desired.z - b.z) < b.sz / 2 + 2) _desired.y = Math.max(_desired.y, b.sy + 3);
+    }
     if (snapNext) {
       camera.position.copy(_desired);
       snapNext = false;

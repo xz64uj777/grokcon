@@ -65,3 +65,42 @@ test("leasing the mountain never lowers the save score", () => {
   buyClaim(s, MOUNTAIN_CLAIM);
   assert.ok(bookWorth(s) >= w);
 });
+
+test("fix: summit mill pays near sluice price for gold, even with the sluice preferred", async () => {
+  const { basePrice } = await import("@/game/sim");
+  assert.equal(basePrice("gold", "mill", true), 285);
+  const s = freshGame("T");
+  s.cash = 0;
+  s.sluice = true;
+  s.preferSluice = true;
+  s.claims.push(4, 5, 6, 8);
+  const { buyVehicle } = await import("@/game/sim");
+  s.cash = 1e6;
+  buyVehicle(s, "truck");
+  const t = s.vehicles[s.vehicles.length - 1];
+  s.active = s.vehicles.length - 1;
+  t.x = 2052; t.z = 50; t.cargo = 7; t.cargoOre = "gold"; t.cargoPurity = 0.95; t.tool.lift = 0.9;
+  const c0 = s.cash;
+  for (let i = 0; i < 90; i++) step(s, { throttle: 0, steer: 0, action: true }, 1 / 30, true);
+  assert.ok(s.cash - c0 > 1000, `paid ${s.cash - c0}`);
+  assert.equal(t.cargo < 0.05, true);
+});
+
+test("fix: a truck driving along a bench wall slides instead of sticking", () => {
+  const s = freshGame("T");
+  const v = s.vehicles[0];
+  v.x = X1 + 30; v.z = 4 + 2.5 + 1.2; v.yaw = Math.PI / 2 - 0.25; v.speed = 0;
+  for (let i = 0; i < 120; i++) step(s, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+  assert.ok(v.x < X1 + 15, `stuck at ${v.x - X1}`);
+});
+
+test("fix: direct ridge-to-mountain haul for $2,500", () => {
+  const s = freshGame("T");
+  s.cash = 1e6;
+  s.claims.push(4, 5, 6, 8);
+  assert.equal(currentArea(s), "ridge");
+  const c = s.cash;
+  assert.equal(haulMachine(s, "mountain"), "");
+  assert.equal(currentArea(s), "mountain");
+  assert.equal(c - s.cash, MOUNTAIN_HAUL_FEE);
+});

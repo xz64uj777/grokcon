@@ -561,6 +561,19 @@ export function MineScreen() {
                   ) : (
                     <p className="mt-1 text-sm text-muted">{hud.travelLabel}.</p>
                   )}
+                  {hud.mountainHaul && (
+                    <button
+                      type="button"
+                      disabled={!hud.canHaulMountain}
+                      className={`mt-2 min-h-11 w-full border px-2 py-1 text-left text-sm leading-tight ${hud.canHaulMountain ? "border-primary text-fg" : "border-border text-muted"}`}
+                      onClick={() => {
+                        apiRef.current?.haul("mountain");
+                        setPanel(null);
+                      }}
+                    >
+                      {hud.mountainHaul}
+                    </button>
+                  )}
                 </div>
               )}
               <div className="flex-1 overflow-y-auto px-4 py-2">

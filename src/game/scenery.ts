@@ -118,7 +118,7 @@ export function buildPitWalls(scene: THREE.Scene, track: Track, kind: "wall" | "
   const geos: THREE.BufferGeometry[] = [];
   const color = new THREE.Color();
   for (const b of BLOCKS) {
-    if (b.kind !== kind) continue;
+    if (b.kind !== kind || Math.abs(b.x - center.x) > 400) continue;
     // Which way is "away from the pit" for this wall? Steps climb that way.
     const alongX = b.sx >= b.sz;
     const away = alongX ? Math.sign(b.z - center.z) || 1 : Math.sign(b.x - center.x) || 1;
@@ -162,7 +162,7 @@ export function buildPitWalls(scene: THREE.Scene, track: Track, kind: "wall" | "
   // Loose talus along the toe of each wall.
   const r = rng(kind === "wall" ? 5 : 15);
   for (const b of BLOCKS) {
-    if (b.kind !== kind) continue;
+    if (b.kind !== kind || Math.abs(b.x - center.x) > 400) continue;
     const alongX = b.sx >= b.sz;
     const toward = alongX ? -(Math.sign(b.z - center.z) || 1) : -(Math.sign(b.x - center.x) || 1);
     const long = alongX ? b.sx : b.sz;

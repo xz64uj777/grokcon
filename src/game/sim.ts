@@ -1,5 +1,5 @@
 import * as Ops from "@/game/ops";
-import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
+import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
   BASE_DEPOSITS,
   BLOCKS,
@@ -114,7 +114,7 @@ export type WorkOpts = {
 const AUTO_PLAYER: WorkOpts = { phase: "auto", cut: "auto", quality: 0.8 };
 const AUTO_CREW: WorkOpts = { phase: "auto", cut: "auto", quality: 0.85 };
 
-export const MARKET_PADS = ["crusher", "reclaim", "sluice", "loadout", "wash", "barge"] as const;
+export const MARKET_PADS = ["crusher", "reclaim", "sluice", "loadout", "wash", "barge", "mill"] as const;
 export const MARKET_KEYS = MARKET_PADS.flatMap((pad) => (Object.keys(ORES) as OreId[]).map((ore) => marketKey(pad, ore)));
 
 const ZERO: Control = { throttle: 0, steer: 0, action: false, brake: 0 };
@@ -242,6 +242,7 @@ export function basePrice(ore: OreId, pad: PadKind, sluice: boolean) {
   if (pad === "wash") return o.wash;
   if (pad === "barge") return Math.round(o.crusher * BARGE_RATE);
   if (pad === "loadout") return o.crusher;
+  if (pad === "mill") return MILL_PRICE[ore];
   if (pad === "reclaim") return ore === "dirt" ? o.reclaim : Math.round(o.crusher * 0.4);
   if (pad === "sluice") {
     if (!sluice) return 0;
@@ -511,7 +512,9 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
   });
 }
 
-function prefersSluice(state: GameState, ore: OreId) {
+function prefersSluice(state: GameState, ore: OreId, x?: number) {
+  // The sluice is at the ridge. Away from it, sell where you are.
+  if (x !== undefined && areaOf(x) !== "ridge") return false;
   return state.sluice && state.preferSluice && ORES[ore].sluice > ORES[ore].crusher;
 }
 
@@ -1046,7 +1049,7 @@ function aiControl(state: GameState, index: number): Control {
   if (has && v.cargoOre && full) {
     const pad = nearestPad(state, v.x, v.z);
     const wrongPlant =
-      (prefersSluice(state, v.cargoOre) && pad?.kind !== "sluice") ||
+      (prefersSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
       (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash" && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
       (!!pad && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     if (pad && !wrongPlant) {
@@ -1156,7 +1159,7 @@ function performAction(
       !!v.cargoOre &&
       !!pad &&
       !washStop &&
-      ((prefersSluice(state, v.cargoOre) && pad.kind !== "sluice") ||
+      ((prefersSluice(state, v.cargoOre, v.x) && pad.kind !== "sluice") ||
         (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9;
@@ -1190,6 +1193,7 @@ function performAction(
         if (plant) plant.busy = true;
       }
       const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
+      if (player && pad.kind === "mill") log(state, `Summit mill paid ${formatMoney(net)} for ${sold.toFixed(1)} t of ${ORES[soldOre].name.toLowerCase()}.`);
       const pure = soldOre === "dirt" ? "" : ` ${Math.round(purity * 100)}%`;
       return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName} ${sold.toFixed(1)}t${pure}${extra}`, player };
     }
@@ -1463,7 +1467,25 @@ function resolveCircle(v: VehicleState, radius: number) {
     const push = (radius - d) / d;
     v.x += dx * push;
     v.z += dz * push;
-    v.speed *= 0.82;
+    // Slide along the wall: only the part of the motion pointed into it is lost.
+    const nx = dx / d;
+    const nz = dz / d;
+    const into = (-Math.sin(v.yaw) * nx - Math.cos(v.yaw) * nz) * Math.sign(v.speed);
+    if (into < -0.7) v.speed *= 0.82;
+    else if (into < 0) {
+      // Glancing contact: keep rolling and ease the nose round to run along the wall.
+      v.speed *= 0.995;
+      const tx = -nz;
+      const tz = nx;
+      const fx = -Math.sin(v.yaw);
+      const fz = -Math.cos(v.yaw);
+      const side = fx * tx + fz * tz >= 0 ? 1 : -1;
+      const want = Math.atan2(-tx * side, -tz * side);
+      let dy = want - v.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      v.yaw += Math.max(-0.02, Math.min(0.02, dy));
+    }
   }
   if (aboard(v)) return;
   if (v.defId === "lowboy" && (onHaulRoad(v.x, v.z) || v.z > 64)) {
@@ -2325,7 +2347,7 @@ export function haulFee(from: AreaId, to: AreaId) {
   return from === "mountain" || to === "mountain" ? MOUNTAIN_HAUL_FEE : HAUL_FEE;
 }
 
-export function haulBlocker(state: GameState) {
+export function haulBlocker(state: GameState, to: AreaId = haulTarget(state)) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine.";
   if (v.defId === "lowboy") return "Drive the lowboy up the north road. The paid jump is for one machine.";
@@ -2334,17 +2356,17 @@ export function haulBlocker(state: GameState) {
   if (v.defId === "crusher") return "The track crusher stays at the ridge.";
   if (v.cargo > 0.05) return "Dump the load before it goes on the trailer.";
   if (state.blast) return "Finish the blast first.";
-  const fee = haulFee(currentArea(state), haulTarget(state));
+  const fee = haulFee(currentArea(state), to);
   if (state.cash < fee) return `The lowboy costs ${formatMoney(fee)}.`;
   return "";
 }
 
 /** Put the active machine on the lowboy trailer and send it to the other area. */
-export function haulMachine(state: GameState) {
-  const why = haulBlocker(state);
+export function haulMachine(state: GameState, dest?: AreaId) {
+  const to = dest && dest !== currentArea(state) && (dest !== "mountain" || mountainOpen(state)) ? dest : haulTarget(state);
+  const why = haulBlocker(state, to);
   if (why) return why;
   const v = state.vehicles[state.active];
-  const to = haulTarget(state);
   const fee = haulFee(currentArea(state), to);
   state.cash -= fee;
   placeInArea(state, v, to);
@@ -2523,7 +2545,7 @@ function hint(state: GameState) {
   if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
   const extra = def.id === "excavator" ? 2.2 : 0;
   const pad = nearestPad(state, v.x, v.z);
-  if (v.cargoOre && prefersSluice(state, v.cargoOre) && v.cargo > 0.08) {
+  if (v.cargoOre && prefersSluice(state, v.cargoOre, v.x) && v.cargo > 0.08) {
     if (pad?.kind === "sluice") return "Hold DIG. The sluice pays for this load.";
     return `${ORES[v.cargoOre].name} pays at the sluice, west of the yard. The crusher will not buy it.`;
   }
@@ -2531,7 +2553,7 @@ function hint(state: GameState) {
   const truck = !def.receives && v.cargo > 0.08 ? nearestHauler(state, v, 28, false) : null;
   if (truck) return `Tap LOAD to put this bucket in the ${DEFS[truck.defId].name.toLowerCase()}.`;
   if (st.capacity > 0 && v.cargo >= st.capacity * 0.92) {
-    if (v.cargoOre && prefersSluice(state, v.cargoOre)) return "Full. Haul it to the sluice. It pays more.";
+    if (v.cargoOre && prefersSluice(state, v.cargoOre, v.x)) return "Full. Haul it to the sluice. It pays more.";
     return def.receives ? "Bed full. Dump beside the track crusher." : "Full. Haul it out, or pull up to a dump truck.";
   }
   const locked = state.deposits.find((d) => !ownsClaim(state, d.claim) && distTo(v.x, v.z, d.x, d.z) < d.radius + 3);
@@ -2855,6 +2877,11 @@ function areaHud(state: GameState) {
     officeTitle: onRoad ? "Yard office" : area === "mountain" ? "Mountain office" : area === "river" ? "Valley office" : "Ridge office",
     valleyOpen: open,
     mountainOpen: mountainOpen(state),
+    mountainHaul:
+      area === "ridge" && mountainOpen(state) && !onRoad
+        ? haulBlocker(state, "mountain") || `Haul ${v ? DEFS[v.defId].name : "machine"} straight to High mountain · ${formatMoney(MOUNTAIN_HAUL_FEE)}`
+        : null,
+    canHaulMountain: area === "ridge" && mountainOpen(state) && !onRoad && !haulBlocker(state, "mountain"),
     travelLabel: !open
       ? "River Valley opens once you lease the Deep bench"
       : blocker || `Haul ${v ? DEFS[v.defId].name : "machine"} to ${areaName(other)} · ${formatMoney(haulFee(area, other))}`,
