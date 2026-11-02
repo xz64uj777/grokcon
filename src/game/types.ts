@@ -162,7 +162,7 @@ export type CrewCard = {
   index: number;
   name: string;
   /** Yard this machine belongs to. The office crew tabs filter on this. */
-  area: "ridge" | "river";
+  area: "ridge" | "river" | "mountain";
   /** On the trailer or the north road, so the roster can say so. */
   where: string;
   status: string;
@@ -189,7 +189,7 @@ export type GroundCard = {
   affordable: boolean;
   /** This lease is on the map whose office is open. */
   here: boolean;
-  area: "ridge" | "river";
+  area: "ridge" | "river" | "mountain";
 };
 
 export type HudModel = {
@@ -237,13 +237,15 @@ export type HudModel = {
   blastLabel: string;
   practice: boolean;
   /** Which area the active machine is in. */
-  area: "ridge" | "river";
+  area: "ridge" | "river" | "mountain";
   areaName: string;
   /** Distance readout while on the north road, e.g. "824 m to River Valley". */
   passLabel: string;
   officeTitle: string;
   /** River Valley is open (Deep bench owned). */
   valleyOpen: boolean;
+  /** High mountain leased. */
+  mountainOpen: boolean;
   /** Short travel line for the office, e.g. "Haul Skid steer to River Valley · $500". */
   travelLabel: string;
   canHaul: boolean;

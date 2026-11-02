@@ -1,4 +1,5 @@
 import * as Ops from "@/game/ops";
+import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
   BASE_DEPOSITS,
   BLOCKS,
@@ -142,6 +143,7 @@ export function faceOf(d: Deposit) {
 
 /** Where faces are approached from: the pit gate on the ridge, the bridge in the valley. */
 export function gateFor(x: number) {
+  if (areaOf(x) === "mountain") return { x, z: 60 };
   return areaOf(x) === "river" ? { x: BRIDGE.x, z: BRIDGE.z } : GATE;
 }
 
@@ -149,9 +151,13 @@ function sameArea(a: { x: number }, b: { x: number }) {
   return areaOf(a.x) === areaOf(b.x);
 }
 
+export function claimAreaOf(id: number): AreaId {
+  return id >= MOUNTAIN_CLAIM ? "mountain" : id >= VALLEY_CLAIMS.bars ? "river" : "ridge";
+}
+
 function assignedClaim(v: VehicleState): number | null {
   if (v.workClaim == null) return null;
-  const claimArea = v.workClaim >= VALLEY_CLAIMS.bars ? "river" : "ridge";
+  const claimArea = claimAreaOf(v.workClaim);
   if (claimArea !== areaOf(v.x)) return null;
   return v.workClaim;
 }
@@ -598,6 +604,10 @@ function bestPile(state: GameState, v: VehicleState) {
 
 function routeTo(v: VehicleState, tx: number, tz: number) {
   if (areaOf(v.x) === "river") return routeRiver(v, tx, tz);
+  if (areaOf(v.x) === "mountain") {
+    const w = switchbackWaypoint(v.x, v.z, tx, tz);
+    return w ?? { x: tx, z: tz };
+  }
   if (inPit(v.x, v.z) !== inPit(tx, tz)) {
     // The yard side of the gate is still outside the pit. Turning back for the
     // gate there made crew pace a figure-8 and never reach the iron pile.
@@ -713,7 +723,7 @@ function driveFace(vein: Deposit) {
   const cut = faceOf(vein);
   let x = cut.x;
   let z = cut.z;
-  if (areaOf(vein.x) !== "river") {
+  if (areaOf(vein.x) === "ridge") {
     z = Math.max(z, -46);
     x = Math.max(-48, Math.min(36, x));
   } else if (vein.id === "quarry") {
@@ -1706,6 +1716,7 @@ export function rainNow(state: GameState) {
 /** Share of top speed the ground allows here (mud in the valley; 1 elsewhere). */
 export function groundFactor(state: GameState, v: VehicleState) {
   if (onBridge(v.x, v.z)) return 1;
+  if (areaOf(v.x) === "mountain") return coldFactor(rainNow(state));
   return mudSpeedFactor(v.defId, mudDepth(v.x, v.z, state.wet));
 }
 
@@ -2002,7 +2013,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   }
   Ops.tick(state, opsBefore, dt, (v) => vehicleStats(v).capacity, (v) => {
     if (v.cargo > 0.04) dropInFront(state, v, v.x, v.z);
-  }, (v) => (areaOf(v.x) === "river" ? RIVER_SPAWNS[0] : SPAWNS[0]));
+  }, (v) => (areaOf(v.x) === "mountain" ? MOUNTAIN_SPAWNS[0] : areaOf(v.x) === "river" ? RIVER_SPAWNS[0] : SPAWNS[0]));
   snapDeck(state);
   notePass(state);
   state.seconds += dt;
@@ -2134,12 +2145,12 @@ export function valleyOpen(state: GameState) {
 }
 
 export function areaName(a: AreaId) {
-  return a === "river" ? "River Valley" : "Ridge pit";
+  return a === "mountain" ? "High mountain" : a === "river" ? "River Valley" : "Ridge pit";
 }
 
 function placeInArea(state: GameState, v: VehicleState, area: AreaId) {
   const taken = state.vehicles.filter((o) => o !== v && areaIn(o.x, o.z) === area);
-  const list = area === "river" ? RIVER_SPAWNS : SPAWNS;
+  const list = area === "mountain" ? MOUNTAIN_SPAWNS : area === "river" ? RIVER_SPAWNS : SPAWNS;
   const free = list.find((p) => taken.every((o) => Math.hypot(o.x - p.x, o.z - p.z) > 5)) ?? list[taken.length % list.length];
   v.x = free.x;
   v.z = free.z;
@@ -2294,6 +2305,26 @@ export function toggleDeck(state: GameState) {
   if (target) return why;
   return "Pull up to an empty parked machine.";
 }
+export function mountainUnlockable(state: GameState) {
+  return state.claims.includes(VALLEY_CLAIMS.quarry) || state.claims.includes(VALLEY_CLAIMS.rim);
+}
+
+export function mountainOpen(state: GameState) {
+  return state.claims.includes(MOUNTAIN_CLAIM);
+}
+
+/** Where the paid lowboy goes next: ridge → valley → mountain (once leased) → ridge. */
+export function haulTarget(state: GameState): AreaId {
+  const here = currentArea(state);
+  if (here === "ridge") return "river";
+  if (here === "river") return mountainOpen(state) ? "mountain" : "ridge";
+  return "ridge";
+}
+
+export function haulFee(from: AreaId, to: AreaId) {
+  return from === "mountain" || to === "mountain" ? MOUNTAIN_HAUL_FEE : HAUL_FEE;
+}
+
 export function haulBlocker(state: GameState) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine.";
@@ -2303,7 +2334,8 @@ export function haulBlocker(state: GameState) {
   if (v.defId === "crusher") return "The track crusher stays at the ridge.";
   if (v.cargo > 0.05) return "Dump the load before it goes on the trailer.";
   if (state.blast) return "Finish the blast first.";
-  if (state.cash < HAUL_FEE) return `The lowboy costs ${formatMoney(HAUL_FEE)}.`;
+  const fee = haulFee(currentArea(state), haulTarget(state));
+  if (state.cash < fee) return `The lowboy costs ${formatMoney(fee)}.`;
   return "";
 }
 
@@ -2312,8 +2344,9 @@ export function haulMachine(state: GameState) {
   const why = haulBlocker(state);
   if (why) return why;
   const v = state.vehicles[state.active];
-  const to: AreaId = currentArea(state) === "river" ? "ridge" : "river";
-  state.cash -= HAUL_FEE;
+  const to = haulTarget(state);
+  const fee = haulFee(currentArea(state), to);
+  state.cash -= fee;
   placeInArea(state, v, to);
   v.tool = homeTool(v.defId);
   v.stuck = 0;
@@ -2322,14 +2355,17 @@ export function haulMachine(state: GameState) {
     state.claims.push(VALLEY_CLAIMS.bars);
     log(state, "Welcome to River Valley. The river bars are yours. Silver pays best at a wash plant.");
   }
-  log(state, `${DEFS[v.defId].name} hauled to ${areaName(to)} for ${formatMoney(HAUL_FEE)}.`);
+  log(state, `${DEFS[v.defId].name} hauled to ${areaName(to)} for ${formatMoney(fee)}.`);
   return "";
 }
 
 /** Jump into a machine that is already in the other area. */
 export function goOtherArea(state: GameState) {
   const here = currentArea(state);
-  const other: AreaId = here === "river" ? "ridge" : "river";
+  const order: AreaId[] = ["ridge", "river", "mountain"];
+  const start = order.indexOf(here);
+  const has = (a: AreaId) => state.vehicles.some((v) => areaIn(v.x, v.z) === a && v.defId !== "crusher" && !(state.deck ?? []).includes(v.uid));
+  const other = [1, 2].map((k) => order[(start + k) % 3]).find(has) ?? (here === "river" ? "ridge" : "river");
   const usable = (v: VehicleState) =>
     areaIn(v.x, v.z) === other && v.defId !== "crusher" && !(state.deck ?? []).includes(v.uid);
   const remembered = lastByArea.get(state)?.[other];
@@ -2354,6 +2390,7 @@ export function buySluicePlant(state: GameState) {
 export function buyClaim(state: GameState, id: number) {
   if (ownsClaim(state, id)) return "Already leased.";
   if (id >= VALLEY_CLAIMS.bars && !valleyOpen(state)) return "River Valley opens once you lease the Deep bench.";
+  if (id === MOUNTAIN_CLAIM && !mountainUnlockable(state)) return "The high mountain opens once you lease the Valley quarry or East rim.";
   const claim = CLAIMS.find((c) => c.id === id);
   if (!claim) return "No such ground.";
   if (!spend(state, claim.price, `${claim.name} is leased.`)) return "Not enough cash.";
@@ -2695,15 +2732,15 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     };
   });
   const here = currentArea(state);
-  const grounds: HudModel["grounds"] = CLAIMS.filter((c) => c.id < VALLEY_CLAIMS.bars || valleyOpen(state)).map((c) => ({
+  const grounds: HudModel["grounds"] = CLAIMS.filter((c) => c.id < VALLEY_CLAIMS.bars || (c.id === MOUNTAIN_CLAIM ? mountainUnlockable(state) || mountainOpen(state) : valleyOpen(state))).map((c) => ({
     id: c.id,
     name: c.name,
     blurb: c.blurb,
     priceLabel: c.price === 0 ? "Included" : formatMoney(c.price),
     owned: ownsClaim(state, c.id),
     affordable: !ownsClaim(state, c.id) && state.cash >= c.price,
-    here: (c.id >= VALLEY_CLAIMS.bars ? "river" : "ridge") === here,
-    area: c.id >= VALLEY_CLAIMS.bars ? "river" : "ridge",
+    here: claimAreaOf(c.id) === here,
+    area: claimAreaOf(c.id),
   }));
   const savedBlurb = hadSave
     ? `${state.company} · ${formatMoney(state.cash)} · ${info.name}`
@@ -2780,7 +2817,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
 function areaHud(state: GameState) {
   const v = state.vehicles[state.active];
   const area = currentArea(state);
-  const other: AreaId = area === "river" ? "ridge" : "river";
+  const other: AreaId = haulTarget(state);
   const open = valleyOpen(state);
   const blocker = haulBlocker(state);
   const rain = rainNow(state);
@@ -2791,6 +2828,10 @@ function areaHud(state: GameState) {
     groundLabel = boggedDown(v.defId, depth)
       ? `Bogged in deep mud · ${f}% speed · back out or use tracks`
       : `Mud · ${f}% speed${TRACKED.has(v.defId) ? " · tracks help" : ""}`;
+  }
+  if (v && area === "mountain") {
+    const f = Math.round(groundFactor(state, v) * 100);
+    groundLabel = `${f}% speed · bench ${benchAt(v.z)} of 3`;
   }
   let bridgeLabel = "";
   if (v && area === "river" && Math.abs(v.x - BRIDGE.x) < BRIDGE.halfLength + 14 && Math.abs(v.z - BRIDGE.z) < 14) {
@@ -2811,18 +2852,19 @@ function areaHud(state: GameState) {
     area,
     areaName: onRoad ? "North road" : areaName(area),
     passLabel,
-    officeTitle: onRoad ? "Yard office" : area === "river" ? "Valley office" : "Ridge office",
+    officeTitle: onRoad ? "Yard office" : area === "mountain" ? "Mountain office" : area === "river" ? "Valley office" : "Ridge office",
     valleyOpen: open,
+    mountainOpen: mountainOpen(state),
     travelLabel: !open
       ? "River Valley opens once you lease the Deep bench"
-      : blocker || `Haul ${v ? DEFS[v.defId].name : "machine"} to ${areaName(other)} · ${formatMoney(HAUL_FEE)}`,
+      : blocker || `Haul ${v ? DEFS[v.defId].name : "machine"} to ${areaName(other)} · ${formatMoney(haulFee(area, other))}`,
     canHaul: open && !blocker,
     canGoOther: state.vehicles.some(
       (o) => areaIn(o.x, o.z) === other && o.defId !== "crusher" && !(state.deck ?? []).includes(o.uid),
     ),
     otherAreaName: areaName(other),
     rain,
-    weatherLabel: rain > 0.6 ? "Heavy rain" : rain > 0.05 ? "Rain" : state.wet > 0.25 ? "Wet ground" : "Dry",
+    weatherLabel: area === "mountain" ? (rain > 0.6 ? "Heavy snow" : rain > 0.05 ? "Snow" : "Cold, clear") : rain > 0.6 ? "Heavy rain" : rain > 0.05 ? "Rain" : state.wet > 0.25 ? "Wet ground" : "Dry",
     groundLabel,
     bridgeLabel,
     washPlant: state.washPlant,

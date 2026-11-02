@@ -53,7 +53,7 @@ function sanitize(raw: unknown): GameState | null {
   state.explosives = Math.round(num(o.explosives, 0, 0, 99));
   state.market = readMarket(o.market, state.seconds);
   if (Array.isArray(o.claims)) {
-    const claims = o.claims.filter((c) => c === 1 || c === 2 || c === 3 || c === 4 || c === 5 || c === 6) as number[];
+    const claims = o.claims.filter((c) => c === 1 || c === 2 || c === 3 || c === 4 || c === 5 || c === 6 || c === 7 || c === 8) as number[];
     state.claims = Array.from(new Set([1, ...claims]));
   }
   const tut = o.tutorial;

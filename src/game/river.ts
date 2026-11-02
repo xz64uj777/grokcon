@@ -6,13 +6,13 @@
  * in River Valley.
  */
 
-export type AreaId = "ridge" | "river";
+export type AreaId = "ridge" | "river" | "mountain";
 
 export const X0 = 1000;
 export const AREA_SPLIT = 500;
 
 export function areaOf(x: number): AreaId {
-  return x > AREA_SPLIT ? "river" : "ridge";
+  return x > 1500 ? "mountain" : x > AREA_SPLIT ? "river" : "ridge";
 }
 
 export const RIVER_BOUNDS = { minX: X0 - 92, maxX: X0 + 92, minZ: -72, maxZ: 70 };

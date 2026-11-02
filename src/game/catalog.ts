@@ -1,4 +1,5 @@
 import type { OreId, UpgradeKind, VehicleId } from "@/game/types";
+import { MILL, MOUNTAIN_BOUNDS, MOUNTAIN_CLAIM, MOUNTAIN_CLAIM_PRICE, X1, switchbackBlocks } from "@/game/mountain";
 import { BRIDGE, RIVER, RIVER_BOUNDS, RIVER_SPAWNS, WASH_PLANT, WEST_BARGE, X0, areaOf } from "@/game/river";
 
 export const HIRE_COST = 800;
@@ -12,7 +13,8 @@ export const PIT = { x: -6, z: -22, rx: 46, rz: 32 };
 
 /** Play area for whichever side of the world (ridge or valley) a point is in. */
 export function boundsFor(x: number) {
-  return areaOf(x) === "river" ? RIVER_BOUNDS : BOUNDS;
+  const a = areaOf(x);
+  return a === "mountain" ? MOUNTAIN_BOUNDS : a === "river" ? RIVER_BOUNDS : BOUNDS;
 }
 
 export function inPit(x: number, z: number) {
@@ -53,6 +55,9 @@ export const BLOCKS: Block[] = [
   { id: "camp-shed", x: X0 + 70, z: 60, sx: 14, sy: 4.5, sz: 7, kind: "building" },
   { id: "v-rock-1", x: X0 - 34, z: -2, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
   { id: "v-rock-2", x: X0 + 34, z: 4, sx: 5, sy: 2.6, sz: 4, kind: "rock" },
+  // ---- High mountain (x around X1): switchback bench walls, camp hut ----
+  ...switchbackBlocks(),
+  { id: "m-hut", x: X1 - 66, z: 58, sx: 12, sy: 4, sz: 6, kind: "building" },
 ];
 
 export const PADS = [
@@ -61,6 +66,7 @@ export const PADS = [
   { id: "sluice", name: "Sluice", x: -80, z: 36, r: 8, kind: "sluice" as const },
   { id: "loadout", name: "Rail loadout", x: X0 + 74, z: 30, r: 9, kind: "loadout" as const },
   { id: WEST_BARGE.id, name: WEST_BARGE.name, x: WEST_BARGE.x, z: WEST_BARGE.z, r: WEST_BARGE.r, kind: "barge" as const },
+  { id: "mill", name: "Summit mill", x: MILL.x, z: MILL.z, r: MILL.r, kind: "loadout" as const },
   { id: "wash", name: "Wash plant", x: WASH_PLANT.x, z: WASH_PLANT.z, r: WASH_PLANT.r, kind: "wash" as const },
 ];
 
@@ -354,6 +360,72 @@ export const BASE_DEPOSITS = [
     tested: false,
     lastBlastDay: -1,
   },
+  {
+    id: "summit-gold",
+    kind: "vein" as const,
+    ore: "gold" as const,
+    tons: 520,
+    max: 520,
+    x: X1 - 40,
+    z: -50,
+    regen: 0.7,
+    claim: 8,
+    radius: 8,
+    sign: "SUMMIT GOLD",
+    purity: 1,
+    overburden: 30,
+    grade: 0.97,
+    stress: 0,
+    bench: 3,
+    benchProgress: 0,
+    hard: true,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  {
+    id: "ice-copper",
+    kind: "vein" as const,
+    ore: "copper" as const,
+    tons: 900,
+    max: 900,
+    x: X1 + 10,
+    z: -52,
+    regen: 0.7,
+    claim: 8,
+    radius: 8,
+    sign: "ICE COPPER",
+    purity: 1,
+    overburden: 40,
+    grade: 0.95,
+    stress: 0,
+    bench: 3,
+    benchProgress: 0,
+    hard: true,
+    tested: false,
+    lastBlastDay: -1,
+  },
+  {
+    id: "scree-iron",
+    kind: "vein" as const,
+    ore: "iron" as const,
+    tons: 700,
+    max: 700,
+    x: X1 + 30,
+    z: -8,
+    regen: 0.7,
+    claim: 8,
+    radius: 8,
+    sign: "SCREE IRON",
+    purity: 1,
+    overburden: 20,
+    grade: 0.94,
+    stress: 0,
+    bench: 2,
+    benchProgress: 0,
+    hard: false,
+    tested: false,
+    lastBlastDay: -1,
+  },
 ];
 
 export type VehicleDef = {
@@ -600,6 +672,12 @@ export const CLAIMS = [
     name: "East rim",
     price: 80000,
     blurb: "Hard copper on the east bank, past the wash plant. Blast it or strip it, then sell at the rail. The load stays on this side of the river.",
+  },
+  {
+    id: MOUNTAIN_CLAIM,
+    name: "High mountain",
+    price: MOUNTAIN_CLAIM_PRICE,
+    blurb: "Rich gold and copper at the summit, iron on the scree. Cold, steep switchbacks; sell at the Summit mill by camp. Opens after a valley lease.",
   },
 ];
 

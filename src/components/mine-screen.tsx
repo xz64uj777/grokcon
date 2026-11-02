@@ -8,8 +8,8 @@ export function MineScreen() {
   const bridges = useRef({ toggle: () => {}, close: () => {} });
   const [hud, setHud] = useState<ViewModel | null>(null);
   const [panel, setPanel] = useState<null | "machines" | "ground" | "crew" | "prices">(null);
-  const [crewArea, setCrewArea] = useState<"ridge" | "river">("ridge");
-  const [watchMap, setWatchMap] = useState<"ridge" | "river" | null>(null);
+  const [crewArea, setCrewArea] = useState<"ridge" | "river" | "mountain">("ridge");
+  const [watchMap, setWatchMap] = useState<"ridge" | "river" | "mountain" | null>(null);
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
   const [booksNote, setBooksNote] = useState("");
@@ -315,7 +315,7 @@ export function MineScreen() {
               </p>
               {hud.toolLabel && <p className="text-xs text-muted">{hud.toolLabel}</p>}
               {hud.faceLabel && <p className="text-xs text-fg">{hud.faceLabel}</p>}
-              {(hud.area === "river" || hud.areaName === "North road" || hud.rain > 0.05) && (
+              {(hud.area !== "ridge" || hud.areaName === "North road" || hud.rain > 0.05) && (
                 <p className="area-line text-xs text-muted">
                   {hud.areaName} · {hud.weatherLabel}
                   {hud.groundLabel && !hud.groundLabel.startsWith("Bogged") ? ` · ${hud.groundLabel}` : ""}
@@ -352,8 +352,9 @@ export function MineScreen() {
                       [
                         ["ridge", "Ridge"],
                         ["river", "Valley"],
+                        ["mountain", "Mtn"],
                       ] as const
-                    ).map(([id, label]) => {
+                    ).filter(([id]) => id !== "mountain" || hud.mountainOpen).map(([id, label]) => {
                       const n = hud.crew.filter((c) => c.area === id).length;
                       const on = (watchMap ?? hud.area) === id;
                       return (
@@ -571,9 +572,10 @@ export function MineScreen() {
                         {(
                           [
                             ["ridge", "Ridge pit"],
-                            ["river", "River Valley"],
+                            ["river", "Valley"],
+                            ["mountain", "Mountain"],
                           ] as const
-                        ).map(([id, label]) => {
+                        ).filter(([id]) => id !== "mountain" || hud.mountainOpen).map(([id, label]) => {
                           const n = hud.crew.filter((c) => c.area === id).length;
                           return (
                             <button
@@ -699,7 +701,7 @@ export function MineScreen() {
                   ))}
                 {panel === "crew" && hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).length === 0 && (
                   <p className="py-4 text-sm text-muted">
-                    {crewArea === "river" ? "No machines in River Valley. Haul one over on the lowboy." : "No machines at Ridge pit."}
+                    {crewArea === "mountain" ? "No machines on the mountain. Haul one up on the lowboy." : crewArea === "river" ? "No machines in River Valley. Haul one over on the lowboy." : "No machines at Ridge pit."}
                   </p>
                 )}
                 {panel === "crew" &&

@@ -6,6 +6,7 @@ import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/g
 import { DECK_Y, HAUL_ROAD, HITCH_Z, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
+import { buildMountain } from "@/game/mountain-scene";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
 import { faceOf, vehicleStats } from "@/game/sim";
 
@@ -683,6 +684,7 @@ export function createWorld(host: HTMLElement): World {
 
   buildSluice(scene, track, box, steel, std);
   const valley = buildValley(scene, track, std, quality.rich, (t, a) => track(textTexture(t, a)));
+  buildMountain(scene, track, std);
 
   // Rain: a pool of streaks that follows the camera. Only drawn while it rains.
   const rainCount = quality.rich ? 900 : 450;
@@ -1106,7 +1108,7 @@ export function createWorld(host: HTMLElement): World {
     frameCamera(state, dt, follow);
     // Keep the one shadow light over whichever area the camera is in.
     const inPass = camera.position.z > 70 && camera.position.x > 40 && camera.position.x < X0 - 40;
-    const cx = inPass ? camera.position.x : areaOf(camera.position.x) === "river" ? X0 : 0;
+    const cx = inPass ? camera.position.x : areaOf(camera.position.x) === "mountain" ? 2000 : areaOf(camera.position.x) === "river" ? X0 : 0;
     if (sun.target.position.x !== cx) {
       sun.position.set(cx + 48, 72, 26);
       sun.target.position.set(cx, 0, 0);

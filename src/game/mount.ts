@@ -574,7 +574,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       ctx.textAlign = "start";
     } else {
     const area = currentArea(state);
-    const B = boundsFor(area === "river" ? X0 : 0);
+    const B = boundsFor(area === "mountain" ? 2000 : area === "river" ? X0 : 0);
     const here = (x: number) => areaOf(x) === area;
     const sx = (x: number) => x0 + ((x - B.minX) / (B.maxX - B.minX)) * m;
     const sz = (z: number) => y0 + ((z - B.minZ) / (B.maxZ - B.minZ)) * m;
