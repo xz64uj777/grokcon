@@ -266,7 +266,7 @@ export function MineScreen() {
               </button>
             </div>
           </header>
-          {(hud.practice || hud.blastLabel || hud.bridgeLabel.endsWith("TOO HEAVY") || hud.groundLabel.startsWith("Bogged")) && (
+          {(hud.practice || hud.blastLabel || hud.bridgeClock || hud.bridgeLabel.endsWith("TOO HEAVY") || hud.groundLabel.startsWith("Bogged")) && (
             <div className="hud-banner pointer-events-none absolute inset-x-0 top-16 z-10 flex flex-col items-center gap-2 px-3 md:top-20">
               {hud.practice && (
                 <p className="border border-primary bg-surface px-3 py-1 font-display text-base uppercase tracking-wide text-primary">Practice yard · nothing here counts or saves</p>
@@ -274,7 +274,10 @@ export function MineScreen() {
               {hud.blastLabel && (
                 <p className="border border-red-500 bg-red-950/90 px-3 py-2 text-center font-display text-lg uppercase tracking-wide text-red-100">{hud.blastLabel}</p>
               )}
-              {!hud.blastLabel && hud.bridgeLabel.endsWith("TOO HEAVY") && (
+              {hud.bridgeClock && (
+                <p className="border border-sky-400 bg-sky-950/90 px-3 py-1 text-center font-display text-base uppercase tracking-wide text-sky-100">{hud.bridgeClock}</p>
+              )}
+              {!hud.blastLabel && !hud.bridgeClock && hud.bridgeLabel.endsWith("TOO HEAVY") && (
                 <p className="border border-red-500 bg-red-950/90 px-3 py-1 text-center font-display text-base uppercase tracking-wide text-red-100">{hud.bridgeLabel}</p>
               )}
               {!hud.blastLabel && hud.groundLabel.startsWith("Bogged") && (

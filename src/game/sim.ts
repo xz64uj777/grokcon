@@ -1561,7 +1561,7 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
   if (now - (bridgeNag.get(v) ?? -99) > 4) {
     bridgeNag.set(v, now);
     const msg = flooded
-      ? "The bridge is flooded and closed today. Work this bank until tomorrow."
+      ? `The bridge is flooded. ${Ops.bridgeClock(state)}. Work this bank until it opens.`
       : v.defId === "lowboy"
         ? `Bridge limit ${BRIDGE.limit} t. The lowboy weighs ${tons.toFixed(0)} t with the deck loaded. The deck counts on the scale — take the north road.`
         : `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
@@ -2894,6 +2894,7 @@ function areaHud(state: GameState) {
     weatherLabel: area === "mountain" ? (rain > 0.6 ? "Heavy snow" : rain > 0.05 ? "Snow" : "Cold, clear") : rain > 0.6 ? "Heavy rain" : rain > 0.05 ? "Rain" : state.wet > 0.25 ? "Wet ground" : "Dry",
     groundLabel,
     bridgeLabel,
+    bridgeClock: area === "river" || Ops.bridgeClosed(state) ? Ops.bridgeClock(state) : "",
     washPlant: state.washPlant,
     deckLabel: deck.label,
     deckButton: deck.button,

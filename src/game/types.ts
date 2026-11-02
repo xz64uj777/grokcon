@@ -259,6 +259,8 @@ export type HudModel = {
   weatherLabel: string;
   groundLabel: string;
   bridgeLabel: string;
+  /** Set while a flood has the bridge shut: time passed, and time until it opens. */
+  bridgeClock: string;
   washPlant: boolean;
   deckLabel: string;
   deckButton: string | null;

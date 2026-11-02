@@ -52,8 +52,11 @@ test("R5 events: flood closes bridge only that day; double pays 2x", () => {
   const s = freshGame("T");
   O.ops(s).event = { kind: "flood", day: s.market.day };
   assert.equal(O.bridgeClosed(s), true);
+  s.seconds = 90;
+  assert.equal(O.bridgeClock(s), "Bridge closed 1:30 · opens in 3:30");
   O.ops(s).event = { kind: "flood", day: s.market.day - 1 };
   assert.equal(O.bridgeClosed(s), false);
+  assert.equal(O.bridgeClock(s), "");
   O.ops(s).event = { kind: "double", day: s.market.day, ore: "gold" };
   assert.equal(O.saleMult(s, "gold", "sluice"), 2);
   assert.equal(O.saleMult(s, "iron", "crusher"), 1);

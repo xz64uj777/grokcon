@@ -206,6 +206,19 @@ export function bridgeClosed(state: GameState) {
   return on(5) && e?.kind === "flood" && e.day === state.market.day;
 }
 
+function clock(seconds: number) {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+/** Elapsed time of today's flood closure, and how long until the bridge opens. Empty when it is open. */
+export function bridgeClock(state: GameState) {
+  if (!bridgeClosed(state)) return "";
+  const passed = state.seconds % DAY;
+  const left = Math.max(0, DAY - passed);
+  return `Bridge closed ${clock(passed)} · opens in ${clock(left)}`;
+}
+
 // ---- Round 7, 9: tires and fuel ---------------------------------------------
 /** Litres in a full tank. */
 export function tankLitres(v: VehicleState) {
@@ -496,7 +509,7 @@ export function statusLine(state: GameState) {
   const parts: string[] = [];
   if (on(4)) parts.push(`Rep ${REP_NAMES[repLevel(o.rep)]}`);
   if (on(5) && o.event && o.event.day === state.market.day)
-    parts.push(o.event.kind === "flood" ? "Bridge flooded" : o.event.kind === "double" ? `${o.event.ore} pays 2×` : "Breakdown today");
+    parts.push(o.event.kind === "flood" ? bridgeClock(state) : o.event.kind === "double" ? `${o.event.ore} pays 2×` : "Breakdown today");
   if (on(8) && nightness(state.seconds) > 0.5) parts.push(o.lights ? "Night shift" : "Night");
   if (v && on(9) && !isPlant(v)) parts.push(`Fuel ${Math.round((o.fuel[v.uid] ?? 1) * 100)}%`);
   if (v && on(7) && onWheels(v)) parts.push(o.flat.includes(v.uid) ? "FLAT" : `Tread ${Math.round((o.tread[v.uid] ?? 1) * 100)}%`);
