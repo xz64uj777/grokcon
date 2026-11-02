@@ -3,7 +3,7 @@
  * The paid office jump is a separate shortcut.
  */
 
-import { X0, areaOf, type AreaId } from "@/game/river";
+import { RIVER, X0, areaOf, type AreaId } from "@/game/river";
 
 export const DECK_SPOTS = 3;
 
@@ -66,7 +66,21 @@ export function passPeaks(): PassPeak[] {
     peaks.push({ x, z: north + nr * 0.35 + wobble, r: nr, h: 16 + (i % 5) * 3 });
     peaks.push({ x: x + 18, z: south - sr * 0.35 - wobble, r: sr, h: 14 + ((i + 2) % 5) * 3 });
   }
-  return peaks.filter((peak) => !hillBlocksRoad(peak.x, peak.z, peak.r * 0.85, peak.r * 0.85));
+  return peaks.filter((peak) => !hillBlocksRoad(peak.x, peak.z, peak.r * 0.85, peak.r * 0.85) && !coversRiver(peak));
+}
+
+/** A pass mountain whose foot sits in the river channel. The valley water has to stay open. */
+function coversRiver(peak: PassPeak) {
+  const margin = 8;
+  const left = RIVER.x - RIVER.halfWidth - margin;
+  const right = RIVER.x + RIVER.halfWidth + margin;
+  const rx = peak.r;
+  const rz = peak.r * 0.85;
+  const nx = Math.max(left, Math.min(peak.x, right));
+  const nz = Math.max(RIVER.minZ, Math.min(peak.z, RIVER.maxZ));
+  const dx = (peak.x - nx) / rx;
+  const dz = (peak.z - nz) / rz;
+  return dx * dx + dz * dz < 1;
 }
 
 export function onHaulRoad(x: number, z: number) {

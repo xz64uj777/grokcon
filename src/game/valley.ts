@@ -161,15 +161,16 @@ export function buildValley(
   if (barge) {
     const g = new THREE.Group();
     const hull = new THREE.Mesh(track(new THREE.BoxGeometry(7, 1.1, 16)), std(0x3e4a42, { roughness: 0.55, metalness: 0.25 }));
-    hull.position.set(RIVER.x - 2.2, 0.35, barge.z);
+    hull.position.set(WEST_BARGE.hullX, 0.35, barge.z);
     hull.castShadow = true;
     g.add(hull);
     const cabin = new THREE.Mesh(track(new THREE.BoxGeometry(3.2, 1.6, 3.2)), std(0x8a6f3a, { roughness: 0.7 }));
     cabin.position.set(hull.position.x, 1.5, barge.z - 5);
     cabin.castShadow = true;
     g.add(cabin);
-    const ramp = new THREE.Mesh(track(new THREE.BoxGeometry(8, 0.2, 3)), steel);
-    ramp.position.set((barge.x + hull.position.x) / 2, 0.3, barge.z);
+    const span = Math.abs(hull.position.x - barge.x);
+    const ramp = new THREE.Mesh(track(new THREE.BoxGeometry(Math.max(6, span - 5), 0.2, 3.2)), steel);
+    ramp.position.set((barge.x + hull.position.x) / 2, 0.28, barge.z);
     ramp.rotation.z = 0.08;
     g.add(ramp);
     const hopper = new THREE.Mesh(track(new THREE.CylinderGeometry(2.2, 1.1, 2.4, 4)), std(0x6a5a3a, { roughness: 0.75 }));

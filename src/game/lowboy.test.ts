@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, spotsUsed, stepHitch } from "./lowboy.ts";
+import { RIVER } from "./river.ts";
 
 describe("lowboy deck space", () => {
   it("gives small machines one spot and big machines the whole deck", () => {
@@ -49,6 +50,8 @@ describe("north road", () => {
     assert.ok(peaks.some((p) => p.z < 86));
     assert.ok(peaks.length > 20);
     for (const p of peaks) assert.equal(hillBlocksRoad(p.x, p.z, p.r * 0.85, p.r * 0.85), false);
+    const river = peaks.filter((p) => Math.abs(p.x - RIVER.x) < p.r + RIVER.halfWidth + 8 && p.z < RIVER.maxZ && p.z > RIVER.minZ);
+    assert.equal(river.length, 0, "a pass mountain is sitting in the river");
   });
 
   it("stops every machine but the lowboy at the gate", () => {

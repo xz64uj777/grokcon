@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { passPeaks } from "./lowboy.ts";
 import {
   BRIDGE,
   RIVER,
@@ -60,17 +61,31 @@ describe("bridge", () => {
     assert.equal(crossingWorth("truck", 22, 20), true);
     assert.equal(crossingWorth("truck", 22, 22), false);
   });
-  it("keeps the west barge off the bridge", () => {
-    const deckNorth = BRIDGE.z + BRIDGE.halfWidth;
+  it("keeps the west barge in open water, off the bridge", () => {
     const deckWest = BRIDGE.x - BRIDGE.halfLength;
-    assert.ok(WEST_BARGE.z - WEST_BARGE.r > deckNorth + 6, "sell ring overlaps the deck");
-    assert.ok(WEST_BARGE.x + WEST_BARGE.r < deckWest - 4, "sell ring sits on the west ramp");
+    const deckEast = BRIDGE.x + BRIDGE.halfLength;
+    const deckSouth = BRIDGE.z - BRIDGE.halfWidth;
+    const deckNorth = BRIDGE.z + BRIDGE.halfWidth;
+    const hits = (x: number, z: number, r: number) => {
+      const nx = Math.max(deckWest, Math.min(x, deckEast));
+      const nz = Math.max(deckSouth, Math.min(z, deckNorth));
+      return Math.hypot(x - nx, z - nz) < r;
+    };
+    assert.equal(hits(WEST_BARGE.x, WEST_BARGE.z, WEST_BARGE.r), false, "sell ring overlaps the deck");
+    assert.ok(WEST_BARGE.x + WEST_BARGE.r < RIVER.x - RIVER.halfWidth, "sell ring is in the water");
     const hullSouth = WEST_BARGE.z - 8;
-    const hullWest = RIVER.x - 2.2 - 3.5;
-    const hullEast = RIVER.x - 2.2 + 3.5;
-    assert.ok(hullSouth > deckNorth + 4, "hull still covers the bridge");
-    assert.ok(hullEast < RIVER.x + RIVER.halfWidth);
-    assert.ok(hullWest > RIVER.x - RIVER.halfWidth - 1);
+    const hullNorth = WEST_BARGE.z + 8;
+    const hullWest = WEST_BARGE.hullX - 3.5;
+    const hullEast = WEST_BARGE.hullX + 3.5;
+    assert.equal(hullNorth < deckSouth || hullSouth > deckNorth || hullEast < deckWest || hullWest > deckEast, true, "hull covers the bridge");
+    assert.ok(hullWest > RIVER.x - RIVER.halfWidth - 1, "hull is on the bank");
+    assert.ok(hullEast < RIVER.x + RIVER.halfWidth, "hull leaves the river");
+    for (const peak of passPeaks()) {
+      const rz = peak.r * 0.85;
+      const onHull = ((peak.x - WEST_BARGE.hullX) / peak.r) ** 2 + ((peak.z - WEST_BARGE.z) / rz) ** 2 < 1;
+      const onPad = Math.hypot(peak.x - WEST_BARGE.x, peak.z - WEST_BARGE.z) < peak.r * 0.9 + WEST_BARGE.r;
+      assert.equal(onHull || onPad, false, `mountain covers the barge at ${peak.x}, ${peak.z}`);
+    }
   });
 
   it("knows where the deck is, and the deck isn't river", () => {
