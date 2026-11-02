@@ -300,4 +300,47 @@ describe("valley crew", () => {
     heavy.cargo = 20;
     assert.equal(plannedPad(locked, locked.vehicles.indexOf(heavy)), "loadout");
   });
+
+  it("takes a skid and a dump truck across the bridge without dancing or crawling", () => {
+    const cross = (defId: "skid" | "truck", x: number, setup: (v: VehicleState) => void) => {
+      const state = freshGame(defId);
+      state.claims = [1, 4, 5, 6, 7];
+      state.watching = true;
+      state.washPlant = true;
+      state.wet = 1;
+      const v = park(state, defId, x, BRIDGE.z + 1.2);
+      v.hired = true;
+      v.operator = true;
+      v.yaw = x > X0 ? Math.PI / 2 : -Math.PI / 2;
+      setup(v);
+      let flips = 0;
+      let dir = 0;
+      let prev = v.x;
+      let slow = 0;
+      let samples = 0;
+      for (let i = 0; i < 30 * 18; i++) {
+        step(state, ZERO, 1 / 30, true);
+        const moved = v.x - prev;
+        if (Math.abs(v.x - X0) < BRIDGE.halfLength + 2 && Math.abs(moved) > 0.02) {
+          const s = Math.sign(moved);
+          if (dir && s !== dir) flips += 1;
+          dir = s;
+          samples += 1;
+          if (Math.abs(v.speed) < 2) slow += 1;
+        }
+        prev = v.x;
+        if (Math.sign(v.x - X0) !== Math.sign(x - X0) && Math.abs(v.x - X0) > BRIDGE.halfLength + 4) break;
+      }
+      assert.ok(Math.sign(v.x - X0) !== Math.sign(x - X0), `${defId} never crossed, x=${(v.x - X0).toFixed(1)} ${v.status}`);
+      assert.ok(flips < 3, `${defId} danced on the bridge ${flips} times`);
+      assert.ok(samples === 0 || slow < samples * 0.5, `${defId} crawled ${slow}/${samples}`);
+    };
+    cross("skid", X0 + 20, (v) => {
+      v.workClaim = 6;
+    });
+    cross("truck", X0 - 24, (v) => {
+      v.cargoOre = "gold";
+      v.cargo = 12;
+    });
+  });
 });

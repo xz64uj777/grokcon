@@ -89,6 +89,18 @@ export function onBridge(x: number, z: number, pad = 0) {
   return Math.abs(x - BRIDGE.x) <= BRIDGE.halfLength + pad && Math.abs(z - BRIDGE.z) <= BRIDGE.halfWidth;
 }
 
+/** Deck surface under a machine. 0 off the bridge, so wheels sit on the planks instead of inside them. */
+export function bridgeDeckY(x: number, z: number) {
+  if (Math.abs(z - BRIDGE.z) > BRIDGE.halfWidth) return 0;
+  const dx = Math.abs(x - BRIDGE.x);
+  const flat = BRIDGE.halfLength - 3;
+  const top = 0.74;
+  if (dx <= flat) return top;
+  const toe = BRIDGE.halfLength + 2.2;
+  if (dx >= toe) return 0;
+  return top * (1 - (dx - flat) / (toe - flat));
+}
+
 export function bridgeAllows(defId: string, cargo: number) {
   return grossTons(defId, cargo) <= BRIDGE.limit;
 }
@@ -142,6 +154,8 @@ export const MUD_ZONES: MudZone[] = [
  */
 export function mudDepth(x: number, z: number, wet: number) {
   if (x <= AREA_SPLIT) return 0;
+  // The crossing and its ramps stay firm. Bank mud was dragging wheeled machines to a crawl on the way over.
+  if (Math.abs(x - BRIDGE.x) <= BRIDGE.halfLength + 8 && Math.abs(z - BRIDGE.z) <= BRIDGE.halfWidth + 2) return 0;
   const w = Math.max(0, Math.min(1, wet));
   let best = 0;
   for (const m of MUD_ZONES) {

@@ -3,7 +3,7 @@ import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buil
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import { DECK_Y, HAUL_ROAD, HITCH_Z, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
-import { X0, areaOf, rainAt } from "@/game/river";
+import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
 import { faceOf, vehicleStats } from "@/game/sim";
@@ -860,7 +860,8 @@ export function createWorld(host: HTMLElement): World {
     for (const v of state.vehicles) {
       const rig = rigs.get(v.uid);
       if (!rig) continue;
-      rig.root.position.set(v.x, (state.deck ?? []).includes(v.uid) ? DECK_Y : 0, v.z);
+      const hauled = (state.deck ?? []).includes(v.uid);
+      rig.root.position.set(v.x, hauled ? DECK_Y : bridgeDeckY(v.x, v.z), v.z);
       rig.root.rotation.y = v.yaw;
       if (v.defId === "dozer") {
         rig.root.rotation.x = v.busy ? Math.sin(clock.t * 11) * 0.05 : 0;

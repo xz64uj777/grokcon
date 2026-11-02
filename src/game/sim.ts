@@ -618,15 +618,19 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   if (gap) return gap;
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
-  if (side === goal || side === 0 || goal === 0) return { x: tx, z: tz };
+  if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
   // The heavy haul stays on its bank. A dozer or payloader is light enough to cross.
   if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
-  const end = BRIDGE.halfLength + 4;
-  if (onBridge(v.x, v.z, 1)) return { x: BRIDGE.x + goal * (end + 2), z: BRIDGE.z };
-  const near = { x: BRIDGE.x + side * end, z: BRIDGE.z };
-  // Line up with the deck first, then drive straight over.
-  if (Math.abs(v.z - BRIDGE.z) > 2.2 || Math.abs(v.x - near.x) > 5) return near;
-  return { x: BRIDGE.x + goal * (end + 2), z: BRIDGE.z };
+  const exitX = BRIDGE.x + (goal || -side || 1) * (BRIDGE.halfLength + 6);
+  const exit = { x: exitX, z: BRIDGE.z };
+  // Once you're on the crossing, finish it. Sliding off the planks used to
+  // aim a skid or a truck back at the ramp, so they danced and never got over.
+  const crossing =
+    Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 2 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 6;
+  if (crossing || side === 0) return exit;
+  const near = { x: BRIDGE.x + side * (BRIDGE.halfLength + 5), z: BRIDGE.z };
+  if (Math.abs(v.z - BRIDGE.z) > 1.6 || Math.abs(v.x - near.x) > 4) return near;
+  return exit;
 }
 
 /** West cliff, with a cut at the quarry. There is no road behind that wall, only a gap in front of the quarry. */
@@ -1410,6 +1414,8 @@ function clampLowboy(v: VehicleState) {
 
 function resolveCircle(v: VehicleState, radius: number) {
   for (const b of BLOCKS) {
+    // A machine whose middle is on the deck overhangs the water. Don't shove it back into a crawl.
+    if (b.kind === "water" && onBridge(v.x, v.z)) continue;
     const hx = b.sx / 2;
     const hz = b.sz / 2;
     const minX = b.x - hx;
@@ -1468,6 +1474,16 @@ function resolveCircle(v: VehicleState, radius: number) {
     v.z = BOUNDS.maxZ - padR;
     v.speed *= 0.4;
   }
+}
+
+/** Keep a machine on the planks while it crosses, instead of letting the body rub the river. */
+function holdDeck(v: VehicleState) {
+  if (areaOf(v.x) !== "river") return;
+  if (!onBridge(v.x, v.z, 1)) return;
+  const room = BRIDGE.halfWidth - vehicleStats(v).radius - 0.35;
+  const limit = Math.max(0.5, room);
+  const dz = v.z - BRIDGE.z;
+  if (Math.abs(dz) > limit) v.z = BRIDGE.z + Math.sign(dz) * limit;
 }
 
 const bridgeNag = new WeakMap<VehicleState, number>();
@@ -1903,6 +1919,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     if (v.speed > cap) v.speed = cap;
     else if (v.speed < -cap) v.speed = -cap;
   }
+  for (const v of state.vehicles) holdDeck(v);
   const rigBefore = state.vehicles.find((v) => v.defId === "lowboy");
   const rigPrev = rigBefore ? { x: rigBefore.x, z: rigBefore.z, yaw: rigBefore.yaw } : null;
   for (let n = 0; n < 2; n++) {
