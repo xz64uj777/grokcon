@@ -1,3 +1,4 @@
+import * as Ops from "@/game/ops";
 import {
   BASE_DEPOSITS,
   BLOCKS,
@@ -288,7 +289,8 @@ function fillContract(state: GameState, ore: OreId, tons: number) {
   if (!contract || contract.ore !== ore || tons <= 0) return 0;
   contract.delivered += tons;
   if (contract.delivered + 0.05 < contract.need) return 0;
-  const bonus = contract.bonus;
+  const bonus = Math.round(contract.bonus * Ops.contractMult(state));
+  Ops.onContractFilled(state);
   state.cash += bonus;
   state.lifetime += bonus;
   state.contractSeq += 1;
@@ -300,7 +302,8 @@ function fillContract(state: GameState, ore: OreId, tons: number) {
 export function freshGame(company: string): GameState {
   const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
   return {
-    version: 3,
+    version: 4,
+    ops: Ops.freshOps(),
     controlMode: "real",
     market: freshMarket(Math.floor(Math.random() * 0xffffffff), MARKET_KEYS),
     explosives: 0,
@@ -1160,8 +1163,9 @@ function performAction(
       const sold = v.cargo;
       const soldOre = v.cargoOre;
       const purity = purityFactor(soldOre, v.cargoPurity ?? 1);
-      const gross = sold * unit * purity;
+      const gross = sold * unit * purity * Ops.saleMult(state, soldOre, pad.kind);
       const net = gross * (player ? 1 : CREW_KEEP);
+      Ops.onSale(state, net, sold);
       const oreName = ORES[soldOre].name;
       const bonus = fillContract(state, soldOre, sold);
       recordSale(state.market, pad.kind, soldOre, sold);
@@ -1506,7 +1510,8 @@ function crossingWeight(state: GameState, v: VehicleState) {
 function guardBridge(state: GameState, v: VehicleState, index: number) {
   if (areaOf(v.x) !== "river") return;
   const tons = crossingWeight(state, v);
-  if (tons <= BRIDGE.limit) return;
+  const flooded = Ops.bridgeClosed(state);
+  if (tons <= BRIDGE.limit && !flooded) return;
   const side = Math.sign(v.x - BRIDGE.x) || 1;
   const near =
     Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 3 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 2;
@@ -1516,12 +1521,13 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
   const vx = -Math.sin(v.yaw) * v.speed;
   if (vx * side < 0) v.speed = 0;
   if (onBridge(v.x, v.z)) v.x = BRIDGE.x + side * (BRIDGE.halfLength + 1.2);
-  v.status = "Too heavy for the bridge";
+  v.status = flooded ? "Bridge flooded" : "Too heavy for the bridge";
   const now = state.seconds;
   if (now - (bridgeNag.get(v) ?? -99) > 4) {
     bridgeNag.set(v, now);
-    const msg =
-      v.defId === "lowboy"
+    const msg = flooded
+      ? "The bridge is flooded and closed today. Work this bank until tomorrow."
+      : v.defId === "lowboy"
         ? `Bridge limit ${BRIDGE.limit} t. The lowboy weighs ${tons.toFixed(0)} t with the deck loaded. The deck counts on the scale — take the north road.`
         : `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
     if (index === state.active) log(state, msg);
@@ -1842,9 +1848,12 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   if (!state.deck) state.deck = [];
   bindDeck(state);
   regen(state, dt);
+  const opsBefore = Ops.before(state);
+  const dayBefore = state.market.day;
   const wasRaining = rainNow(state) > 0.05;
   state.wet = stepWet(state.wet, rainNow(state), dt);
   if (advanceMarket(state.market, state.seconds, MARKET_KEYS)) log(state, "New day. Ore prices moved. Check the price board.");
+  if (state.market.day !== dayBefore) Ops.newDay(state);
   const controls: Control[] = [];
   const work: WorkOpts[] = [];
   for (let i = 0; i < state.vehicles.length; i++) {
@@ -1985,6 +1994,9 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   if (player && !player.status) {
     player.status = player.busy ? "Working" : "In your seat";
   }
+  Ops.tick(state, opsBefore, dt, (v) => vehicleStats(v).capacity, (v) => {
+    if (v.cargo > 0.04) dropInFront(state, v, v.x, v.z);
+  }, (v) => (areaOf(v.x) === "river" ? RIVER_SPAWNS[0] : SPAWNS[0]));
   snapDeck(state);
   notePass(state);
   state.seconds += dt;
@@ -2811,7 +2823,25 @@ function areaHud(state: GameState) {
     deckLabel: deck.label,
     deckButton: deck.button,
     watching: state.watching,
+    opsLine: Ops.statusLine(state),
+    shop: Ops.shopButtons(state),
+    field: Ops.fieldButtons(state, opsCtx(state)),
+    records: Ops.recordsLines(state),
+    photo: Ops.ops(state).photo,
+    night: Ops.on(8) ? Ops.nightness(state.seconds) : 0,
   };
+}
+
+/** What the site-ops buttons need to know about the face in front of the player. */
+export function opsCtx(state: GameState) {
+  const v = state.vehicles[state.active];
+  const d = v ? faceNearPlayer(state, v) : null;
+  const nearIds = v ? state.deposits.filter((x) => x.kind === "vein" && sameArea(x, v) && distTo(v.x, v.z, x.x, x.z) < 40).map((x) => x.id) : [];
+  return { nearFace: d ? { id: d.id, ore: d.ore, hard: d.hard, tested: d.tested } : null, nearIds };
+}
+
+export function opsAction(state: GameState, id: string) {
+  return Ops.act(state, id, opsCtx(state));
 }
 
 function deckHud(state: GameState): { label: string; button: string | null } {

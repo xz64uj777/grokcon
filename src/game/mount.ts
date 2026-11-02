@@ -21,6 +21,7 @@ import {
   freshGame,
   loadTruck,
   repairVehicle,
+  opsAction,
   sellVehicle,
   setActive,
   setControlMode,
@@ -272,6 +273,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const msg = startBlast(state);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
+      push();
+    },
+    ops(id) {
+      const msg = opsAction(state, id);
+      if (msg) state.log.unshift(msg);
+      if (state.log.length > 5) state.log.length = 5;
+      if (id !== "photo") saveGame(books(), true);
       push();
     },
     repair(index) {

@@ -211,3 +211,8 @@
   cursor: pointer;
   min-height: 44px;
 }
+
+/* Photo mode: hide the whole HUD, keep only the scene and the Done button. */
+.photo-mode > *:not(:first-child):not(.photo-exit) {
+  display: none !important;
+}

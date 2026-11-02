@@ -213,3 +213,9 @@ It's built to stay smooth on a phone. On a strong phone like the Z Fold the game
 - Scenery lives in `src/game/scenery.ts` (looks only; walls still bump in the same places).
 - Screen shape (folded, unfolded, sideways) is handled in `src/components/mine-screen.tsx` and `src/styles.css`.
 - Save format is now version 2. Version 1 saves are upgraded when they load (in `src/game/save.ts`).
+
+---
+
+## Round 3 (site operations, rounds 1–11)
+
+All rules are in `src/game/ops.ts` with tests in `src/game/ops.test.ts`. Save format is now version 4; older saves load with nothing new bought and full tanks. Round 12 (high mountain mine) was skipped: it needs a whole new map. Preview builds for each round are in /workspace/ridge-ore-preview-r1 … r11 (`VITE_OPS_LEVEL=N`).

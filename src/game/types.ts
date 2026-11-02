@@ -1,5 +1,6 @@
 import type { Command, ToolState } from "@/game/controls";
 import type { Market } from "@/game/market";
+import type { Ops, OpsButton } from "@/game/ops";
 
 export type OreId = "dirt" | "iron" | "copper" | "gold" | "silver";
 
@@ -98,7 +99,9 @@ export type Blast = {
 };
 
 export type GameState = {
-  version: 3;
+  version: 4;
+  /** Round 3 site operations (fuel, tires, reputation, events...). */
+  ops: Ops;
   controlMode: ControlMode;
   market: Market;
   explosives: number;
@@ -256,6 +259,12 @@ export type HudModel = {
   deckButton: string | null;
   /** You stepped out. The crew is driving and the camera is only watching. */
   watching: boolean;
+  opsLine: string;
+  shop: OpsButton[];
+  field: OpsButton[];
+  records: string[];
+  photo: boolean;
+  night: number;
 };
 
 export type PriceRow = {
@@ -301,5 +310,6 @@ export type GameApi = {
   cycle: (dir: number) => void;
   downloadBooks: () => void;
   importBooks: (text: string) => boolean;
+  ops: (id: string) => void;
 };
 

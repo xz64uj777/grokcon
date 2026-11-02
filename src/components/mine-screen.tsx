@@ -92,8 +92,13 @@ export function MineScreen() {
   const playing = hud?.mode === "play";
 
   return (
-    <main className={`game-shell fixed inset-0 bg-bg text-fg ${hud?.twoSticks ? "twin-sticks" : ""}`} data-screen={screen} style={{ ["--pad-h" as string]: `${padH}px` }}>
+    <main className={`game-shell fixed inset-0 bg-bg text-fg ${hud?.twoSticks ? "twin-sticks" : ""} ${playing && hud?.photo ? "photo-mode" : ""}`} data-screen={screen} style={{ ["--pad-h" as string]: `${padH}px` }}>
       <div ref={worldRef} className="absolute inset-0" />
+      {playing && hud?.photo && (
+        <button type="button" className="photo-exit pointer-events-auto absolute right-3 bottom-3 z-30 h-11 min-w-11 border border-border bg-surface/80 px-4 font-display text-lg uppercase" onClick={() => apiRef.current?.ops("photo")}>
+          Done
+        </button>
+      )}
       {!playing && (
         <section className="pointer-events-auto absolute top-4 right-4 bottom-4 left-4 overflow-y-auto border border-border bg-surface p-5 md:right-auto md:bottom-auto md:left-10 md:w-96 md:p-8">
           <p className="font-display text-sm uppercase tracking-widest text-primary">Open pit</p>
@@ -318,11 +323,12 @@ export function MineScreen() {
               )}
               {hud.passLabel && <p className="text-xs text-cash">{hud.passLabel}</p>}
               {hud.bridgeLabel && !hud.bridgeLabel.endsWith("TOO HEAVY") && <p className="text-xs text-fg">{hud.bridgeLabel}</p>}
+              {hud.opsLine && <p className="text-xs leading-snug text-fg [overflow-wrap:anywhere]">{hud.opsLine}</p>}
               <div className="mt-1 h-1.5 bg-bg">
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
               <p className="hud-hint mt-1 text-xs leading-snug text-muted">{hud.hint}</p>
-              {hud.log[0] && <p className="hud-hint mt-0.5 truncate text-xs text-cash">{hud.log[0]}</p>}
+              {hud.log[0] && <p className="hud-hint mt-0.5 line-clamp-2 text-xs leading-snug text-cash">{hud.log[0]}</p>}
               {hud.blastInfo && (
                 <p className={`mt-1 border px-2 py-0.5 text-xs ${hud.canBlast ? "border-red-500 text-red-200" : "border-border text-muted"}`}>{hud.blastInfo}</p>
               )}
@@ -398,6 +404,9 @@ export function MineScreen() {
                 )}
                 {hud.canTest && <SmallBtn onClick={() => apiRef.current?.testHole()}>Test hole</SmallBtn>}
                 {hud.canBlast && <SmallBtn danger onClick={() => apiRef.current?.blast()}>Blast</SmallBtn>}
+                {hud.field.map((f) => (
+                  <SmallBtn key={f.id} onClick={() => apiRef.current?.ops(f.id)}>{f.label}</SmallBtn>
+                ))}
                 <button
                   type="button"
                   className="h-11 min-w-16 bg-primary px-4 font-display text-lg uppercase tracking-wide text-primary-fg"
@@ -425,6 +434,9 @@ export function MineScreen() {
               <div className="pointer-events-auto flex flex-col items-end gap-2">
                 {hud.canTest && <SmallBtn onClick={() => apiRef.current?.testHole()}>Test hole</SmallBtn>}
                 {hud.canBlast && <SmallBtn danger onClick={() => apiRef.current?.blast()}>Blast</SmallBtn>}
+                {hud.field.map((f) => (
+                  <SmallBtn key={f.id} onClick={() => apiRef.current?.ops(f.id)}>{f.label}</SmallBtn>
+                ))}
                 <button
                   type="button"
                   className="h-12 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
@@ -622,6 +634,27 @@ export function MineScreen() {
                     <p className="mt-2 text-sm leading-relaxed text-muted">
                       Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts (you get it back if you drive off before the charges are set). Each face can be blasted once a day. Hold still 10 seconds while the holes are drilled, then get every machine 22 m back.
                     </p>
+                  </article>
+                )}
+                {panel === "machines" && (hud.shop.length > 0 || hud.records.length > 0) && (
+                  <article className="border-b border-border py-4">
+                    <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Site</h2>
+                    {hud.opsLine && <p className="mt-2 text-sm text-muted">{hud.opsLine}</p>}
+                    {hud.shop.map((b) => (
+                      <div key={b.id} className="mt-3">
+                        <p className="text-sm leading-relaxed text-muted">{b.detail}</p>
+                        <button type="button" disabled={!b.enabled} className="mt-2 h-11 px-4 font-display text-lg uppercase tracking-wide bg-primary text-primary-fg disabled:opacity-40" onClick={() => apiRef.current?.ops(b.id)}>
+                          {b.label}
+                        </button>
+                      </div>
+                    ))}
+                    {hud.records.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-sm text-fg">
+                        {hud.records.map((r) => (
+                          <li key={r}>{r}</li>
+                        ))}
+                      </ul>
+                    )}
                   </article>
                 )}
                 {panel === "machines" &&

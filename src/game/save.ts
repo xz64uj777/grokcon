@@ -1,3 +1,4 @@
+import { PRICES as OPS_PRICES, applyRipped, readOps } from "@/game/ops";
 import { CLAIMS, DEFS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
 import { onHaulRoad } from "@/game/lowboy";
 import { WASH_PLANT, areaOf } from "@/game/river";
@@ -7,7 +8,7 @@ import { MARKET_KEYS, ensureLowboy, freshGame } from "@/game/sim";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
 
 /** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 const KEY = "ridge-ore.save";
 const BAK = "ridge-ore.save.bak";
@@ -34,8 +35,8 @@ function posZ(raw: unknown, rawX: unknown, fallback: number) {
 function sanitize(raw: unknown): GameState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (o.version !== 1 && o.version !== 2 && o.version !== 3) return null;
-  const v2 = o.version === 2 || o.version === 3;
+  if (o.version !== 1 && o.version !== 2 && o.version !== 3 && o.version !== 4) return null;
+  const v2 = o.version === 2 || o.version === 3 || o.version === 4;
   const company = typeof o.company === "string" && o.company.trim() ? o.company.trim().slice(0, 24) : "Ridge Ore Co.";
   const state = freshGame(company);
   state.cash = num(o.cash, state.cash, 0, 1e12);
@@ -228,6 +229,9 @@ function sanitize(raw: unknown): GameState | null {
   const live = new Set(state.vehicles.map((v) => v.uid));
   state.deck = Array.isArray(o.deck) ? o.deck.filter((id): id is string => typeof id === "string" && live.has(id)).slice(0, 2) : [];
   ensureLowboy(state);
+  // Version 4: site operations. Older saves start with nothing bought and full tanks.
+  state.ops = readOps(o.ops);
+  applyRipped(state);
   return state;
 }
 
@@ -276,6 +280,9 @@ export function bookWorth(state: GameState) {
   // Bought assets count at what they cost, on the same scale as cash, so spending
   // money on something never makes an older backup look richer.
   let assets = (state.sluice ? SLUICE.price : 0) + (state.washPlant ? WASH_PLANT.price : 0);
+  const o = state.ops;
+  if (o) assets += o.upkeep ?? 0;
+  if (o) for (const k of ["ramp", "scanner", "ripper", "screen", "lights", "fuelTruck"] as const) if (o[k]) assets += OPS_PRICES[k];
   for (const id of state.claims) assets += CLAIMS.find((c) => c.id === id)?.price ?? 0;
   for (const v of state.vehicles) {
     assets += DEFS[v.defId]?.price ?? 0;
@@ -369,6 +376,7 @@ function snapshot(state: GameState): GameState {
     contract: { ...state.contract },
     log: state.log.slice(0, 5),
     claims: [...state.claims],
+    ops: JSON.parse(JSON.stringify({ ...state.ops, photo: false })),
   };
 }
 

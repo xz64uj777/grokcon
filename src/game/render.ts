@@ -1,3 +1,4 @@
+import { nightness, on as onRound } from "@/game/ops";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
@@ -704,6 +705,27 @@ export function createWorld(host: HTMLElement): World {
   const dryBg = new THREE.Color(0xe2bd9a);
   const wetBg = new THREE.Color(0x9aa3a8);
   const tmpColor = new THREE.Color();
+  const nightBg = new THREE.Color(0x1b2233);
+  const lightRig = new THREE.PointLight(0xfff1d0, 0, 70, 1.6);
+  lightRig.position.set(0, 14, 0);
+  scene.add(lightRig);
+  /** Night falls over the last part of each day. Work lights (if bought) light the active machine's area. */
+  function applyNight(state: GameState) {
+    if (!onRound(8)) return;
+    const k = nightness(state.seconds);
+    if (k <= 0) {
+      lightRig.intensity = 0;
+      return;
+    }
+    hemi.intensity *= 1 - k * 0.78;
+    sun.intensity *= 1 - k * 0.9;
+    (scene.background as THREE.Color).lerp(nightBg, k * 0.85);
+    (scene.fog as THREE.Fog).color.lerp(nightBg, k * 0.85);
+    const v = state.vehicles[state.active];
+    const lit = state.ops?.lights;
+    lightRig.intensity = lit && v ? k * 900 : 0;
+    if (v) lightRig.position.set(v.x + 6, 14, v.z + 6);
+  }
   function updateWeather(intensity: number, dt: number) {
     const k = Math.max(0, Math.min(1, intensity));
     hemi.intensity = 1.6 - k * 0.55;
@@ -1093,6 +1115,7 @@ export function createWorld(host: HTMLElement): World {
     valley.update(dt, state.wet ?? 0, !!state.washPlant);
     washGroup.visible = !!state.washPlant;
     updateWeather(rainAt(state.market.seed, state.seconds), dt);
+    applyNight(state);
     sky.position.set(camera.position.x, 0, camera.position.z);
     renderer.render(scene, camera);
   }
