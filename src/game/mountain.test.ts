@@ -77,6 +77,7 @@ test("fix: summit mill pays near sluice price for gold, even with the sluice pre
   const { basePrice } = await import("@/game/sim");
   assert.equal(basePrice("gold", "mill", true), 285);
   const s = freshGame("T");
+  (s as any).ops.story = 99; // keep story payouts out of the sale math
   s.cash = 0;
   s.sluice = true;
   s.preferSluice = true;

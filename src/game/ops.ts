@@ -5,6 +5,7 @@
  */
 import type { GameState, OreId, PadKind, VehicleState } from "@/game/types";
 import { gradeAt } from "@/game/terrain";
+import * as C from "@/game/career";
 
 export const DAY = 300;
 
@@ -60,6 +61,11 @@ export type Ops = {
   upkeep: number;
   /** Fuel given on credit after a tow. Paid back from sales. */
   debt: number;
+  /** Round 14: machine wear 0..1 by uid, broken-down uids, story step, lot buys today. */
+  wear: Record<string, number>;
+  broke: string[];
+  story: number;
+  lotTaken: { day: number; ids: string[] };
 };
 
 export function freshOps(): Ops {
@@ -83,6 +89,10 @@ export function freshOps(): Ops {
     photo: false,
     upkeep: 0,
     debt: 0,
+    wear: {},
+    broke: [],
+    story: 0,
+    lotTaken: { day: -1, ids: [] },
   };
 }
 
@@ -115,6 +125,11 @@ export function readOps(raw: unknown): Ops {
   for (const k of Object.keys(o.records) as (keyof Ops["records"])[]) o.records[k] = n(rec[k], 0, 0, 1e12);
   o.upkeep = n(r.upkeep, 0, 0, 1e12);
   o.debt = n(r.debt, 0, 0, 1e9);
+  o.wear = numMap(r.wear, 0, 1);
+  o.broke = Array.isArray(r.broke) ? r.broke.filter((x): x is string => typeof x === "string") : [];
+  o.story = Math.floor(n(r.story, 0, 0, C.STORY.length));
+  const lt = (r.lotTaken ?? {}) as Record<string, unknown>;
+  o.lotTaken = { day: n(lt.day, -1, -1, 1e7), ids: Array.isArray(lt.ids) ? lt.ids.filter((x): x is string => typeof x === "string") : [] };
   o.nextInspect = n(r.nextInspect, 4, 0, 1e7);
   o.lastInspect = typeof r.lastInspect === "string" ? r.lastInspect.slice(0, 120) : "";
   return o;
@@ -206,6 +221,7 @@ export function saleMult(state: GameState, ore: OreId, pad: PadKind) {
   if (on(4)) m *= 1 + repLevel(o.rep) * 0.02;
   if (on(5) && o.event?.kind === "double" && o.event.ore === ore && o.event.day === state.market.day) m *= 2;
   if (on(6) && o.screen && pad === "wash") m *= 1.12;
+  if (pad === "wash" || pad === "sluice") m *= C.seasonWash(C.seasonOf(state.market.day));
   return m;
 }
 export function onSale(state: GameState, net: number, tons: number) {
@@ -287,6 +303,10 @@ export function newDay(state: GameState) {
   const o = ops(state);
   const day = state.market.day;
   o.records.today = 0;
+  if (day % C.SEASON_DAYS === 0) {
+    const se = C.seasonOf(day);
+    say(state, se === "rain" ? "Rain season: muddy ground, machines run slower." : se === "winter" ? "Winter: the sluice and wash plant half freeze." : "Summer: dry ground, full speed.");
+  }
   if (on(5)) {
     const uids = state.vehicles.filter((v) => !isPlant(v) && v.hired).map((v) => v.uid);
     o.event = rollEvent(state.market.seed, day, state.claims.length >= 4 || state.washPlant, uids);
@@ -354,7 +374,7 @@ export function tick(
     const player = i === state.active && !state.watching;
     let stop = "";
     if (on(9)) {
-      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1);
+      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * C.wearFuel(o.wear[v.uid] ?? 0) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1);
       o.fuel[v.uid] = Math.max(0, f);
       if (o.fuelTruck && o.fuel[v.uid] < 0.25) {
         const litres = (1 - o.fuel[v.uid]) * tankLitres(v);
@@ -368,7 +388,29 @@ export function tick(
       if (o.fuel[v.uid] <= 0 && player && state.cash < refuelCost(state, v)) rescue(state, v, yard(v));
       if (o.fuel[v.uid] <= 0) stop = "Out of fuel";
     }
+    if (!o.wear) o.wear = {};
+    if (!o.broke) o.broke = [];
+    const w = o.wear[v.uid] ?? 0;
+    const working = Math.abs(v.speed) > 0.3 || v.busy;
+    if (!stop && o.broke.includes(v.uid)) stop = "Broken down";
+    if (!stop) {
+      const cap = capacityOf(v);
+      const hard = (cap > 0 && v.cargo > cap * 0.6) || v.busy;
+      o.wear[v.uid] = Math.min(1, w + C.wearRate(hard, working) * dt);
+      if (working && Math.random() < C.breakChance(w) * dt) {
+        o.broke.push(v.uid);
+        stop = "Broken down";
+        say(state, `A worn ${v.defId} broke down. Overhaul it at the repair shop.`);
+      }
+    }
     const moved = Math.hypot(v.x - p.x, v.z - p.z);
+    if (!stop && moved > 0) {
+      const share = C.wearSpeed(w) * C.seasonSpeed(C.seasonOf(state.market.day));
+      if (share < 0.999) {
+        v.x = p.x + (v.x - p.x) * share;
+        v.z = p.z + (v.z - p.z) * share;
+      }
+    }
     if (stop) {
       v.x = p.x;
       v.z = p.z;
@@ -431,8 +473,24 @@ export function fieldButtons(state: GameState, ctx: Ctx): OpsButton[] {
   if (on(2) && o.scanner && ctx.nearFace) b.push({ id: "scan", label: "Scan", detail: "", enabled: true });
   if (on(7) && o.flat.includes(v.uid)) b.push({ id: "tires", label: `Tires ${money(tireCost(v))}`, detail: "", enabled: state.cash >= tireCost(v) });
   if (on(9) && !o.fuelTruck && (o.fuel[v.uid] ?? 1) < 0.5) b.push({ id: "fuel", label: `Fuel ${money(refuelCost(state, v))}`, detail: "", enabled: state.cash >= refuelCost(state, v) });
+  if (C.isWorker(v)) {
+    const w = (o.wear ?? {})[v.uid] ?? 0;
+    const broke = (o.broke ?? []).includes(v.uid);
+    if (broke || w > 0.25) {
+      const c = overhaulPrice(v, w);
+      b.push({ id: "overhaul", label: `${broke ? "Fix" : "Overhaul"} ${money(c)}`, detail: "", enabled: state.cash >= c });
+    }
+  }
   if (on(10)) b.push({ id: "photo", label: "Photo", detail: "", enabled: true });
   return b;
+}
+
+let priceOf: (v: VehicleState) => number = () => 20000;
+export function setPriceOf(f: (v: VehicleState) => number) {
+  priceOf = f;
+}
+export function overhaulPrice(v: VehicleState, w: number) {
+  return C.overhaulCost(priceOf(v), Math.max(w, 0.2));
 }
 
 export function refuelCost(state: GameState, v: VehicleState) {
@@ -501,6 +559,16 @@ export function act(state: GameState, id: string, ctx: Ctx): string {
     if (v.status === "Out of fuel") v.status = "";
     return `Tank filled. ${money(c)} with the delivery call-out.`;
   }
+  if (id === "overhaul") {
+    const c = overhaulPrice(v, o.wear[v.uid] ?? 0);
+    if (state.cash < c) return "Not enough cash.";
+    state.cash -= c;
+    o.upkeep += c;
+    o.wear[v.uid] = 0;
+    o.broke = o.broke.filter((u) => u !== v.uid);
+    if (v.status === "Broken down") v.status = "";
+    return `Repair shop overhauled it for ${money(c)}. Like new.`;
+  }
   if (id === "photo") {
     o.photo = !o.photo;
     return "";
@@ -534,7 +602,8 @@ export function applyRipped(state: GameState) {
 export function statusLine(state: GameState) {
   const o = ops(state);
   const v = state.vehicles[state.active];
-  const parts: string[] = [];
+  const parts: string[] = [C.seasonLabel(state.market.day)];
+  if (v && C.isWorker(v)) parts.push(o.broke?.includes(v.uid) ? "BROKEN" : `Wear ${Math.round(((o.wear ?? {})[v.uid] ?? 0) * 100)}%`);
   if (on(4)) parts.push(`Rep ${REP_NAMES[repLevel(o.rep)]}`);
   if (on(5) && o.event && o.event.day === state.market.day)
     parts.push(o.event.kind === "flood" ? bridgeClock(state) : o.event.kind === "double" ? `${o.event.ore} pays 2×` : "Breakdown today");

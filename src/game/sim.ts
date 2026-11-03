@@ -1,4 +1,5 @@
 import * as Ops from "@/game/ops";
+import * as Career from "@/game/career";
 import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
 import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
@@ -2190,6 +2191,8 @@ function notePass(state: GameState) {
   log(state, side === "river" ? "The pass opens into River Valley." : "The pass opens into Ridge pit.");
 }
 
+Ops.setPriceOf((v) => DEFS[v.defId]?.price ?? 20000);
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   if (!state.deck) state.deck = [];
   bindDeck(state);
@@ -2198,6 +2201,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   const dayBefore = state.market.day;
   const wasRaining = rainNow(state) > 0.05;
   state.wet = stepWet(state.wet, rainNow(state), dt);
+  if (Career.seasonOf(state.market.day) === "rain") state.wet = Math.max(state.wet, 0.5);
   if (advanceMarket(state.market, state.seconds, MARKET_KEYS)) log(state, "New day. Ore prices moved. Check the price board.");
   if (state.market.day !== dayBefore) Ops.newDay(state);
   const controls: Control[] = [];
@@ -2354,12 +2358,79 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   Ops.tick(state, opsBefore, dt, (v) => vehicleStats(v).capacity, (v) => {
     if (v.cargo > 0.04) dropInFront(state, v, v.x, v.z);
   }, (v) => (areaOf(v.x) === "mountain" ? MOUNTAIN_SPAWNS[0] : areaOf(v.x) === "river" ? RIVER_SPAWNS[0] : SPAWNS[0]));
+  storyTick(state);
   snapDeck(state);
   notePass(state);
   state.seconds += dt;
   const raining = rainNow(state) > 0.05;
   if (raining !== wasRaining) log(state, raining ? "Rain's coming in. The valley mud spreads and the low ground floods." : "Rain has stopped. The ground will dry out over a few minutes.");
   return { dig, sales, breaks, blasts };
+}
+
+function storyTick(state: GameState) {
+  const o = Ops.ops(state);
+  const st = o.story ?? 0;
+  const g = Career.STORY[st];
+  if (!g || !g.done(state, mountainOpen(state))) return;
+  o.story = st + 1;
+  state.cash += g.pay;
+  log(state, `Job done! +${formatMoney(g.pay)}. ${Career.storyText(o.story)}`);
+}
+
+function lotStock(state: GameState) {
+  const o = Ops.ops(state);
+  if (!o.lotTaken || o.lotTaken.day !== state.market.day) o.lotTaken = { day: state.market.day, ids: [] };
+  return Career.lotFor(state.market.seed, state.market.day, (id) => DEFS[id].price).filter((x) => !o.lotTaken.ids.includes(x.defId));
+}
+
+export function lotButtons(state: GameState) {
+  const out: { id: string; label: string; detail: string; enabled: boolean }[] = [];
+  const me = state.vehicles[state.active];
+  const trade = me && me.defId !== "lowboy" && me.defId !== "crusher" && state.vehicles.length > 1 ? Career.tradeValue(resale(me), Ops.ops(state).wear[me.uid] ?? 0) : 0;
+  for (const it of lotStock(state)) {
+    const name = DEFS[it.defId].name;
+    const blocked = canAdd(state, it.defId);
+    out.push({ id: `lot:${it.defId}`, label: `Used ${name} · ${formatMoney(it.price)}`, detail: `${Math.round(it.wear * 100)}% worn. Cheap, slower and thirstier until overhauled.${blocked ? " " + blocked : ""}`, enabled: !blocked && state.cash >= it.price });
+    if (trade && me.defId !== it.defId)
+      out.push({ id: `lottrade:${it.defId}`, label: `Trade ${DEFS[me.defId].name} for ${name}`, detail: `Lot gives ${formatMoney(trade)} for your machine.`, enabled: !canAdd(state, it.defId, me.defId) && state.cash + trade >= it.price });
+  }
+  return out;
+}
+
+function canAdd(state: GameState, id: VehicleId, leaving?: VehicleId) {
+  const count = state.vehicles.filter((v) => v.defId === id).length - (leaving === id ? 1 : 0);
+  if (id !== "skid" && count > 0) return "Already on the yard.";
+  if (id === "skid" && count >= 3) return "Yard limit.";
+  return "";
+}
+
+export function lotBuy(state: GameState, id: VehicleId, tradeIn: boolean) {
+  const it = lotStock(state).find((x) => x.defId === id);
+  if (!it) return "Gone from the lot.";
+  const o = Ops.ops(state);
+  let credit = 0;
+  if (tradeIn) {
+    const me = state.vehicles[state.active];
+    if (!me || me.defId === "lowboy" || me.defId === "crusher" || state.deck?.includes(me.uid) || state.vehicles.length <= 1) return "Can't trade this one.";
+    if (canAdd(state, id, me.defId)) return canAdd(state, id, me.defId);
+    credit = Career.tradeValue(resale(me), o.wear[me.uid] ?? 0);
+    if (state.cash + credit < it.price) return "Not enough cash.";
+    delete o.wear[me.uid];
+    state.vehicles.splice(state.active, 1);
+    state.active = Math.min(state.active, state.vehicles.length - 1);
+  } else {
+    if (canAdd(state, id)) return canAdd(state, id);
+    if (state.cash < it.price) return "Not enough cash.";
+  }
+  state.cash += credit - it.price;
+  state.tutorial.bought = true;
+  const nv = makeVehicle(id, state.vehicles.length);
+  if (currentArea(state) !== "ridge") placeInArea(state, nv, currentArea(state));
+  state.vehicles.push(nv);
+  o.wear[nv.uid] = it.wear;
+  o.lotTaken.ids.push(id);
+  log(state, `Used ${DEFS[id].name} on the yard for ${formatMoney(it.price)}${credit ? ` less ${formatMoney(credit)} trade-in` : ""}.`);
+  return "";
 }
 
 export function setControlMode(state: GameState, mode: ControlMode) {
@@ -2859,6 +2930,8 @@ function objective(state: GameState) {
   if (!t.loaded) return "Load iron into the claim truck.";
   if (!t.dumped) return "Sell the load at the crusher.";
   if (!t.bought) return "Open the yard office and buy a machine.";
+  const st = Ops.ops(state).story ?? 0;
+  if (st < Career.STORY.length) return `${Career.storyText(st)} Pays ${formatMoney(Career.STORY[st].pay)}.`;
   if (!owns(state, "skid") && !owns(state, "dozer") && !owns(state, "loader") && !owns(state, "excavator")) {
     return "Buy a skid steer and cut the iron face.";
   }
@@ -3273,7 +3346,7 @@ function areaHud(state: GameState) {
     deckButton: deck.button,
     watching: state.watching,
     opsLine: Ops.statusLine(state),
-    shop: Ops.shopButtons(state),
+    shop: [...Ops.shopButtons(state), ...lotButtons(state)],
     field: Ops.fieldButtons(state, opsCtx(state)),
     records: Ops.recordsLines(state),
     photo: Ops.ops(state).photo,
@@ -3290,6 +3363,8 @@ export function opsCtx(state: GameState) {
 }
 
 export function opsAction(state: GameState, id: string) {
+  if (id.startsWith("lot:")) return lotBuy(state, id.slice(4) as VehicleId, false);
+  if (id.startsWith("lottrade:")) return lotBuy(state, id.slice(9) as VehicleId, true);
   return Ops.act(state, id, opsCtx(state));
 }
 
