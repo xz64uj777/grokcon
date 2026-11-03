@@ -222,4 +222,38 @@ describe("river crew", () => {
     }
     assert.ok(dug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
   });
+
+  it("fills the dump and the heavy from the river bars instead of selling the bucket at the wash", () => {
+    const s = freshGame("Fill");
+    s.cash = 1e6;
+    s.claims = [1, 4, 5];
+    s.washPlant = true;
+    s.watching = true;
+    buyVehicle(s, "loader");
+    buyVehicle(s, "excavator");
+    buyVehicle(s, "truck");
+    buyVehicle(s, "heavy");
+    const bar = s.deposits.find((d) => d.id === "silver-bar")!;
+    const ex = s.vehicles.find((v) => v.defId === "excavator")!;
+    const loader = s.vehicles.find((v) => v.defId === "loader")!;
+    const truck = s.vehicles.find((v) => v.defId === "truck")!;
+    const heavy = s.vehicles.find((v) => v.defId === "heavy")!;
+    for (const v of [ex, loader, truck, heavy]) toggleCrew(s, s.vehicles.indexOf(v));
+    ex.x = bar.x;
+    ex.z = bar.z + 6;
+    ex.cargo = 3;
+    ex.cargoOre = "silver";
+    loader.x = bar.x + 6;
+    loader.z = bar.z;
+    loader.cargo = 7.6;
+    loader.cargoOre = "silver";
+    truck.x = bar.x - 12;
+    truck.z = bar.z + 4;
+    heavy.x = bar.x + 4;
+    heavy.z = bar.z - 12;
+    const input = { throttle: 0, steer: 0, action: false };
+    for (let i = 0; i < 30 * 20; i++) step(s, input, 1 / 30, false);
+    const hauled = truck.cargo + heavy.cargo;
+    assert.ok(hauled > 2, `truck ${truck.cargo.toFixed(1)} (${truck.status}) heavy ${heavy.cargo.toFixed(1)} (${heavy.status}) ex ${ex.status} loader ${loader.status}`);
+  });
 });

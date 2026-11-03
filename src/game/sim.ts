@@ -432,9 +432,12 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
     const room = vehicleStats(o).capacity - o.cargo;
     if (room < 0.4) continue;
     if (o.cargo > 0.15 && o.cargoOre && v.cargoOre && o.cargoOre !== v.cargoOre) continue;
+    // A heavy haul will not cross the river, so don't send a digger after one on the other bank.
+    if (o.defId === "heavy" && otherBank(v.x, o.x)) continue;
     const d = distTo(v.x, v.z, o.x, o.z);
-    if (d <= bestD) {
-      bestD = d;
+    const score = d + (otherBank(v.x, o.x) ? 80 : 0);
+    if (score <= bestD) {
+      bestD = score;
       best = o;
     }
   }
@@ -1058,9 +1061,9 @@ function aiControl(state: GameState, index: number): Control {
 
   const haulTarget = () => {
     if (!v.cargoOre) return;
-    const loaderLike = def.id === "loader";
-    if (loaderLike) {
-      const truck = nearestHauler(state, v, 70, true);
+    const loadsTrucks = def.id === "loader" || def.id === "excavator";
+    if (loadsTrucks) {
+      const truck = nearestHauler(state, v, 480, true);
       if (truck) {
         target = truck;
         arrive = 7.5;
@@ -1076,7 +1079,7 @@ function aiControl(state: GameState, index: number): Control {
     }
   };
 
-  const waitingTruck = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, 80, true) : null;
+  const waitingTruck = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, full ? 480 : 28, true) : null;
 
   if (def.push > 0) {
     const scoreVein = (d: Deposit) => {
@@ -1182,7 +1185,6 @@ function aiControl(state: GameState, index: number): Control {
         const o = state.vehicles[i];
         if (!(o.operator || i === state.active)) continue;
         if (o.defId !== "loader" && o.defId !== "excavator") continue;
-        if (o.cargo < 0.4) continue;
         if (v.defId === "heavy" && otherBank(v.x, o.x)) continue;
         const d = distTo(v.x, v.z, o.x, o.z);
         if (d < diggerD) {
@@ -1221,12 +1223,6 @@ function aiControl(state: GameState, index: number): Control {
         }
       }
       v.status = "Needs a payloader";
-      if (v.cargoOre && v.cargo >= Math.min(1.5, cap * 0.35)) haulTarget();
-      const truckHaul = target as { x: number; z: number } | null;
-      if (truckHaul) {
-        v.status = label;
-        return seek(v, truckHaul.x, truckHaul.z, arrive);
-      }
       const pile = bestPile(state, v);
       if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) return seek(v, pile.x, pile.z, Math.max(4, pile.radius * 0.5));
       return { ...ZERO };
@@ -1954,9 +1950,6 @@ function pourIntoTrucks(state: GameState) {
     // Hand-worked machines dump into the truck themselves.
     if (v.manual) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
-    // At a plant's feed pile the bucket goes into the hopper, not back into a truck.
-    const pad = nearestPad(state, v.x, v.z);
-    if (pad && FEED_PADS.has(pad.kind)) return;
     loadTruck(state, index, v.defId === "excavator" ? 16 : 22);
   });
 }
