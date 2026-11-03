@@ -315,7 +315,7 @@ export function tick(
     const player = i === state.active && !state.watching;
     let stop = "";
     if (on(9)) {
-      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt);
+      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1);
       o.fuel[v.uid] = Math.max(0, f);
       if (o.fuelTruck && o.fuel[v.uid] < 0.25) {
         const litres = (1 - o.fuel[v.uid]) * tankLitres(v);
@@ -362,6 +362,7 @@ export function shopButtons(state: GameState): OpsButton[] {
   const add = (r: number, id: keyof Ops, label: string, price: number, detail: string, extra = true) => {
     if (on(r) && !o[id] && extra) b.push({ id: `buy:${id}`, label: `${label} · ${money(price)}`, detail, enabled: state.cash >= price });
   };
+  add(1, "ramp", "Grade haul ramp", PRICES.ramp, "Graded haul. A loaded machine burns about a third less fuel.");
   add(2, "scanner", "Ore scanner", PRICES.scanner, "Scan nearby faces for free and spot gold or silver nuggets.");
   add(3, "ripper", "Dozer ripper", PRICES.ripper, "Rip hard rock with the dozer so it digs at normal speed. No blast needed.");
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);

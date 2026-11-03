@@ -550,7 +550,10 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: Vehicle
     // A bridge crossing is a price choice, not a long haul. Metres must not
     // talk a dump truck into the cheaper barge.
     const d = distTo(x, z, pad.x, pad.z);
-    const s = otherBank(x, pad.x) ? unit - 12 : unit - d * 0.55;
+    const cross = otherBank(x, pad.x);
+    // Crossing is only worth a better price. A long drive on this bank must not
+    // lose to the cheaper buyer on the other side, or the crew circles the bridge.
+    const s = cross ? unit - 30 : unit - Math.min(10, d * 0.06);
     if (s > score) {
       score = s;
       best = pad;
@@ -734,7 +737,7 @@ function driveFace(vein: Deposit) {
   } else if (vein.id === "east-rim") {
     x = Math.min(x, X0 + 82);
   }
-  return { x, z, reach: Math.max(cut.reach, 6) };
+  return { x, z, reach: cut.reach };
 }
 
 function workHere(v: VehicleState, x: number, z: number, radius: number): Control | null {
@@ -900,7 +903,7 @@ function aiControl(state: GameState, index: number): Control {
         return held;
       }
       v.status = `Heading to ${job}`;
-      return seek(v, cut.x, cut.z, 4);
+      return seek(v, cut.x, cut.z, 2.2);
     }
     if (v.cargo > 0.25 && v.cargoOre) haulTarget();
     else {
@@ -2000,7 +2003,9 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     if (v.operator && (state.watching || i !== state.active)) {
       const c = controls[i];
       const spinning = Math.abs(c.steer) > 0.75 && Math.abs(c.throttle) < 0.15 && Math.abs(v.speed) < 0.8;
-      if ((c.throttle > 0.45 && Math.abs(v.speed) < 0.45) || spinning) v.stuck += dt;
+      // A crawl with the throttle open counts too. The old bar was so high that an
+      // excavator pinned on a face never backed off, so it sat full and did nothing.
+      if ((c.throttle > 0.18 && Math.abs(v.speed) < 0.35) || spinning) v.stuck += dt;
       else v.stuck = 0;
       if (v.stuck > 1.25) {
         v.stuck = 0;

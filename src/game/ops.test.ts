@@ -178,3 +178,20 @@ test("fix: refuelling clears Out of fuel at once", () => {
   opsAction(s, "fuel");
   assert.equal(v.status, "");
 });
+
+test("graded haul ramp cuts fuel use on a loaded machine", () => {
+  const s = freshGame("T");
+  const v = s.vehicles[0];
+  v.cargo = 2;
+  v.speed = 3;
+  const burnFor = (ramp: boolean) => {
+    O.ops(s).ramp = ramp;
+    O.ops(s).fuel[v.uid] = 1;
+    O.tick(s, O.before(s), 30, () => 8, () => {});
+    return 1 - O.ops(s).fuel[v.uid];
+  };
+  const plain = burnFor(false);
+  const graded = burnFor(true);
+  assert.ok(plain > 0.01);
+  assert.ok(graded < plain * 0.75, `graded ${graded} plain ${plain}`);
+});

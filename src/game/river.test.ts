@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { passPeaks } from "./lowboy.ts";
+import { buyVehicle, freshGame, plannedPad, step, toggleCrew } from "./sim.ts";
 import {
   BRIDGE,
   RIVER,
@@ -176,5 +177,49 @@ describe("rain", () => {
     assert.ok(dry > 0.4 && dry < wet, `drying ${dry}`);
     for (let i = 0; i < 400; i++) dry = stepWet(dry, 0, 1);
     assert.equal(dry, 0);
+  });
+});
+
+describe("river crew", () => {
+  it("sells east-bank dirt at the rail, not the west barge", () => {
+    const s = freshGame("Dirt");
+    s.claims = [1, 4, 5];
+    s.washPlant = true;
+    const v = s.vehicles[0];
+    v.x = X0 + 40;
+    v.z = 20;
+    v.cargoOre = "dirt";
+    v.cargo = 2;
+    assert.equal(plannedPad(s, 0), "loadout");
+  });
+
+  it("a hired skid and excavator dig the river bars instead of sitting", () => {
+    const s = freshGame("Crew");
+    s.cash = 1e6;
+    s.claims = [1, 4, 5, 6, 7];
+    s.sluice = true;
+    s.preferSluice = true;
+    s.washPlant = true;
+    s.watching = true;
+    buyVehicle(s, "skid");
+    buyVehicle(s, "excavator");
+    for (const v of s.vehicles) {
+      if (v.defId !== "skid" && v.defId !== "excavator") continue;
+      v.x = X0 + 42;
+      v.z = 46;
+      toggleCrew(s, s.vehicles.indexOf(v));
+    }
+    const skid = s.vehicles.find((v) => v.defId === "skid")!;
+    const ex = s.vehicles.find((v) => v.defId === "excavator")!;
+    const input = { throttle: 0, steer: 0, action: false };
+    let dug = false;
+    for (let i = 0; i < 30 * 24; i++) {
+      step(s, input, 1 / 30, false);
+      if (skid.cargo > 0.4 && ex.cargo > 0.2) {
+        dug = true;
+        break;
+      }
+    }
+    assert.ok(dug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
   });
 });

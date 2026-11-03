@@ -630,8 +630,8 @@ export function createWorld(host: HTMLElement): World {
         mesh.userData.ore = true;
         const size = 0.16 + ((i * 5) % 7) * 0.03;
         const angle = i * 2.399963229728653;
-        const ring = 0.15 + Math.sqrt((i + 0.5) / count) * 1.55;
-        mesh.position.set(Math.cos(angle) * ring, size * 0.45, Math.sin(angle) * ring);
+        const ring = 0.2 + Math.sqrt((i + 0.5) / count) * 1.7;
+        mesh.position.set(Math.cos(angle) * ring * 0.45, size * 0.55, Math.sin(angle) * ring * 1.65);
         mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
         mesh.scale.set(size, size * 0.7, size * 0.9);
         mesh.castShadow = true;
@@ -1005,13 +1005,15 @@ export function createWorld(host: HTMLElement): World {
       const owned = state.claims.includes(d.claim);
       view.group.position.set(d.x, 0, d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
-      view.group.visible = d.tons > 0.15 || d.regen > 0;
+      view.group.visible = d.tons > 0.15 || d.regen > 0 || d.overburden > 0.2;
       if (d.kind === "vein" && view.cut) {
-        const dug = 1 - fullness;
+        const oreDug = 1 - fullness;
+        const cover = d.overburden > 0.2 ? Math.min(1, d.overburden / 36) : 0;
+        const dug = Math.min(1, oreDug * 0.85 + (1 - cover) * 0.45);
         view.group.position.set(d.x, 0, d.z);
         view.group.rotation.y = faceOf(d).yaw;
         view.group.scale.set(1, 1, 1);
-        if (Math.abs(dug - view.lastDug) > 0.02) {
+        if (Math.abs(dug - view.lastDug) > 0.012) {
           const next = carveFace(d, dug);
           view.cut.geometry.dispose();
           view.cut.geometry = next;
@@ -1026,7 +1028,7 @@ export function createWorld(host: HTMLElement): World {
         // dump look like the same tiny pile regardless of how much was unloaded.
         const loosePile = d.kind === "pile";
         const s = loosePile
-          ? Math.max(0.42, Math.min(2.6, 0.42 + Math.sqrt(Math.max(0, d.tons)) * 0.24))
+          ? Math.max(0.7, Math.min(3.4, 0.7 + Math.sqrt(Math.max(0, d.tons)) * 0.36))
           : 0.62 + fullness * 0.42;
         view.group.scale.setScalar(s);
         view.group.children.forEach((child) => {

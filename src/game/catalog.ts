@@ -53,8 +53,8 @@ export const BLOCKS: Block[] = [
   { id: "cliff-sw", x: X0 - 84, z: -44, sx: 10, sy: 14, sz: 52, kind: "cliff" },
   { id: "rim-wall", x: X0 + 88, z: -22, sx: 6, sy: 10, sz: 22, kind: "cliff" },
   { id: "camp-shed", x: X0 + 70, z: 60, sx: 14, sy: 4.5, sz: 7, kind: "building" },
-  { id: "v-rock-1", x: X0 - 34, z: -2, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
-  { id: "v-rock-2", x: X0 + 34, z: 4, sx: 5, sy: 2.6, sz: 4, kind: "rock" },
+  { id: "v-rock-1", x: X0 - 48, z: -58, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
+  { id: "v-rock-2", x: X0 + 58, z: -58, sx: 5, sy: 2.6, sz: 4, kind: "rock" },
   // ---- High mountain (x around X1): switchback bench walls, camp hut ----
   ...switchbackBlocks(),
   { id: "m-hut", x: X1 - 66, z: 58, sx: 12, sy: 4, sz: 6, kind: "building" },
