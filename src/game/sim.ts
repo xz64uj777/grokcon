@@ -1751,8 +1751,19 @@ function resolveCircle(state: GameState, v: VehicleState, radius: number) {
     const nx = dx / d;
     const nz = dz / d;
     const into = (-Math.sin(v.yaw) * nx - Math.cos(v.yaw) * nz) * Math.sign(v.speed);
-    if (into < -0.7) v.speed *= 0.82;
-    else if (into < 0) {
+    if (into < -0.7) {
+      v.speed *= 0.82;
+      // Head-on into a bench wall. Creep toward that wall's gap instead of sitting until unstick.
+      if (b.id.startsWith("bench-")) {
+        const gapX = b.id.endsWith("-w") ? b.x + hx : b.x - hx;
+        const toward = Math.sign(gapX - v.x) || 1;
+        const want = toward > 0 ? -Math.PI / 2 : Math.PI / 2;
+        let dy = want - v.yaw;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        v.yaw += Math.max(-0.12, Math.min(0.12, dy));
+      }
+    } else if (into < 0) {
       // Glancing contact: keep rolling and ease the nose round to run along the wall.
       v.speed *= 0.995;
       const tx = -nz;

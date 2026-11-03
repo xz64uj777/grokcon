@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, X1, benchAt, coldFactor, switchbackBlocks, switchbackWaypoint, SWITCHBACKS } from "@/game/mountain";
 import { areaOf } from "@/game/river";
 import { boundsFor, CLAIMS, PADS } from "@/game/catalog";
-import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy, toggleCrew } from "@/game/sim";
+import { buyClaim, buyVehicle, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy, toggleCrew } from "@/game/sim";
 import { X0 } from "@/game/river";
 import { bookWorth, readSaveText } from "@/game/save";
 
@@ -21,8 +21,43 @@ test("switchback walls each leave one gap, alternating sides", () => {
   const w = switchbackWaypoint(X1 - 40, 50, X1 - 40, -50)!;
   assert.equal(w.x, SWITCHBACKS[0].gapX);
   assert.equal(switchbackWaypoint(X1, 10, X1, 20), null);
+  const through = switchbackWaypoint(SWITCHBACKS[2].gapX, SWITCHBACKS[2].z + 5, X1 - 40, -50)!;
+  assert.equal(through.x, SWITCHBACKS[2].gapX);
+  assert.ok(through.z < SWITCHBACKS[2].z - 4, `turned early at ${through.z}`);
+  const along = switchbackWaypoint(X1 - 20, SWITCHBACKS[2].z + 5, X1 - 40, -50)!;
+  assert.ok(along.z > SWITCHBACKS[2].z, "a truck off the gap should stay off the last wall");
+  assert.ok(along.x > X1 - 20, "and slide toward the east gap");
   assert.equal(benchAt(50), 0);
   assert.equal(benchAt(-50), 3);
+});
+
+test("a dump truck takes the last gap up to summit gold instead of sitting on the wall", () => {
+  const s = freshGame("Gap");
+  s.cash = 1e6;
+  s.claims.push(4, 5, 6, 8);
+  s.watching = true;
+  assert.equal(buyVehicle(s, "truck"), "");
+  assert.equal(buyVehicle(s, "excavator"), "");
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  const ex = s.vehicles.find((v) => v.defId === "excavator")!;
+  toggleCrew(s, s.vehicles.indexOf(truck));
+  toggleCrew(s, s.vehicles.indexOf(ex));
+  const face = s.deposits.find((d) => d.id === "summit-gold")!;
+  ex.x = face.x;
+  ex.z = face.z + 6;
+  ex.cargo = 2;
+  ex.cargoOre = "gold";
+  const last = SWITCHBACKS[2];
+  truck.x = X1 - 8;
+  truck.z = last.z + 9;
+  truck.yaw = 0;
+  let stuck = 0;
+  for (let i = 0; i < 30 * 28; i++) {
+    step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+    if (truck.unstick > 0) stuck++;
+  }
+  assert.ok(truck.z < last.z - 6, `truck still on the wall at z=${(truck.z - last.z).toFixed(1)} x=${(truck.x - X1).toFixed(1)} ${truck.status}`);
+  assert.ok(stuck < 90, `backed off the wall for ${(stuck / 30).toFixed(1)}s`);
 });
 
 test("cold slows machines a bit, snow a bit more", () => {

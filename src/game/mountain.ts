@@ -55,10 +55,22 @@ export function switchbackBlocks() {
 export function switchbackWaypoint(x: number, z: number, tx: number, tz: number): { x: number; z: number } | null {
   const walls = z > tz ? [...SWITCHBACKS] : [...SWITCHBACKS].reverse();
   for (const w of walls) {
-    const between = (z - w.z) * (tz - w.z) < 0;
-    if (!between) continue;
-    if (Math.abs(x - w.gapX) < GAP_HALF - 3 && Math.abs(z - w.z) < 8) return null; // in the gap: go on through
-    return { x: w.gapX, z: w.z + (z > w.z ? 6 : -6) };
+    if ((z - w.z) * (tz - w.z) >= 0) continue;
+    const side = z > w.z ? 1 : -1;
+    // Stay near the middle. A dump truck that "lines up" on the edge still clips the corner.
+    const inLane = Math.abs(x - w.gapX) < GAP_HALF - 6;
+    if (inLane && (side > 0 ? z < w.z - 4 : z > w.z + 4)) continue;
+    const close = Math.abs(z - w.z) < 16;
+    if (close && !inLane) {
+      // Already on the wall, but not in the opening. Slide along it to the gap
+      // instead of turning into the rock the way the claim truck did.
+      const step = Math.sign(w.gapX - x) || 1;
+      return { x: x + step * 14, z: w.z + side * 12 };
+    }
+    // Lined up: go straight through before turning for the face. Turning at the
+    // mouth is what hung the truck on the last wall below Summit Gold.
+    const aimZ = inLane && close ? w.z - side * 10 : w.z + side * 12;
+    return { x: w.gapX, z: aimZ };
   }
   return null;
 }
