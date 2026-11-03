@@ -278,7 +278,6 @@ export function inspectIssues(state: GameState) {
   if (beat) issues.push(`${beat} badly damaged machine${beat > 1 ? "s" : ""}`);
   if (on(7) && o.flat.length) issues.push("running on flats");
   if (on(7) && state.vehicles.some((v) => onWheels(v) && (o.tread[v.uid] ?? 1) < 0.1)) issues.push("bald tires");
-  if (on(8) && !o.lights && state.vehicles.some((v) => v.hired)) issues.push("no work lights");
   return issues;
 }
 export function inspect(state: GameState) {
@@ -316,7 +315,6 @@ export function tick(
   yard: (v: VehicleState) => { x: number; z: number } = (v) => ({ x: v.x, z: v.z }),
 ) {
   const o = ops(state);
-  const night = on(8) && nightness(state.seconds) > 0.5;
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
     const p = prev.get(v.uid);
@@ -338,7 +336,6 @@ export function tick(
       if (o.fuel[v.uid] <= 0 && player && state.cash < refuelCost(state, v)) rescue(state, v, yard(v));
       if (o.fuel[v.uid] <= 0) stop = "Out of fuel";
     }
-    if (night && !o.lights && !player && v.hired) stop = stop || "Too dark to work (no lights)";
     const moved = Math.hypot(v.x - p.x, v.z - p.z);
     if (stop) {
       v.x = p.x;
@@ -389,7 +386,7 @@ export function shopButtons(state: GameState): OpsButton[] {
   add(2, "scanner", "Ore scanner", PRICES.scanner, "Scan nearby faces for free and spot gold or silver nuggets.");
   add(3, "ripper", "Dozer ripper", PRICES.ripper, "Rip hard rock with the dozer so it digs at normal speed. No blast needed.");
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);
-  add(8, "lights", "Work lights", PRICES.lights, "Light towers so the crew keeps working at night.");
+  add(8, "lights", "Work lights", PRICES.lights, "Light towers so you can see the pit at night. The crew works either way.");
   add(9, "fuelTruck", "Fuel truck", PRICES.fuelTruck, "Tops up every machine on site. You still pay for diesel.");
   return b;
 }

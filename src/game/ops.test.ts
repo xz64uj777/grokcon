@@ -88,7 +88,7 @@ test("R8 night is the last part of the day", () => {
   assert.equal(O.nightness(O.DAY * 1.1), 0);
 });
 
-test("R8/R9 hired crew stops in the dark without lights, and when the tank is empty", () => {
+test("R8/R9 hired crew keeps working in the dark, and stops when the tank is empty", () => {
   const s = freshGame("T");
   const v = s.vehicles[0];
   s.active = 1;
@@ -97,12 +97,14 @@ test("R8/R9 hired crew stops in the dark without lights, and when the tank is em
   const prev = O.before(s);
   v.x += 2;
   O.tick(s, prev, 0.016, () => 2, () => {});
-  assert.equal(v.x, prev.get(v.uid)!.x);
-  O.ops(s).lights = true;
+  assert.equal(v.x, prev.get(v.uid)!.x + 2);
+  assert.notEqual(v.status, "Too dark to work (no lights)");
   O.ops(s).fuel[v.uid] = 0;
+  const dry = O.before(s);
   v.x += 2;
-  O.tick(s, prev, 0.016, () => 2, () => {});
+  O.tick(s, dry, 0.016, () => 2, () => {});
   assert.equal(v.status, "Out of fuel");
+  assert.equal(v.x, dry.get(v.uid)!.x);
   s.cash = 1000;
   s.active = 0;
   assert.match(opsAction(s, "fuel"), /Tank filled/);
