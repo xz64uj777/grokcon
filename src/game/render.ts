@@ -4,7 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
-import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
+import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
 import { X1 } from "@/game/mountain";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
@@ -213,11 +213,14 @@ export function createWorld(host: HTMLElement): World {
   const linkShoulder = {
     minX: MOUNTAIN_ROAD.minX,
     maxX: MOUNTAIN_ROAD.maxX,
-    minZ: MOUNTAIN_ROAD.minZ - 16,
-    maxZ: MOUNTAIN_ROAD.maxZ + 16,
+    minZ: MOUNTAIN_ROAD.minZ - 70,
+    maxZ: MOUNTAIN_ROAD.maxZ + 70,
   };
   const linkCamp = { minX: X1 - 40, maxX: X1 + 56, minZ: 46, maxZ: 56 };
-  const dirtMat = std(0x8d7044, { roughness: 1 });
+  const dirtMat = std(0x9a907c, { roughness: 1 });
+  const snowMat = std(0xe7eef2, { roughness: 0.9, flatShading: true });
+  const pineMat = std(0x2c4a38, { roughness: 1, flatShading: true });
+  const rockMat = std(0x6e6a66, { roughness: 1, flatShading: true });
   for (const slab of [linkShoulder, MOUNTAIN_ROAD, MOUNTAIN_SPUR, linkCamp]) {
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(slab.maxX - slab.minX, slab.maxZ - slab.minZ)), slab === linkShoulder ? dirtMat : roadMat);
     mesh.rotation.x = -Math.PI / 2;
@@ -225,12 +228,55 @@ export function createWorld(host: HTMLElement): World {
     mesh.receiveShadow = true;
     mountainLink.add(mesh);
   }
-  const rockMat = std(0x6e6a66, { roughness: 1, flatShading: true });
-  for (let i = 0; i < 8; i++) {
-    const cone = new THREE.Mesh(track(new THREE.ConeGeometry(12, 26, 6)), rockMat);
-    cone.position.set(MOUNTAIN_ROAD.minX + 70 + i * 105, 13, i % 2 === 0 ? 148 : 52);
-    cone.castShadow = true;
-    mountainLink.add(cone);
+  const roadZ = (MOUNTAIN_ROAD.minZ + MOUNTAIN_ROAD.maxZ) / 2;
+  const pineGeo = track(new THREE.ConeGeometry(1.7, 7, 6));
+  const rockGeo = track(new THREE.DodecahedronGeometry(1, 0));
+  for (let i = 0, x = MOUNTAIN_ROAD.minX + 20; x < MOUNTAIN_ROAD.maxX - 16; i++, x += 26) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const z = roadZ + side * (28 + (i % 5) * 4);
+    if (!hillBlocksRoad(x, z, 2.2, 2.2)) {
+      const tree = new THREE.Mesh(pineGeo, pineMat);
+      tree.position.set(x, 3.5, z);
+      tree.castShadow = true;
+      mountainLink.add(tree);
+    }
+    if (i % 3 === 0) {
+      const rz = roadZ + side * (46 + (i % 4) * 5);
+      if (!hillBlocksRoad(x, rz, 5, 5)) {
+        const rock = new THREE.Mesh(rockGeo, rockMat);
+        rock.scale.set(3.2, 2.2, 2.6);
+        rock.position.set(x + 6, 1.3, rz);
+        rock.castShadow = true;
+        mountainLink.add(rock);
+      }
+    }
+    if (i % 4 === 0) {
+      const sz = roadZ - side * 34;
+      if (!hillBlocksRoad(x, sz, 4, 3)) {
+        const drift = new THREE.Mesh(track(new THREE.CircleGeometry(3.2, 6)), snowMat);
+        drift.rotation.x = -Math.PI / 2;
+        drift.position.set(x, 0.05, sz);
+        mountainLink.add(drift);
+      }
+    }
+  }
+  // The road runs between these. Their feet stay off the gravel, so the summit is a gap, not a mountain you drive through.
+  const gatePeaks = [
+    { x: MOUNTAIN_GATE_X - 6, z: roadZ + 40, r: 16, h: 36 },
+    { x: MOUNTAIN_GATE_X + 14, z: roadZ - 42, r: 18, h: 42 },
+    { x: MOUNTAIN_ROAD.maxX - 24, z: roadZ + 46, r: 20, h: 48 },
+    { x: MOUNTAIN_ROAD.maxX - 8, z: roadZ - 58, r: 14, h: 32 },
+  ];
+  for (const peak of gatePeaks) {
+    if (hillBlocksRoad(peak.x, peak.z, peak.r, peak.r)) continue;
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(track(new THREE.ConeGeometry(peak.r, peak.h, 6)), rockMat);
+    base.position.y = peak.h / 2;
+    const cap = new THREE.Mesh(track(new THREE.ConeGeometry(peak.r * 0.42, peak.h * 0.36, 6)), snowMat);
+    cap.position.y = peak.h * 0.78;
+    g.add(base, cap);
+    g.position.set(peak.x, 0, peak.z);
+    mountainLink.add(g);
   }
   const addSign = (text: string, x: number, z: number) => {
     const sprite = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(text, "#e6b325"), transparent: true, depthWrite: false, fog: false })));

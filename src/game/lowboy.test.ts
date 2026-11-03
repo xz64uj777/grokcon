@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, onMountainRoad, areaIn, spotsUsed, stepHitch } from "./lowboy.ts";
+import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, onMountainRoad, areaIn, spotsUsed, stepHitch, MOUNTAIN_GATE_X, MOUNTAIN_ROAD } from "./lowboy.ts";
 import { RIVER, X0 } from "./river.ts";
 import { X1 } from "./mountain.ts";
 
@@ -73,6 +73,18 @@ describe("north road", () => {
     assert.equal(areaIn(1200, 96), "river");
     assert.equal(areaIn(1600, 96), "mountain");
     assert.equal(areaIn(X1 - 40, 55), "mountain");
+  });
+
+  it("leaves a gap at the summit gate instead of a mountain on the gravel", () => {
+    const roadZ = (MOUNTAIN_ROAD.minZ + MOUNTAIN_ROAD.maxZ) / 2;
+    const peaks = [
+      { x: MOUNTAIN_GATE_X - 6, z: roadZ + 40, r: 16 },
+      { x: MOUNTAIN_GATE_X + 14, z: roadZ - 42, r: 18 },
+      { x: MOUNTAIN_ROAD.maxX - 24, z: roadZ + 46, r: 20 },
+      { x: MOUNTAIN_ROAD.maxX - 8, z: roadZ - 58, r: 14 },
+    ];
+    for (const peak of peaks) assert.equal(hillBlocksRoad(peak.x, peak.z, peak.r, peak.r), false);
+    assert.equal(hillBlocksRoad(MOUNTAIN_GATE_X, roadZ, 14, 14), true);
   });
 });
 

@@ -1,6 +1,7 @@
 /** High mountain scenery: snowy ground, switchback road, snow-capped bench walls, peaks and pines. Looks only. */
 import * as THREE from "three";
 import { drapeMesh, heightAt } from "@/game/terrain";
+import { hillBlocksRoad } from "@/game/lowboy";
 import { MILL, MOUNTAIN_BOUNDS as B, SWITCHBACKS, GAP_HALF, X1, switchbackBlocks } from "@/game/mountain";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
@@ -93,6 +94,8 @@ export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
     top.position.y = h * 0.82;
     g.add(base, top);
     g.position.set(X1 + Math.cos(a) * r, 0, Math.sin(a) * r * 0.9);
+    // The haul road comes in from the west. A peak whose foot sits on that gravel is a wall you drive through.
+    if (hillBlocksRoad(g.position.x, g.position.z, h * 0.85, h * 0.85)) continue;
     scene.add(g);
   }
   const pine = std(0x2f4a36, { roughness: 1, flatShading: true });
