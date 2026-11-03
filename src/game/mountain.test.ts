@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, X1, benchAt, coldFactor, switchbackBlocks, switchbackWaypoint, SWITCHBACKS } from "@/game/mountain";
 import { areaOf } from "@/game/river";
 import { boundsFor, CLAIMS, PADS } from "@/game/catalog";
-import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy } from "@/game/sim";
+import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy, toggleCrew } from "@/game/sim";
 import { X0 } from "@/game/river";
 import { bookWorth, readSaveText } from "@/game/save";
 
@@ -131,7 +131,7 @@ test("mountain faces show as a work source before the lowboy delivers the machin
   const card = buildHud(s, true).crew.find((c) => c.index === 0);
   assert.ok(card);
   assert.equal(card.area, "ridge");
-  assert.ok(card.sources.some((o) => o.value === "face:summit-gold" && o.label === "Summit Gold"));
+  assert.ok(card.sources.some((o) => o.value === "face:summit-gold" && o.label === "Summit Gold · High mountain"));
   assert.ok(card.sources.some((o) => o.value === "face:ice-copper"));
   assert.ok(card.sources.some((o) => o.value === "8"));
   v.workFace = "summit-gold";
@@ -168,4 +168,29 @@ test("the quarry road is signed once the lease is open, and closed until you pay
   assert.match(buildHud(s, true).passLabel, /summit gate/);
   for (let i = 0; i < 30; i++) step(s, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
   assert.ok(rig.x > 1400, `leased lowboy did not drive the quarry road, x=${rig.x}`);
+});
+
+test("a hired lowboy driver loads a machine assigned to another map", () => {
+  const s = freshGame("T");
+  s.cash = 5000;
+  s.claims.push(4, 5, 6, 8);
+  ensureLowboy(s);
+  const rig = s.vehicles.find((v) => v.defId === "lowboy")!;
+  const pickup = s.vehicles[0];
+  pickup.x = -8;
+  pickup.z = 44;
+  pickup.speed = 0;
+  rig.workFace = "map:mountain";
+  rig.x = -2;
+  rig.z = 44;
+  rig.yaw = Math.PI / 2;
+  s.watching = true;
+  assert.equal(toggleCrew(s, s.vehicles.indexOf(rig)), "");
+  assert.equal(rig.hired, true);
+  const rigCard = buildHud(s, true).crew.find((c) => c.name === "Lowboy");
+  assert.deepEqual(rigCard?.sources.map((o) => o.label), ["Ridge pit", "River Valley", "High mountain"]);
+  const home = buildHud(s, true).crew[0].sources.find((o) => o.value === "1");
+  assert.match(home?.label ?? "", /Ridge pit/);
+  for (let i = 0; i < 30 * 8; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+  assert.ok((s.deck ?? []).includes(pickup.uid), rig.status);
 });

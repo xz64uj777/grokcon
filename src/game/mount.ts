@@ -30,6 +30,9 @@ import {
   step,
   toggleCrew,
   toggleDeck,
+  valleyOpen,
+  mountainOpen,
+  areaName,
 } from "@/game/sim";
 import type { GameApi, GameState, Input, VehicleId, ViewModel } from "@/game/types";
 
@@ -199,7 +202,16 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (source == null || source === "any") {
         v.workClaim = null;
         v.workFace = null;
-        v.status = "Assigned to any leased source";
+        v.status = v.defId === "lowboy" ? "No haul set." : "Assigned to any leased source";
+      } else if (source.startsWith("map:")) {
+        const map = source.slice(4);
+        if (v.defId !== "lowboy") return;
+        if (map !== "ridge" && map !== "river" && map !== "mountain") return;
+        if (map === "river" && !valleyOpen(state)) return;
+        if (map === "mountain" && !mountainOpen(state)) return;
+        v.workFace = source;
+        v.workClaim = null;
+        v.status = `Hauling to ${areaName(map)}`;
       } else if (source.startsWith("face:")) {
         const face = state.deposits.find((d) => d.id === source.slice(5));
         if (!face || !state.claims.includes(face.claim)) return;

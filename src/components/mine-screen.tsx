@@ -735,14 +735,14 @@ export function MineScreen() {
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
-                        Work source
+                        {c.sources[0]?.value.startsWith("map:") ? "Haul to" : "Work source"}
                         <select
                           className="h-11 border border-border bg-surface px-3 text-fg"
                           value={c.workSource}
                           disabled={!c.operator && !c.active}
                           onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : e.target.value)}
                         >
-                          <option value="any">Any leased source</option>
+                          <option value="any">{c.sources[0]?.value.startsWith("map:") ? "No haul" : "Any leased source"}</option>
                           {c.sources.map((g) => (
                             <option key={g.value} value={g.value}>{g.label}</option>
                           ))}
