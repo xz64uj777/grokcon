@@ -677,7 +677,7 @@ export const CLAIMS = [
     id: MOUNTAIN_CLAIM,
     name: "High mountain",
     price: MOUNTAIN_CLAIM_PRICE,
-    blurb: "Rich gold and copper at the summit, iron on the scree. Cold, steep switchbacks; sell at the Summit mill by camp. Opens after a valley lease.",
+    blurb: "Rich gold and copper at the summit, iron on the scree. Cold, steep switchbacks; sell at the Summit mill by camp. Shows in Ground after the Valley quarry or East rim.",
   },
 ];
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, X1, benchAt, coldFactor, switchbackBlocks, switchbackWaypoint, SWITCHBACKS } from "@/game/mountain";
 import { areaOf } from "@/game/river";
 import { boundsFor, CLAIMS, PADS } from "@/game/catalog";
-import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step } from "@/game/sim";
+import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud } from "@/game/sim";
 import { bookWorth, readSaveText } from "@/game/save";
 
 test("mountain is its own area with its own bounds, lease and mill", () => {
@@ -39,6 +39,12 @@ test("mountain unlocks only after a valley lease, haul costs more, and it surviv
   s.claims.push(4, 5);
   assert.match(buyClaim(s, MOUNTAIN_CLAIM), /opens once/);
   s.claims.push(6);
+  const listed = buildHud(s, true).grounds.find((g) => g.id === MOUNTAIN_CLAIM);
+  assert.ok(listed);
+  assert.equal(listed.here, true);
+  assert.equal(listed.owned, false);
+  assert.equal(listed.priceLabel, "$150,000");
+  assert.equal(currentArea(s), "ridge");
   assert.equal(buyClaim(s, MOUNTAIN_CLAIM), "");
   const v = s.vehicles[0];
   v.x = 1000;

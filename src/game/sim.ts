@@ -2761,7 +2761,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     priceLabel: c.price === 0 ? "Included" : formatMoney(c.price),
     owned: ownsClaim(state, c.id),
     affordable: !ownsClaim(state, c.id) && state.cash >= c.price,
-    here: claimAreaOf(c.id) === here,
+    here: claimAreaOf(c.id) === here || c.id === MOUNTAIN_CLAIM,
     area: claimAreaOf(c.id),
   }));
   const savedBlurb = hadSave
