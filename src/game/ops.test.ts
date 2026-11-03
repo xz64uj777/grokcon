@@ -7,11 +7,9 @@ import type { VehicleState } from "@/game/types";
 
 const truck = (cargo: number, speed: number) => ({ defId: "truck", cargo, speed } as unknown as VehicleState);
 
-test("R1 loaded truck tips in a hard fast turn, not a gentle one; ramp adds margin", () => {
-  assert.equal(O.wouldTip(truck(10, 15), 0.6, 12, false), true);
-  assert.equal(O.wouldTip(truck(10, 15), 0.2, 12, false), false);
-  assert.equal(O.wouldTip(truck(2, 15), 0.6, 12, false), false);
-  assert.ok(O.tipLimit(1, true) > O.tipLimit(1, false));
+test("R1 a loaded truck does not roll, even in a hard fast turn", () => {
+  assert.equal(O.wouldTip(truck(10, 15), 0.6, 12, false), false);
+  assert.equal(O.wouldTip(truck(10, 15), 2, 12, false), false);
   assert.equal(O.wouldTip({ ...truck(10, 15), defId: "loader" } as VehicleState, 2, 12, false), false);
 });
 

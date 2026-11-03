@@ -3,7 +3,6 @@
  * reputation, daily events, screening, tires, night shifts, fuel, records and
  * the safety inspector. Pure rules plus small hooks the sim calls.
  */
-import { machineKind } from "@/game/controls";
 import type { GameState, OreId, PadKind, VehicleState } from "@/game/types";
 
 export const DAY = 300;
@@ -139,16 +138,10 @@ function hash(a: number, b: number, c = 0) {
 const isPlant = (v: VehicleState) => v.defId === "crusher";
 const onWheels = (v: VehicleState) => !isPlant(v) && v.defId !== "dozer" && v.defId !== "excavator";
 
-// ---- Round 1: tipping and ramps -------------------------------------------
-/** Sideways pull (m/s²) a loaded truck can take before it rolls. A graded ramp road gives more margin. */
-export function tipLimit(loadFrac: number, ramp: boolean) {
-  return (ramp ? 7.5 : 6) - loadFrac * 1.5;
-}
-export function wouldTip(v: VehicleState, yawRate: number, capacity: number, ramp: boolean) {
-  if (machineKind(v.defId) !== "truck" || capacity <= 0) return false;
-  const f = v.cargo / capacity;
-  if (f < 0.5) return false;
-  return Math.abs(v.speed * yawRate) > tipLimit(f, ramp);
+// ---- Round 1: tipping removed ------------------------------------------------
+/** Trucks used to roll on a fast loaded turn, dump the ore, and take damage. They don't anymore. */
+export function wouldTip(_v: VehicleState, _yawRate: number, _capacity: number, _ramp: boolean) {
+  return false;
 }
 
 // ---- Round 4: reputation ---------------------------------------------------
@@ -356,19 +349,6 @@ export function tick(
         v.status = "Flat tire";
       }
     }
-    if (on(1) && dt > 0) {
-      let dy = v.yaw - p.yaw;
-      while (dy > Math.PI) dy -= Math.PI * 2;
-      while (dy < -Math.PI) dy += Math.PI * 2;
-      if (wouldTip(v, dy / dt, capacityOf(v), o.ramp)) {
-        dropLoad(v);
-        v.speed = 0;
-        v.damage = Math.min(1, v.damage + 0.2);
-        o.records.tips += 1;
-        v.status = "Tipped over";
-        say(state, "Truck rolled on its side in a fast loaded turn. Load lost, cab damaged. Slow down for turns.");
-      }
-    }
   }
 }
 
@@ -382,7 +362,6 @@ export function shopButtons(state: GameState): OpsButton[] {
   const add = (r: number, id: keyof Ops, label: string, price: number, detail: string, extra = true) => {
     if (on(r) && !o[id] && extra) b.push({ id: `buy:${id}`, label: `${label} · ${money(price)}`, detail, enabled: state.cash >= price });
   };
-  add(1, "ramp", "Grade haul ramp", PRICES.ramp, "Gentler pit ramp. Loaded trucks are less likely to roll in turns.");
   add(2, "scanner", "Ore scanner", PRICES.scanner, "Scan nearby faces for free and spot gold or silver nuggets.");
   add(3, "ripper", "Dozer ripper", PRICES.ripper, "Rip hard rock with the dozer so it digs at normal speed. No blast needed.");
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);
