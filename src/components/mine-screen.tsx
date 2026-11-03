@@ -654,7 +654,7 @@ export function MineScreen() {
                   <article className="border-b border-border py-4">
                     <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Blasting</h2>
                     <p className="mt-2 text-sm leading-relaxed text-muted">
-                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts (you get it back if you drive off before the charges are set). Each face can be blasted once a day. Hold still 12 seconds while the drill rig bores the holes and the crew charges them, then get every machine 22 m back.
+                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts. Each face can be blasted once a day. The drill rig stays on the face. You can drive off as soon as it starts. Get every machine 22 m back before the charges go. You have about 26 seconds.
                     </p>
                   </article>
                 )}

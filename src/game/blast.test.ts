@@ -55,7 +55,7 @@ describe("valley blasts", () => {
     player.z = face.z;
     player.speed = 0;
     assert.equal(startBlast(state), "");
-    for (let i = 0; i < 80; i++) step(state, ZERO, 0.25, true);
+    for (let i = 0; i < 120; i++) step(state, ZERO, 0.25, true);
     assert.equal(state.blast, null);
     const pile = state.deposits.find((d) => d.kind === "pile" && d.ore === "copper" && d.x > 500);
     assert.ok(pile, "quarry blast should leave a copper pile in the valley");
@@ -86,7 +86,7 @@ describe("valley blasts", () => {
     assert.ok(Math.hypot(escape.x - face.x, escape.z - face.z) > BLAST_RADIUS);
 
     assert.equal(startBlast(state), "");
-    for (let i = 0; i < 90; i++) step(state, ZERO, 0.25, true);
+    for (let i = 0; i < 130; i++) step(state, ZERO, 0.25, true);
     assert.equal(state.blast, null);
     assert.equal(crew.damage, 0);
     assert.ok(Math.hypot(crew.x - face.x, crew.z - face.z) >= BLAST_RADIUS);
@@ -108,13 +108,34 @@ describe("valley blasts", () => {
     truck.operator = true;
     truck.speed = 8;
     assert.equal(startBlast(state), "");
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 130; i++) {
       step(state, ZERO, 0.25, true);
       if (!state.blast) break;
     }
     assert.equal(state.blast, null);
     assert.equal(truck.damage, 0, `truck took ${Math.round((truck.damage ?? 0) * 100)}% and would need a repair`);
     assert.ok(Math.hypot(truck.x - face.x, truck.z - face.z) > BLAST_RADIUS, truck.status);
+  });
+
+  it("keeps drilling after you drive off", () => {
+    const state = freshGame("Leave");
+    state.cash = 5000;
+    state.claims = [1, 5, 6];
+    const quarry = state.deposits.find((d) => d.id === "quarry");
+    assert.ok(quarry);
+    const face = faceOf(quarry);
+    const player = state.vehicles[0];
+    player.x = face.x;
+    player.z = face.z;
+    assert.equal(startBlast(state), "");
+    player.x = face.x + 40;
+    player.speed = 4;
+    for (let i = 0; i < 16; i++) step(state, { throttle: 1, steer: 0, action: false }, 0.25, true);
+    assert.ok(state.blast, "driving off should not call off the blast");
+    assert.equal(state.blast.phase, "drill");
+    for (let i = 0; i < 120; i++) step(state, ZERO, 0.25, true);
+    assert.equal(state.blast, null);
+    assert.equal(player.damage ?? 0, 0);
   });
 
   it("prices a silver contract off the crusher until the wash plant exists", () => {

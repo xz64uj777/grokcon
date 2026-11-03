@@ -33,7 +33,8 @@ export const BLAST_COST = 750;
 /** Drill rig bores the holes (first 8 s), then the crew charges them (last 4 s). */
 export const DRILL_SECONDS = 12;
 export const BORE_SECONDS = 8;
-export const FUSE_SECONDS = 6;
+/** Time to get clear after the charges are set. Long enough to drive a loaded truck out. */
+export const FUSE_SECONDS = 14;
 export const MIN_PURITY = 0.3;
 
 export type CutResult = {

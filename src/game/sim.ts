@@ -1986,21 +1986,13 @@ function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
     return;
   }
   if (b.phase === "drill") {
-    const v = state.vehicles[state.active];
-    const f = faceOf(d);
-    if (!v || distTo(v.x, v.z, f.x, f.z) > f.reach + 8) {
-      state.blast = null;
-      refundBlast(state, b, d);
-      log(state, "Drilling stopped. The blast is called off and you got your money back.");
-      return;
-    }
     const wasBoring = b.t < BORE_SECONDS;
-    if (Math.abs(v.speed) < 0.5) b.t += dt;
-    if (wasBoring && b.t >= BORE_SECONDS) log(state, `Holes bored in ${d.sign}. Charging them now.`);
+    b.t += dt;
+    if (wasBoring && b.t >= BORE_SECONDS) log(state, `Holes bored in ${d.sign}. Charging them now. Keep moving back.`);
     if (b.t >= DRILL_SECONDS) {
       b.phase = "fuse";
       b.t = FUSE_SECONDS;
-      log(state, `Charges set in ${d.sign}. Get every machine back ${BLAST_RADIUS} m!`);
+      log(state, `Charges set in ${d.sign}. ${FUSE_SECONDS} seconds. Get every machine back ${BLAST_RADIUS} m.`);
     }
     return;
   }
@@ -2467,12 +2459,6 @@ export function drillTestHole(state: GameState) {
   return "";
 }
 
-function refundBlast(state: GameState, b: NonNullable<GameState["blast"]>, d: Deposit | undefined) {
-  if (b.paid > 0) state.cash += b.paid;
-  else state.explosives += 1;
-  if (d) d.lastBlastDay = -1;
-}
-
 export function blastPrice() {
   return BLAST_COST;
 }
@@ -2495,7 +2481,7 @@ export function startBlast(state: GameState) {
   d.lastBlastDay = state.market.day;
   const f = faceOf(d);
   state.blast = { deposit: d.id, x: f.x, z: f.z, phase: "drill", t: 0, paid };
-  log(state, `Drilling blast holes in ${d.sign}. Hold still for ${DRILL_SECONDS} seconds. Other machines are pulling back.`);
+  log(state, `Drilling blast holes in ${d.sign}. The rig stays put. Drive clear. You have ${DRILL_SECONDS + FUSE_SECONDS} seconds.`);
   return "";
 }
 
@@ -3089,8 +3075,8 @@ function blastLabel(state: GameState) {
   if (!b) return "";
   if (b.phase === "drill")
     return b.t < BORE_SECONDS
-      ? `Drill rig boring holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`
-      : `Charging the holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`;
+      ? `Drill rig boring holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. You can move.`
+      : `Charging the holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Get back.`;
   const v = state.vehicles[state.active];
   const far = v ? distTo(v.x, v.z, b.x, b.z) : 99;
   return `BLAST IN ${Math.ceil(b.t)} · you are ${far.toFixed(0)} m away${far < BLAST_RADIUS ? ` · GET BACK ${BLAST_RADIUS} m!` : " · safe"}`;
