@@ -325,6 +325,7 @@ export function MineScreen() {
                 </p>
               )}
               {hud.passLabel && <p className="text-xs text-cash">{hud.passLabel}</p>}
+              {hud.routeLabel && <p className="text-xs text-cash">{hud.routeLabel}</p>}
               {hud.bridgeLabel && !hud.bridgeLabel.endsWith("TOO HEAVY") && <p className="text-xs text-fg">{hud.bridgeLabel}</p>}
               {hud.opsLine && <p className="text-xs leading-snug text-fg [overflow-wrap:anywhere]">{hud.opsLine}</p>}
               <div className="mt-1 h-1.5 bg-bg">

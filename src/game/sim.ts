@@ -60,7 +60,7 @@ import {
   type Gesture,
 } from "@/game/controls";
 import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
-import { AXLE_BACK, HITCH_Z, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, spotsUsed, stepHitch } from "@/game/lowboy";
+import { AXLE_BACK, HITCH_Z, MOUNTAIN_GATE_X, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, onMountainRoad, spotsUsed, stepHitch } from "@/game/lowboy";
 import {
   BLAST_RADIUS,
   BLAST_COST,
@@ -1437,7 +1437,7 @@ function clampLowboy(v: VehicleState) {
   }
 }
 
-function resolveCircle(v: VehicleState, radius: number) {
+function resolveCircle(state: GameState, v: VehicleState, radius: number) {
   for (const b of BLOCKS) {
     // A machine whose middle is on the deck overhangs the water. Don't shove it back into a crawl.
     if (b.kind === "water" && (onBridge(v.x, v.z) || bridgeLane(v.x, v.z))) continue;
@@ -1491,6 +1491,20 @@ function resolveCircle(v: VehicleState, radius: number) {
     }
   }
   if (aboard(v)) return;
+  if (onMountainRoad(v.x, v.z) && !mountainOpen(state)) {
+    v.x = X0 + 70;
+    v.z = Math.max(90, Math.min(104, v.z));
+    v.speed = 0;
+    v.status = "Lease the High mountain to open this road";
+    return;
+  }
+  if (onMountainRoad(v.x, v.z) && v.defId !== "lowboy") {
+    v.x = X0 + 70;
+    v.z = 64;
+    v.speed = 0;
+    v.status = "The mountain road is for the lowboy";
+    return;
+  }
   if (v.defId === "lowboy" && (onHaulRoad(v.x, v.z) || v.z > 64)) {
     clampLowboy(v);
     return;
@@ -1863,11 +1877,16 @@ function blastEvacuationControl(state: GameState, index: number): Control | null
 
 const passSide = new WeakMap<GameState, AreaId>();
 const summitSeen = new WeakSet<GameState>();
+const mountainGateSeen = new WeakSet<GameState>();
 
 /** Announce the map change at the valley gate, with a little deadband so reversing across it stays quiet. */
 function notePass(state: GameState) {
   const v = state.vehicles[state.active];
   if (!v || !onHaulRoad(v.x, v.z)) return;
+  if (onMountainRoad(v.x, v.z) && v.x >= MOUNTAIN_GATE_X && !mountainGateSeen.has(state)) {
+    mountainGateSeen.add(state);
+    log(state, "Summit gate. The quarry road drops south into High mountain.");
+  }
   if (!summitSeen.has(state) && Math.abs(v.x - PASS_SUMMIT_X) < 12) {
     summitSeen.add(state);
     log(state, "You're over the pass summit. The road falls away to the valley.");
@@ -1980,7 +1999,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   const rigPrev = rigBefore ? { x: rigBefore.x, z: rigBefore.z, yaw: rigBefore.yaw } : null;
   for (let n = 0; n < 2; n++) {
     state.vehicles.forEach((v, i) => {
-      resolveCircle(v, vehicleStats(v).radius);
+      resolveCircle(state, v, vehicleStats(v).radius);
       guardBridge(state, v, i);
     });
     resolveVehicles(state);
@@ -2868,17 +2887,32 @@ function areaHud(state: GameState) {
       : `Bridge ${BRIDGE.limit} t limit · you weigh ${t.toFixed(0)} t · TOO HEAVY`;
   }
   const onRoad = !!v && onHaulRoad(v.x, v.z);
+  const onMountain = !!v && onMountainRoad(v.x, v.z);
   const deck = deckHud(state);
-  const passLabel =
-    onRoad && v
-      ? area === "river"
-        ? `${Math.max(0, Math.round(v.x))} m back to Ridge pit`
-        : `${Math.max(0, Math.round(VALLEY_GATE_X - v.x))} m to River Valley`
-      : "";
+  const passLabel = !v
+    ? ""
+    : onMountain
+      ? v.x < MOUNTAIN_GATE_X
+        ? `${Math.max(0, Math.round(MOUNTAIN_GATE_X - v.x))} m to the summit gate`
+        : v.x < X1 - 70
+          ? `${Math.max(0, Math.round(X1 - 50 - v.x))} m to the quarry road`
+          : "Quarry road · south to the faces"
+      : onRoad
+        ? area === "river"
+          ? `${Math.max(0, Math.round(v.x))} m back to Ridge pit`
+          : `${Math.max(0, Math.round(VALLEY_GATE_X - v.x))} m to River Valley`
+        : "";
+  const routeLabel =
+    mountainOpen(state) && area !== "mountain" && !onMountain
+      ? "High mountain quarry: lowboy, north road, then east past River Valley."
+      : mountainUnlockable(state) && !mountainOpen(state) && area === "river"
+        ? "High mountain road leaves the north road east of camp. Lease it in Ground."
+        : "";
   return {
     area,
     areaName: onRoad ? "North road" : areaName(area),
     passLabel,
+    routeLabel,
     officeTitle: onRoad ? "Yard office" : area === "mountain" ? "Mountain office" : area === "river" ? "Valley office" : "Ridge office",
     valleyOpen: open,
     mountainOpen: mountainOpen(state),

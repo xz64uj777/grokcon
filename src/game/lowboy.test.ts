@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, spotsUsed, stepHitch } from "./lowboy.ts";
-import { RIVER } from "./river.ts";
+import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, onMountainRoad, areaIn, spotsUsed, stepHitch } from "./lowboy.ts";
+import { RIVER, X0 } from "./river.ts";
+import { X1 } from "./mountain.ts";
 
 describe("lowboy deck space", () => {
   it("gives small machines one spot and big machines the whole deck", () => {
@@ -59,6 +60,19 @@ describe("north road", () => {
     assert.equal(blockRoadGate("truck", 400, 96), true);
     assert.equal(blockRoadGate("lowboy", 400, 96), false);
     assert.equal(blockRoadGate("pickup", 0, 50), false);
+    assert.equal(blockRoadGate("skid", 1600, 96), true);
+    assert.equal(blockRoadGate("lowboy", 1600, 96), false);
+  });
+
+  it("continues east to the mountain quarry once you are on that gravel", () => {
+    assert.equal(onMountainRoad(X0 + 90, 96), true);
+    assert.equal(onMountainRoad(1600, 96), true);
+    assert.equal(onMountainRoad(X1 - 40, 80), true);
+    assert.equal(onHaulRoad(1600, 96), true);
+    assert.equal(onMountainRoad(X0 + 40, 44), false);
+    assert.equal(areaIn(1200, 96), "river");
+    assert.equal(areaIn(1600, 96), "mountain");
+    assert.equal(areaIn(X1 - 40, 55), "mountain");
   });
 });
 

@@ -4,6 +4,7 @@
  */
 
 import { RIVER, X0, areaOf, type AreaId } from "@/game/river";
+import { X1 } from "@/game/mountain";
 
 export const DECK_SPOTS = 3;
 
@@ -37,6 +38,13 @@ export const RIDGE_SPUR = { minX: -16, maxX: 16, minZ: 58, maxZ: 108 };
 /** Drop into the valley camp. Does not cross the river. */
 export const VALLEY_SPUR = { minX: X0 + 24, maxX: X0 + 64, minZ: 48, maxZ: 108 };
 
+/** East of the valley, same gravel, up to the mountain camp. Shown once the lease is open. */
+export const MOUNTAIN_ROAD = { minX: X0 + 78, maxX: X1 - 36, minZ: 86, maxZ: 108 };
+/** Drops off that road to the edge of the mountain camp. The camp itself stays open ground. */
+export const MOUNTAIN_SPUR = { minX: X1 - 58, maxX: X1 - 18, minZ: 72, maxZ: 108 };
+/** Past this the mountain road counts as High mountain, not River Valley. */
+export const MOUNTAIN_GATE_X = 1500;
+
 export const RIDGE_YARD = { minX: -40, maxX: 36, minZ: 28, maxZ: 66 };
 export const VALLEY_CAMP = { x: X0 + 46, z: 44, r: 24 };
 
@@ -48,7 +56,7 @@ function inBox(p: Point, b: { minX: number; maxX: number; minZ: number; maxZ: nu
 
 /** A hill footprint (center plus radii) sitting on the marked north road. */
 export function hillBlocksRoad(x: number, z: number, rx: number, rz: number) {
-  const boxes = [HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR];
+  const boxes = [HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR, MOUNTAIN_ROAD, MOUNTAIN_SPUR];
   return boxes.some((b) => x + rx > b.minX - 8 && x - rx < b.maxX + 8 && z + rz > b.minZ - 4 && z - rz < b.maxZ + 6);
 }
 
@@ -83,9 +91,14 @@ function coversRiver(peak: PassPeak) {
   return dx * dx + dz * dz < 1;
 }
 
+export function onMountainRoad(x: number, z: number) {
+  const p = { x, z };
+  return inBox(p, MOUNTAIN_ROAD) || inBox(p, MOUNTAIN_SPUR);
+}
+
 export function onHaulRoad(x: number, z: number) {
   const p = { x, z };
-  return inBox(p, HAUL_ROAD) || inBox(p, RIDGE_SPUR) || inBox(p, VALLEY_SPUR);
+  return inBox(p, HAUL_ROAD) || inBox(p, RIDGE_SPUR) || inBox(p, VALLEY_SPUR) || onMountainRoad(x, z);
 }
 
 /** Where the pass turns off the ridge and drops into the valley camp. */
@@ -99,6 +112,7 @@ export const PASS_SUMMIT_X = Math.round(VALLEY_GATE_X / 2);
  * an empty gravel road.
  */
 export function areaIn(x: number, z: number): AreaId {
+  if (onMountainRoad(x, z)) return x >= MOUNTAIN_GATE_X ? "mountain" : "river";
   if (onHaulRoad(x, z)) return x >= VALLEY_GATE_X ? "river" : "ridge";
   return areaOf(x);
 }
@@ -114,6 +128,7 @@ export function blockRoadGate(defId: string, x: number, z: number) {
   if (inBox({ x, z }, RIDGE_SPUR) && z > 64) return true;
   if (inBox({ x, z }, VALLEY_SPUR) && z > 70) return true;
   if (inBox({ x, z }, HAUL_ROAD)) return true;
+  if (onMountainRoad(x, z)) return true;
   return false;
 }
 

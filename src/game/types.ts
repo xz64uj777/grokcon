@@ -241,6 +241,8 @@ export type HudModel = {
   areaName: string;
   /** Distance readout while on the north road, e.g. "824 m to River Valley". */
   passLabel: string;
+  /** Where the mountain quarry road is, once that lease is open. */
+  routeLabel: string;
   officeTitle: string;
   /** River Valley is open (Deep bench owned). */
   valleyOpen: boolean;

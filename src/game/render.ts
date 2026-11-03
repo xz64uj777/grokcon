@@ -3,12 +3,13 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
-import { DECK_Y, HAUL_ROAD, HITCH_Z, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
+import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR } from "@/game/lowboy";
+import { X1 } from "@/game/mountain";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import { buildMountain } from "@/game/mountain-scene";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
-import { faceOf, vehicleStats } from "@/game/sim";
+import { faceOf, mountainOpen, mountainUnlockable, vehicleStats } from "@/game/sim";
 
 const CAMS = [14, 20, 28];
 
@@ -203,6 +204,40 @@ export function createWorld(host: HTMLElement): World {
   gateSign.position.set(VALLEY_GATE_X, 5, 118);
   gateSign.scale.set(9, 3.2, 1);
   scene.add(gateSign);
+  const mountainLink = new THREE.Group();
+  mountainLink.visible = false;
+  scene.add(mountainLink);
+  const linkShoulder = {
+    minX: MOUNTAIN_ROAD.minX,
+    maxX: MOUNTAIN_ROAD.maxX,
+    minZ: MOUNTAIN_ROAD.minZ - 16,
+    maxZ: MOUNTAIN_ROAD.maxZ + 16,
+  };
+  const linkCamp = { minX: X1 - 40, maxX: X1 + 56, minZ: 46, maxZ: 56 };
+  const dirtMat = std(0x8d7044, { roughness: 1 });
+  for (const slab of [linkShoulder, MOUNTAIN_ROAD, MOUNTAIN_SPUR, linkCamp]) {
+    const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(slab.maxX - slab.minX, slab.maxZ - slab.minZ)), slab === linkShoulder ? dirtMat : roadMat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set((slab.minX + slab.maxX) / 2, slab === linkShoulder ? 0.02 : 0.046, (slab.minZ + slab.maxZ) / 2);
+    mesh.receiveShadow = true;
+    mountainLink.add(mesh);
+  }
+  const rockMat = std(0x6e6a66, { roughness: 1, flatShading: true });
+  for (let i = 0; i < 8; i++) {
+    const cone = new THREE.Mesh(track(new THREE.ConeGeometry(12, 26, 6)), rockMat);
+    cone.position.set(MOUNTAIN_ROAD.minX + 70 + i * 105, 13, i % 2 === 0 ? 148 : 52);
+    cone.castShadow = true;
+    mountainLink.add(cone);
+  }
+  const addSign = (text: string, x: number, z: number) => {
+    const sprite = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(text, "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+    sprite.position.set(x, 6, z);
+    sprite.scale.set(11, 3.6, 1);
+    mountainLink.add(sprite);
+  };
+  addSign("HIGH MOUNTAIN", X0 + 96, 100);
+  addSign("SUMMIT GATE", MOUNTAIN_GATE_X, 116);
+  addSign("QUARRY ROAD", X1 - 38, 58);
   // Gravel pull-out at the summit, so the waypoint reads as a place and not just a sign.
   const pullout = new THREE.Mesh(track(new THREE.PlaneGeometry(18, 11)), std(0x7b6a57, { roughness: 1 }));
   pullout.rotation.x = -Math.PI / 2;
@@ -1115,13 +1150,15 @@ export function createWorld(host: HTMLElement): World {
     frameCamera(state, dt, follow);
     // Keep the one shadow light over whichever area the camera is in.
     const inPass = camera.position.z > 70 && camera.position.x > 40 && camera.position.x < X0 - 40;
-    const cx = inPass ? camera.position.x : areaOf(camera.position.x) === "mountain" ? 2000 : areaOf(camera.position.x) === "river" ? X0 : 0;
+    const onLink = camera.position.z > 70 && camera.position.x > X0 + 60 && camera.position.x < X1 - 20;
+    const cx = inPass || onLink ? camera.position.x : areaOf(camera.position.x) === "mountain" ? 2000 : areaOf(camera.position.x) === "river" ? X0 : 0;
     if (sun.target.position.x !== cx) {
       sun.position.set(cx + 48, 72, 26);
       sun.target.position.set(cx, 0, 0);
       sun.target.updateMatrixWorld();
     }
     valley.update(dt, state.wet ?? 0, !!state.washPlant);
+    mountainLink.visible = mountainUnlockable(state) || mountainOpen(state);
     washGroup.visible = !!state.washPlant;
     updateWeather(rainAt(state.market.seed, state.seconds), dt);
     applyNight(state);

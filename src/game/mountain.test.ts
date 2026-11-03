@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, X1, benchAt, coldFactor, switchbackBlocks, switchbackWaypoint, SWITCHBACKS } from "@/game/mountain";
 import { areaOf } from "@/game/river";
 import { boundsFor, CLAIMS, PADS } from "@/game/catalog";
-import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud } from "@/game/sim";
+import { buyClaim, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy } from "@/game/sim";
+import { X0 } from "@/game/river";
 import { bookWorth, readSaveText } from "@/game/save";
 
 test("mountain is its own area with its own bounds, lease and mill", () => {
@@ -109,4 +110,27 @@ test("fix: direct ridge-to-mountain haul for $2,500", () => {
   assert.equal(haulMachine(s, "mountain"), "");
   assert.equal(currentArea(s), "mountain");
   assert.equal(c - s.cash, MOUNTAIN_HAUL_FEE);
+});
+
+test("the quarry road is signed once the lease is open, and closed until you pay", () => {
+  const s = freshGame("T");
+  s.cash = 1e6;
+  s.claims.push(4, 5, 6);
+  ensureLowboy(s);
+  const rig = s.vehicles.find((v) => v.defId === "lowboy")!;
+  s.active = s.vehicles.indexOf(rig);
+  rig.x = X0 + 40;
+  rig.z = 44;
+  assert.match(buildHud(s, true).routeLabel, /Lease it in Ground/);
+  rig.x = 1400;
+  rig.z = 96;
+  rig.yaw = -Math.PI / 2;
+  for (let i = 0; i < 20; i++) step(s, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+  assert.ok(rig.x < X0 + 90, `unleased lowboy got onto the mountain road at ${rig.x}`);
+  buyClaim(s, MOUNTAIN_CLAIM);
+  rig.x = 1400;
+  rig.z = 96;
+  assert.match(buildHud(s, true).passLabel, /summit gate/);
+  for (let i = 0; i < 30; i++) step(s, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+  assert.ok(rig.x > 1400, `leased lowboy did not drive the quarry road, x=${rig.x}`);
 });
