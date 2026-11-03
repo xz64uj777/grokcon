@@ -460,7 +460,7 @@ export function shopButtons(state: GameState): OpsButton[] {
   add(2, "scanner", "Ore scanner", PRICES.scanner, "Scan nearby faces for free and spot gold or silver nuggets.");
   add(3, "ripper", "Dozer ripper", PRICES.ripper, "Rip hard rock with the dozer so it digs at normal speed. No blast needed.");
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);
-  add(8, "lights", "Work lights", PRICES.lights, "Light towers so you can see the pit at night. The crew works either way.");
+  add(8, "lights", "Work lights", PRICES.lights, "A brighter pool on the machine you are driving. Yard light plants and every machine's own lamps already come on at night.");
   add(9, "fuelTruck", "Fuel truck", PRICES.fuelTruck, "Tops up every machine on site. You still pay for diesel.");
   return b;
 }

@@ -378,6 +378,8 @@ export function createWorld(host: HTMLElement): World {
       beltCleats = parts.beltCleats;
       beaconMat = parts.beaconMat;
       conveyor = parts.conveyor;
+      addLamps(root, 2.95, -2.15, 0.85);
+      addLamps(root, 2.35, 1.5, 0.45);
       root.scale.setScalar(1.45);
     } else if (id === "pickup") {
       box(root, 1.55, 0.32, 3.5, 0, 0.7, 0.1, body);
@@ -604,7 +606,15 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -wx, 0.52, -2.2 * len), addWheel(root, wx, 0.52, -2.2 * len));
       wheels.push(addWheel(root, -wx, 0.55, 0.35 * len), addWheel(root, wx, 0.55, 0.35 * len));
       wheels.push(addWheel(root, -wx, 0.55, 1.45 * len), addWheel(root, wx, 0.55, 1.45 * len));
+      addLamps(root, 1.2, -2.15 * len - 0.85, 0.55 * len);
     }
+
+    if (id === "pickup") addLamps(root, 0.95, -2.05, 0.5);
+    else if (id === "skid") addLamps(root, 1.5, -0.22, 0.38);
+    else if (id === "dozer") addLamps(root, 1.35, -0.95, 0.45);
+    else if (id === "loader") addLamps(root, 1.55, -1.25, 0.55);
+    else if (id === "excavator" && house) addLamps(house, 1.55, -0.85, 0.42);
+    else if (id === "lowboy") addLamps(root, 1.45, -5.05, 0.85);
 
     const shadow = new THREE.Mesh(track(new THREE.CircleGeometry(DEFS[id].radius * 0.95, 14)), std(0x000000, { transparent: true, opacity: 0.28, roughness: 1 }));
     shadow.rotation.x = -Math.PI / 2;
@@ -824,10 +834,53 @@ export function createWorld(host: HTMLElement): World {
   const lightRig = new THREE.PointLight(0xfff1d0, 0, 70, 1.6);
   lightRig.position.set(0, 14, 0);
   scene.add(lightRig);
+  const lampMat = std(0xfff6df, { emissive: 0xfff1c4, emissiveIntensity: 0.05, roughness: 0.35 });
+  const lampGeo = track(new THREE.BoxGeometry(0.24, 0.14, 0.08));
+  function addLamps(parent: THREE.Object3D, y: number, z: number, half: number) {
+    for (const x of [-half, half]) {
+      const lamp = new THREE.Mesh(lampGeo, lampMat);
+      lamp.position.set(x, y, z);
+      lamp.castShadow = false;
+      parent.add(lamp);
+    }
+  }
+  /** Portable light plant: trailer, mast, and a pool of light that comes on at night. */
+  const towerLights: THREE.PointLight[] = [];
+  function addLightPlant(x: number, z: number) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    box(g, 1.5, 0.45, 2.4, 0, 0.55, 0, paintDark);
+    box(g, 0.7, 0.4, 0.8, 0, 0.85, -0.7, cabMat);
+    box(g, 0.12, 6.2, 0.12, 0, 3.6, 0.3, steel);
+    const head = new THREE.Group();
+    head.position.set(0, 6.6, 0.3);
+    for (const side of [-1, 1]) {
+      const bank = new THREE.Mesh(track(new THREE.BoxGeometry(0.7, 0.28, 0.16)), lampMat);
+      bank.position.set(side * 0.55, 0, 0);
+      bank.rotation.x = 0.5;
+      head.add(bank);
+    }
+    g.add(head);
+    const glow = new THREE.PointLight(0xfff1d0, 0, 48, 1.7);
+    glow.position.set(0, 6.4, 0);
+    g.add(glow);
+    towerLights.push(glow);
+    scene.add(g);
+  }
+  addLightPlant(6, 52);
+  addLightPlant(40, 22);
+  addLightPlant(-6, 8);
+  addLightPlant(X0 + 34, 40);
+  addLightPlant(X0 + 70, 22);
+  addLightPlant(X0 - 34, -8);
+  addLightPlant(X1 - 22, 46);
   /** Night falls over the last part of each day. Work lights (if bought) light the active machine's area. */
   function applyNight(state: GameState) {
     if (!onRound(8)) return;
     const k = nightness(state.seconds);
+    lampMat.emissiveIntensity = 0.08 + k * 2.6;
+    for (const glow of towerLights) glow.intensity = k * 80;
+    drillLight.intensity = drillRig.visible ? k * 55 : 0;
     if (k <= 0) {
       lightRig.intensity = 0;
       return;
@@ -838,8 +891,9 @@ export function createWorld(host: HTMLElement): World {
     (scene.fog as THREE.Fog).color.lerp(nightBg, k * 0.85);
     const v = state.vehicles[state.active];
     const lit = state.ops?.lights;
-    lightRig.intensity = lit && v ? k * 900 : 0;
-    if (v) lightRig.position.set(v.x + 6, 14, v.z + 6);
+    lightRig.distance = lit ? 70 : 34;
+    lightRig.intensity = v ? k * (lit ? 900 : 260) : 0;
+    if (v) lightRig.position.set(v.x, heightAt(v.x, v.z) + 6, v.z);
   }
   // Blast drill rig: a crawler with a mast that bores a row of holes, then the holes get charged.
   const drillRig = new THREE.Group();
@@ -861,7 +915,11 @@ export function createWorld(host: HTMLElement): World {
       m.castShadow = true;
       drillRig.add(m);
     }
+    addLamps(drillRig, 1.9, -1.7, 0.7);
   }
+  const drillLight = new THREE.PointLight(0xfff1d0, 0, 28, 1.6);
+  drillLight.position.set(0, 3.2, -1.2);
+  drillRig.add(drillLight);
   drillRig.visible = false;
   scene.add(drillRig);
   const holeMat = std(0x161412, { roughness: 1 });
