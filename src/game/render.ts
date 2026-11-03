@@ -38,6 +38,7 @@ type Rig = {
   /** Fifth-wheel pivot. The trailer hangs off this and yaws in a turn. */
   hitch: THREE.Group | null;
   deckPivot: THREE.Group | null;
+  beams: THREE.SpotLight[];
 };
 
 type DepositView = {
@@ -367,6 +368,10 @@ export function createWorld(host: HTMLElement): World {
     let stickArm: THREE.Object3D | null = null;
     let deckPivot: THREE.Group | null = null;
     let hitch: THREE.Group | null = null;
+    const rigBeams: THREE.SpotLight[] = [];
+    const addLamps = (parent: THREE.Object3D, y: number, z: number, half: number) => {
+      rigBeams.push(mountLamps(parent, y, z, half));
+    };
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : id === "lowboy" ? lowboyPaint : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : id === "lowboy" ? steel : paintDark;
 
@@ -378,8 +383,8 @@ export function createWorld(host: HTMLElement): World {
       beltCleats = parts.beltCleats;
       beaconMat = parts.beaconMat;
       conveyor = parts.conveyor;
-      addLamps(root, 2.95, -2.15, 0.85);
-      addLamps(root, 2.35, 1.5, 0.45);
+      addLamps(root, 3.05, -2.45, 0.9);
+      addLamps(root, 2.45, 2.05, 0.5);
       root.scale.setScalar(1.45);
     } else if (id === "pickup") {
       box(root, 1.55, 0.32, 3.5, 0, 0.7, 0.1, body);
@@ -606,15 +611,17 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -wx, 0.52, -2.2 * len), addWheel(root, wx, 0.52, -2.2 * len));
       wheels.push(addWheel(root, -wx, 0.55, 0.35 * len), addWheel(root, wx, 0.55, 0.35 * len));
       wheels.push(addWheel(root, -wx, 0.55, 1.45 * len), addWheel(root, wx, 0.55, 1.45 * len));
-      addLamps(root, 1.2, -2.15 * len - 0.85, 0.55 * len);
+      addLamps(root, 1.55, -2.15 * len - 0.95, 0.55 * len);
     }
 
-    if (id === "pickup") addLamps(root, 0.95, -2.05, 0.5);
-    else if (id === "skid") addLamps(root, 1.5, -0.22, 0.38);
-    else if (id === "dozer") addLamps(root, 1.35, -0.95, 0.45);
-    else if (id === "loader") addLamps(root, 1.55, -1.25, 0.55);
-    else if (id === "excavator" && house) addLamps(house, 1.55, -0.85, 0.42);
-    else if (id === "lowboy") addLamps(root, 1.45, -5.05, 0.85);
+    if (id === "pickup") addLamps(root, 1.05, -2.1, 0.52);
+    else if (id === "skid") addLamps(root, 1.62, -0.42, 0.4);
+    else if (id === "dozer") addLamps(root, 1.48, -1.18, 0.48);
+    else if (id === "loader") addLamps(root, 1.68, -1.5, 0.58);
+    else if (id === "excavator" && house) addLamps(house, 1.5, -1.08, 0.4);
+    else if (id === "lowboy") addLamps(root, 1.5, -5.08, 0.9);
+
+    const beams = rigBeams;
 
     const shadow = new THREE.Mesh(track(new THREE.CircleGeometry(DEFS[id].radius * 0.95, 14)), std(0x000000, { transparent: true, opacity: 0.28, roughness: 1 }));
     shadow.rotation.x = -Math.PI / 2;
@@ -627,6 +634,7 @@ export function createWorld(host: HTMLElement): World {
       bucketY: bucket ? bucket.position.y : 0,
       hitch,
       deckPivot,
+      beams,
     };
   }
 
@@ -834,15 +842,23 @@ export function createWorld(host: HTMLElement): World {
   const lightRig = new THREE.PointLight(0xfff1d0, 0, 70, 1.6);
   lightRig.position.set(0, 14, 0);
   scene.add(lightRig);
-  const lampMat = std(0xfff6df, { emissive: 0xfff1c4, emissiveIntensity: 0.05, roughness: 0.35 });
-  const lampGeo = track(new THREE.BoxGeometry(0.24, 0.14, 0.08));
-  function addLamps(parent: THREE.Object3D, y: number, z: number, half: number) {
+  const lampMat = std(0xfff6df, { emissive: 0xfff1c4, emissiveIntensity: 0.85, roughness: 0.3 });
+  const lampGeo = track(new THREE.BoxGeometry(0.34, 0.18, 0.1));
+  function mountLamps(parent: THREE.Object3D, y: number, z: number, half: number) {
     for (const x of [-half, half]) {
       const lamp = new THREE.Mesh(lampGeo, lampMat);
       lamp.position.set(x, y, z);
       lamp.castShadow = false;
       parent.add(lamp);
     }
+    const spot = new THREE.SpotLight(0xfff3d2, 0, 30, 0.65, 0.4, 1.1);
+    spot.position.set(0, y, z);
+    spot.castShadow = false;
+    const aim = new THREE.Object3D();
+    aim.position.set(0, Math.max(0.15, y - 2.5), z - 16);
+    parent.add(spot, aim);
+    spot.target = aim;
+    return spot;
   }
   /** Portable light plant: trailer, mast, and a pool of light that comes on at night. */
   const towerLights: THREE.PointLight[] = [];
@@ -878,7 +894,7 @@ export function createWorld(host: HTMLElement): World {
   function applyNight(state: GameState) {
     if (!onRound(8)) return;
     const k = nightness(state.seconds);
-    lampMat.emissiveIntensity = 0.08 + k * 2.6;
+    lampMat.emissiveIntensity = 0.85 + k * 2;
     for (const glow of towerLights) glow.intensity = k * 80;
     drillLight.intensity = drillRig.visible ? k * 55 : 0;
     if (k <= 0) {
@@ -915,7 +931,7 @@ export function createWorld(host: HTMLElement): World {
       m.castShadow = true;
       drillRig.add(m);
     }
-    addLamps(drillRig, 1.9, -1.7, 0.7);
+    mountLamps(drillRig, 1.9, -1.7, 0.7);
   }
   const drillLight = new THREE.PointLight(0xfff1d0, 0, 28, 1.6);
   drillLight.position.set(0, 3.2, -1.2);
@@ -1142,6 +1158,10 @@ export function createWorld(host: HTMLElement): World {
       } else {
         rig.root.rotation.x = Math.atan(g.along);
       }
+      const night = onRound(8) ? nightness(state.seconds) : 0;
+      const near = Math.hypot(v.x - camera.position.x, v.z - camera.position.z) < 95;
+      const beam = near ? night * 24 : 0;
+      for (const spot of rig.beams) spot.intensity = beam;
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;
         rig.hitch.rotation.y = Math.atan2(Math.sin(art), Math.cos(art));
