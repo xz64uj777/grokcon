@@ -112,6 +112,30 @@ test("fix: direct ridge-to-mountain haul for $2,500", () => {
   assert.equal(c - s.cash, MOUNTAIN_HAUL_FEE);
 });
 
+test("mountain faces show as a work source before the lowboy delivers the machine", () => {
+  const s = freshGame("T");
+  s.cash = 1e6;
+  s.claims.push(4, 5, 6, 8);
+  const v = s.vehicles[0];
+  const card = buildHud(s, true).crew.find((c) => c.index === 0);
+  assert.ok(card);
+  assert.equal(card.area, "ridge");
+  assert.ok(card.sources.some((o) => o.value === "face:summit-gold" && o.label === "Summit Gold"));
+  assert.ok(card.sources.some((o) => o.value === "face:ice-copper"));
+  assert.ok(card.sources.some((o) => o.value === "8"));
+  v.workFace = "summit-gold";
+  v.workClaim = 8;
+  v.x = X1 - 40;
+  v.z = -50;
+  v.hired = true;
+  v.operator = true;
+  s.watching = true;
+  const before = s.deposits.find((d) => d.id === "ice-copper")!.tons;
+  for (let i = 0; i < 90; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+  assert.equal(s.deposits.find((d) => d.id === "ice-copper")!.tons, before);
+  assert.match(v.status, /Summit Gold/);
+});
+
 test("the quarry road is signed once the lease is open, and closed until you pay", () => {
   const s = freshGame("T");
   s.cash = 1e6;

@@ -193,11 +193,26 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       saveGame(books());
       push();
     },
-    assignSource(index, claim) {
+    assignSource(index, source) {
       const v = state.vehicles[index];
       if (!v || (index !== state.active && !v.operator)) return;
-      v.workClaim = claim != null && state.claims.includes(claim) ? claim : null;
-      v.status = claim == null ? "Assigned to any leased source" : `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
+      if (source == null || source === "any") {
+        v.workClaim = null;
+        v.workFace = null;
+        v.status = "Assigned to any leased source";
+      } else if (source.startsWith("face:")) {
+        const face = state.deposits.find((d) => d.id === source.slice(5));
+        if (!face || !state.claims.includes(face.claim)) return;
+        v.workFace = face.id;
+        v.workClaim = face.claim;
+        v.status = `Assigned to ${face.sign}`;
+      } else {
+        const claim = Number(source);
+        if (!state.claims.includes(claim)) return;
+        v.workFace = null;
+        v.workClaim = claim;
+        v.status = `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
+      }
       saveGame(books());
       push();
     },

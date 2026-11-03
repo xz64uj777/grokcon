@@ -62,6 +62,8 @@ export type VehicleState = {
   hired: boolean;
   operator: boolean;
   workClaim: number | null;
+  /** A single face, such as Summit gold. Empty means any face on the work claim. */
+  workFace: string | null;
   status: string;
   stuck: number;
   unstick: number;
@@ -171,6 +173,9 @@ export type CrewCard = {
   hired: boolean;
   operator: boolean;
   workClaim: number | null;
+  /** Select value: "any", a claim id, or "face:<deposit id>". */
+  workSource: string;
+  sources: { value: string; label: string }[];
   hireLabel: string;
   sellLabel: string | null;
   affordableHire: boolean;
@@ -291,7 +296,7 @@ export type GameApi = {
   buyGround: (id: number) => void;
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
-  assignSource: (index: number, claim: number | null) => void;
+  assignSource: (index: number, source: string | null) => void;
   setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;
   sell: (index: number) => void;

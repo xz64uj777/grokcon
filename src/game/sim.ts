@@ -162,6 +162,16 @@ function assignedClaim(v: VehicleState): number | null {
   return v.workClaim;
 }
 
+/** A face the crew was pointed at. Ignored until the machine is on that map, so the lowboy can carry the order up. */
+function facePin(state: GameState, v: VehicleState): Deposit | null {
+  if (!v.workFace) return null;
+  const d = state.deposits.find((o) => o.id === v.workFace);
+  if (!d || d.kind !== "vein" || d.tons < 0.35) return null;
+  if (!ownsClaim(state, d.claim)) return null;
+  if (areaOf(d.x) !== areaOf(v.x)) return null;
+  return d;
+}
+
 function prettySign(sign: string) {
   return sign.toLowerCase().replace(/(^|[\s·])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
 }
@@ -183,6 +193,8 @@ function closestFace(state: GameState, x: number, z: number, v?: VehicleState) {
 }
 
 function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
+  const pin = facePin(state, v);
+  if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
   if (d.id === "starter" && assignedClaim(v) != null) return false;
   if (v.workClaim == null && state.sluice && state.preferSluice && d.kind === "pile" && !prefersSluice(state, d.ore)) {
@@ -364,6 +376,7 @@ function makeVehicle(id: VehicleId, slot: number): VehicleState {
     hired: false,
     operator: false,
     workClaim: null,
+    workFace: null,
     status: "Parked",
     stuck: 0,
     unstick: 0,
@@ -569,6 +582,8 @@ export function plannedPad(state: GameState, index: number) {
 }
 
 function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
+  const pinned = facePin(state, v);
+  if (pinned && (!ore || pinned.ore === ore)) return pinned;
   let best: Deposit | null = null;
   let score = -1;
   for (const d of state.deposits) {
@@ -682,6 +697,8 @@ function veinUsable(state: GameState, v: VehicleState, d: Deposit | null | undef
 
 /** Stay on the face you already chose unless another one is clearly better. Stops gold and silver swapping every frame. */
 function commitVein(state: GameState, v: VehicleState, next: Deposit | null, scoreOf: (d: Deposit) => number): Deposit | null {
+  const pin = facePin(state, v);
+  if (pin) return pin;
   const prev = state.deposits.find((d) => d.id === crewJob.get(v));
   if (veinUsable(state, v, prev) && next && prev.id !== next.id) {
     const onIt = distTo(v.x, v.z, prev.x, prev.z) < prev.radius + 16;
@@ -869,23 +886,26 @@ function aiControl(state: GameState, index: number): Control {
       v.status = label;
       return seek(v, digHaul.x, digHaul.z, arrive);
     }
-    let vein: Deposit | null = null;
-    let veinS = -Infinity;
-    for (const d of state.deposits) {
-      if (d.kind !== "vein" || d.tons < 0.35) continue;
-      if (!ownsClaim(state, d.claim)) continue;
-      if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
-      const dist = distTo(v.x, v.z, d.x, d.z);
-      const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
-      if (s > veinS) {
-        veinS = s;
-        vein = d;
+    const pinned = facePin(state, v);
+    let vein: Deposit | null = pinned;
+    if (!pinned) {
+      let veinS = -Infinity;
+      for (const d of state.deposits) {
+        if (d.kind !== "vein" || d.tons < 0.35) continue;
+        if (!ownsClaim(state, d.claim)) continue;
+        if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
+        const dist = distTo(v.x, v.z, d.x, d.z);
+        const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+        if (s > veinS) {
+          veinS = s;
+          vein = d;
+        }
       }
+      vein = commitVein(state, v, vein, (d) => {
+        const dist = distTo(v.x, v.z, d.x, d.z);
+        return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+      });
     }
-    vein = commitVein(state, v, vein, (d) => {
-      const dist = distTo(v.x, v.z, d.x, d.z);
-      return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
-    });
     if (vein) {
       const job = prettySign(vein.sign);
       if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
@@ -2371,7 +2391,24 @@ export function haulFee(from: AreaId, to: AreaId) {
   return from === "mountain" || to === "mountain" ? MOUNTAIN_HAUL_FEE : HAUL_FEE;
 }
 
-export function haulBlocker(state: GameState, to: AreaId = haulTarget(state)) {
+export function sourceOptions(state: GameState, area: AreaId) {
+  const options: { value: string; label: string }[] = [];
+  for (const c of CLAIMS) {
+    if (!ownsClaim(state, c.id)) continue;
+    const claimArea = claimAreaOf(c.id);
+    if (claimArea !== area && !(claimArea === "mountain" && mountainOpen(state))) continue;
+    options.push({ value: String(c.id), label: c.name });
+  }
+  if (mountainOpen(state)) {
+    for (const d of state.deposits) {
+      if (d.kind !== "vein" || d.claim !== MOUNTAIN_CLAIM) continue;
+      options.push({ value: `face:${d.id}`, label: prettySign(d.sign) });
+    }
+  }
+  return options;
+}
+
+function haulBlocker(state: GameState, to: AreaId = haulTarget(state)) {
   const v = state.vehicles[state.active];
   if (!v) return "No machine.";
   if (v.defId === "lowboy") return "Drive the lowboy up the north road. The paid jump is for one machine.";
@@ -2759,6 +2796,8 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       hired: veh.hired,
       operator: veh.operator,
       workClaim: veh.workClaim ?? null,
+      workSource: veh.workFace ? `face:${veh.workFace}` : veh.workClaim != null ? String(veh.workClaim) : "any",
+      sources: sourceOptions(state, area),
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
       sellLabel: state.vehicles.length > 1 ? `Sell · ${formatMoney(resale(veh))}` : null,
       affordableHire: veh.hired || state.cash >= HIRE_COST,

@@ -735,13 +735,13 @@ export function MineScreen() {
                         Work source
                         <select
                           className="h-11 border border-border bg-surface px-3 text-fg"
-                          value={c.workClaim == null ? "any" : String(c.workClaim)}
+                          value={c.workSource}
                           disabled={!c.operator && !c.active}
-                          onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : Number(e.target.value))}
+                          onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : e.target.value)}
                         >
                           <option value="any">Any leased source</option>
-                          {hud.grounds.filter((g) => g.owned && g.area === c.area).map((g) => (
-                            <option key={g.id} value={g.id}>{g.name}</option>
+                          {c.sources.map((g) => (
+                            <option key={g.value} value={g.value}>{g.label}</option>
                           ))}
                         </select>
                       </label>
