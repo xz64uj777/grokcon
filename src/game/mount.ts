@@ -290,6 +290,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (state.log.length > 5) state.log.length = 5;
       push();
     },
+    setRipper(depth) {
+      const v = state.vehicles[state.active];
+      if (v && v.defId === "dozer") v.ripper = Math.max(0, Math.min(1, depth));
+      push();
+    },
     ops(id) {
       const msg = opsAction(state, id);
       if (msg) state.log.unshift(msg);

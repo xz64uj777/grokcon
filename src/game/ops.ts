@@ -4,6 +4,7 @@
  * the safety inspector. Pure rules plus small hooks the sim calls.
  */
 import type { GameState, OreId, PadKind, VehicleState } from "@/game/types";
+import { gradeAt } from "@/game/terrain";
 
 export const DAY = 300;
 
@@ -142,6 +143,44 @@ const onWheels = (v: VehicleState) => !isPlant(v) && v.defId !== "dozer" && v.de
 /** Trucks used to roll on a fast loaded turn, dump the ore, and take damage. They don't anymore. */
 export function wouldTip(_v: VehicleState, _yawRate: number, _capacity: number, _ramp: boolean) {
   return false;
+}
+
+/** Side slope (rise/run across the machine) a truck can hold while rolling. A full bed lowers it. */
+export function sideTipLimit(loadFrac: number) {
+  return 0.36 - 0.1 * Math.max(0, Math.min(1, loadFrac));
+}
+/** Trucks only tip on a side slope, not in a flat turn. */
+export function tipsOnSlope(defId: string, side: number, loadFrac: number, speed: number) {
+  if (defId !== "truck" && defId !== "heavy") return false;
+  return Math.abs(speed) > 1.5 && Math.abs(side) > sideTipLimit(loadFrac);
+}
+
+// ---- Round 3 (r13): ripper on a drag control ---------------------------------
+/** Seconds of ripping, shank down and moving, to break a hard face. */
+export const RIP_SECONDS = 4;
+const ripWork = new WeakMap<object, Record<string, number>>();
+/**
+ * The player's dozer with the shank dragged down (ripper ≥ 0.5) and moving rips the
+ * hard face it is working. It drags (60% speed) while the shank is in the ground.
+ */
+export function ripTick(state: GameState, v: VehicleState, dt: number, face: { id: string; hard: boolean } | null) {
+  const o = ops(state);
+  if (!on(3) || !o.ripper || v.defId !== "dozer" || (v.ripper ?? 0) < 0.5) return "";
+  const cap = 2.2;
+  if (Math.abs(v.speed) > cap) v.speed = Math.sign(v.speed) * cap;
+  if (Math.abs(v.speed) < 0.3) return "Ripper down. Drive to rip.";
+  if (!face || !face.hard) return "Ripping the ground.";
+  const work = ripWork.get(state) ?? {};
+  ripWork.set(state, work);
+  work[face.id] = (work[face.id] ?? 0) + dt;
+  if (work[face.id] < RIP_SECONDS) return `Ripping hard rock… ${Math.ceil(RIP_SECONDS - work[face.id])} s`;
+  delete work[face.id];
+  const d = state.deposits.find((x) => x.id === face.id);
+  if (d) d.hard = false;
+  if (!o.ripped.includes(face.id)) o.ripped.push(face.id);
+  v.damage = Math.min(1, v.damage + 0.03);
+  say(state, "Ripped the hard rock. This face now digs at normal speed.");
+  return "Face ripped.";
 }
 
 // ---- Round 4: reputation ---------------------------------------------------
@@ -337,6 +376,19 @@ export function tick(
       v.status = stop;
       continue;
     }
+    if (moved > 0) {
+      const g = gradeAt(v.x, v.z, v.yaw);
+      const cap = capacityOf(v);
+      if (tipsOnSlope(v.defId, g.side, cap > 0 ? v.cargo / cap : 0, v.speed)) {
+        dropLoad(v);
+        v.speed = 0;
+        v.damage = Math.min(1, v.damage + 0.15);
+        v.yaw += Math.sign(g.side) * 0.6; // slewed round as it went over
+        o.records.tips += 1;
+        v.status = "Tipped on the side slope";
+        if (player) say(state, "Truck went over on the side slope. Load lost, cab damaged. Drive straight up and down grades.");
+      }
+    }
     if (on(7) && onWheels(v) && moved > 0) {
       const t = o.tread[v.uid] ?? 1;
       o.tread[v.uid] = wear(t, moved);
@@ -377,7 +429,6 @@ export function fieldButtons(state: GameState, ctx: Ctx): OpsButton[] {
   const b: OpsButton[] = [];
   if (!v) return b;
   if (on(2) && o.scanner && ctx.nearFace) b.push({ id: "scan", label: "Scan", detail: "", enabled: true });
-  if (on(3) && o.ripper && v.defId === "dozer" && ctx.nearFace?.hard) b.push({ id: "rip", label: "Rip", detail: "", enabled: true });
   if (on(7) && o.flat.includes(v.uid)) b.push({ id: "tires", label: `Tires ${money(tireCost(v))}`, detail: "", enabled: state.cash >= tireCost(v) });
   if (on(9) && !o.fuelTruck && (o.fuel[v.uid] ?? 1) < 0.5) b.push({ id: "fuel", label: `Fuel ${money(refuelCost(state, v))}`, detail: "", enabled: state.cash >= refuelCost(state, v) });
   if (on(10)) b.push({ id: "photo", label: "Photo", detail: "", enabled: true });

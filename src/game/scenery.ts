@@ -4,6 +4,7 @@
  * Everything is procedural (canvas textures, merged or instanced low-poly meshes).
  * Purely visual: collision still comes from BLOCKS in the catalog.
  */
+import { PIT_DEPTH } from "@/game/terrain";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BLOCKS, BOUNDS, PADS, PIT, inPit } from "@/game/catalog";
@@ -125,7 +126,7 @@ export function buildPitWalls(scene: THREE.Scene, track: Track, kind: "wall" | "
     const thick = alongX ? b.sz : b.sx;
     const long = alongX ? b.sx : b.sz;
     const tiers = 3;
-    let y0 = 0;
+    let y0 = kind === "wall" ? -PIT_DEPTH : 0; // ridge pit walls reach down to the sunk floor
     for (let i = 0; i < tiers; i++) {
       const h = b.sy * (i === 0 ? 0.42 : i === 1 ? 0.33 : 0.3) + (i === tiers - 1 ? 1.2 : 0);
       // Each bench sets back from the pit side; the base matches the collision footprint.

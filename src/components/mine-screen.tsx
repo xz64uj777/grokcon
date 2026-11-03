@@ -94,6 +94,9 @@ export function MineScreen() {
   return (
     <main className={`game-shell fixed inset-0 bg-bg text-fg ${hud?.twoSticks ? "twin-sticks" : ""} ${playing && hud?.photo ? "photo-mode" : ""}`} data-screen={screen} style={{ ["--pad-h" as string]: `${padH}px` }}>
       <div ref={worldRef} className="absolute inset-0" />
+      {playing && hud?.ripperControl && !hud.photo && (
+        <RipperDrag depth={hud.ripper} onChange={(d) => apiRef.current?.setRipper(d)} />
+      )}
       {playing && hud?.photo && (
         <button type="button" className="photo-exit pointer-events-auto absolute right-3 bottom-3 z-30 h-11 min-w-11 border border-border bg-surface/80 px-4 font-display text-lg uppercase" onClick={() => apiRef.current?.ops("photo")}>
           Done
@@ -651,7 +654,7 @@ export function MineScreen() {
                   <article className="border-b border-border py-4">
                     <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Blasting</h2>
                     <p className="mt-2 text-sm leading-relaxed text-muted">
-                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts (you get it back if you drive off before the charges are set). Each face can be blasted once a day. Hold still 10 seconds while the holes are drilled, then get every machine 22 m back.
+                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts (you get it back if you drive off before the charges are set). Each face can be blasted once a day. Hold still 12 seconds while the drill rig bores the holes and the crew charges them, then get every machine 22 m back.
                     </p>
                   </article>
                 )}
@@ -949,4 +952,37 @@ function useScreenShape() {
     };
   }, []);
   return shape;
+}
+
+/** Drag the ripper arm down to put the shank in the ground; drag up to lift it. */
+function RipperDrag({ depth, onChange }: { depth: number; onChange: (d: number) => void }) {
+  const set = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    onChange(Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)));
+  };
+  return (
+    <div className="pointer-events-auto absolute right-2 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1">
+      <span className="bg-surface/90 px-1 font-display text-xs uppercase tracking-wide text-fg">Ripper</span>
+      <div
+        role="slider"
+        aria-label="Ripper arm"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(depth * 100)}
+        tabIndex={0}
+        className="relative h-36 w-12 touch-none border border-border bg-surface/80"
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          set(e);
+        }}
+        onPointerMove={(e) => {
+          if (e.buttons || e.pointerType === "touch") set(e);
+        }}
+      >
+        <div className="absolute inset-x-0 top-0 bg-primary/30" style={{ height: `${depth * 100}%` }} />
+        <div className="absolute inset-x-1 h-11 border border-primary bg-primary" style={{ top: `calc(${depth * 100}% - ${depth * 44}px)` }} />
+      </div>
+      <span className="bg-surface/90 px-1 text-[10px] text-muted">{depth >= 0.5 ? "In ground" : "Raised"}</span>
+    </div>
+  );
 }

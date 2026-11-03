@@ -1,5 +1,6 @@
 /** High mountain scenery: snowy ground, switchback road, snow-capped bench walls, peaks and pines. Looks only. */
 import * as THREE from "three";
+import { drapeMesh, heightAt } from "@/game/terrain";
 import { MILL, MOUNTAIN_BOUNDS as B, SWITCHBACKS, GAP_HALF, X1, switchbackBlocks } from "@/game/mountain";
 
 type Track = <T extends { dispose: () => void }>(g: T) => T;
@@ -26,20 +27,22 @@ function snowTexture() {
 }
 
 export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
-  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(320, 300)), std(0xdfe4e8, { map: track(snowTexture()), roughness: 0.95 }));
+  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(320, 300, 160, 150)), std(0xdfe4e8, { map: track(snowTexture()), roughness: 0.95 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(X1, 0, 0);
   ground.receiveShadow = true;
+  drapeMesh(ground, 0);
   scene.add(ground);
 
   // Ploughed gravel haul road: runs along each bench and turns through its gap.
   const road = std(0x7d7368, { roughness: 1 });
   const lane = (x0: number, z0: number, x1: number, z1: number) => {
     const len = Math.hypot(x1 - x0, z1 - z0);
-    const m = new THREE.Mesh(track(new THREE.PlaneGeometry(9, len)), road);
+    const m = new THREE.Mesh(track(new THREE.PlaneGeometry(9, len, 2, Math.max(2, Math.round(len / 2)))), road);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = -Math.atan2(x1 - x0, z1 - z0);
-    m.position.set((x0 + x1) / 2, 0.03, (z0 + z1) / 2);
+    m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    drapeMesh(m, 0.06);
     m.receiveShadow = true;
     scene.add(m);
   };
@@ -57,23 +60,24 @@ export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
   const snow = std(0xf4f7f9, { roughness: 0.9 });
   // Bench walls: rock that stays inside its collision footprint (two set-back steps).
   const wallRock = std(0x6b5a4a, { roughness: 0.95, flatShading: true });
-  for (const b of switchbackBlocks()) {
+  switchbackBlocks().forEach((b, i) => {
+    const base = Math.floor(i / 2) * 5;
     const low = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx, b.sy * 0.6, b.sz)), wallRock);
-    low.position.set(b.x, b.sy * 0.3, b.z);
+    low.position.set(b.x, base + b.sy * 0.3, b.z);
     const high = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx - 0.6, b.sy * 0.4, b.sz * 0.7)), wallRock);
-    high.position.set(b.x, b.sy * 0.8, b.z);
+    high.position.set(b.x, base + b.sy * 0.8, b.z);
     for (const m of [low, high]) {
       m.castShadow = true;
       m.receiveShadow = true;
       scene.add(m);
     }
-  }
-  for (const b of switchbackBlocks()) {
+  });
+  switchbackBlocks().forEach((b, i) => {
     const cap = new THREE.Mesh(track(new THREE.BoxGeometry(b.sx - 0.6, 0.4, b.sz * 0.7)), snow);
-    cap.position.set(b.x, b.sy + 0.2, b.z);
+    cap.position.set(b.x, Math.floor(i / 2) * 5 + b.sy + 0.2, b.z);
     cap.castShadow = true;
     scene.add(cap);
-  }
+  });
 
   // Peaks around the edge and pines on the lower slopes.
   const rock = std(0x6e6a66, { roughness: 1, flatShading: true });
@@ -97,7 +101,7 @@ export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
     const z = 40 + ((i * 13) % 24);
     if (Math.abs(x - MILL.x) < 16 || SWITCHBACKS.some((w) => Math.abs(x - w.gapX) < GAP_HALF)) continue;
     const t = new THREE.Mesh(track(new THREE.ConeGeometry(1.6, 6, 7)), pine);
-    t.position.set(x, 3, z + (i % 2 ? 3 : -2));
+    t.position.set(x, heightAt(x, z) + 3, z + (i % 2 ? 3 : -2));
     t.castShadow = true;
     scene.add(t);
   }

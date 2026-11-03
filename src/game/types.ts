@@ -69,6 +69,8 @@ export type VehicleState = {
   unstick: number;
   bias: number;
   busy: boolean;
+  /** Dozer ripper shank, 0 (up) to 1 (in the ground). Set by the drag control. */
+  ripper?: number;
   /** Lowboy trailer heading. The deck pivots around the fifth wheel, so this lags the cab in a turn. */
   trailerYaw?: number;
   axleX?: number;
@@ -253,6 +255,9 @@ export type HudModel = {
   valleyOpen: boolean;
   /** High mountain leased. */
   mountainOpen: boolean;
+  /** Show the ripper drag control (dozer with a ripper, in your seat). */
+  ripperControl: boolean;
+  ripper: number;
   /** Direct ridge-to-mountain lowboy line, or null when not offered here. */
   mountainHaul: string | null;
   canHaulMountain: boolean;
@@ -325,5 +330,7 @@ export type GameApi = {
   downloadBooks: () => void;
   importBooks: (text: string) => boolean;
   ops: (id: string) => void;
+  /** Ripper shank depth from the drag control, 0..1. */
+  setRipper: (depth: number) => void;
 };
 

@@ -1,4 +1,5 @@
 import * as Ops from "@/game/ops";
+import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
 import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
   BASE_DEPOSITS,
@@ -66,6 +67,7 @@ import {
   BLAST_COST,
   canBlastToday,
   DRILL_SECONDS,
+  BORE_SECONDS,
   FUSE_SECONDS,
   TEST_HOLE_COST,
   blastDamage,
@@ -460,6 +462,16 @@ function closestDeposit(
     }
   }
   return best;
+}
+
+/** Plants with a feed hopper. Haul trucks tip a pile there instead of selling straight in. */
+export const FEED_PADS = new Set<PadKind>(["wash", "sluice", "mill"]);
+export function dumpsToFeed(defId: VehicleId, pad: PadKind) {
+  return (defId === "truck" || defId === "heavy") && FEED_PADS.has(pad);
+}
+/** The free lease in each area, so a feed pile counts as yours there. */
+export function homeClaim(area: AreaId) {
+  return area === "mountain" ? MOUNTAIN_CLAIM : area === "river" ? VALLEY_CLAIMS.bars : 1;
 }
 
 function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1, purity = 1) {
@@ -1194,6 +1206,18 @@ function performAction(
         const where = pad?.kind === "wash" ? "Wash plant only takes silver and gold gravel" : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
+    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
+      // Haul trucks tip into a feed pile at the plant. A loader or excavator feeds it in, and that pays.
+      const tons = v.cargo;
+      const ore = v.cargoOre;
+      addPile(state, ore, tons, pad.x, pad.z, homeClaim(areaOf(pad.x)), v.cargoPurity ?? 1);
+      emptyCargo(v);
+      v.busy = true;
+      if (player) {
+        state.tutorial.dumped = true;
+        log(state, `Tipped ${tons.toFixed(1)} t of ${ORES[ore].name.toLowerCase()} on the ${pad.name.toLowerCase()} feed pile. A loader or excavator feeds it in to get paid.`);
+      }
+      return null;
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
       const unit = unitPrice(v.cargoOre, pad.kind, state.sluice, state.market);
       const sold = v.cargo;
@@ -1405,7 +1429,9 @@ function performAction(
 function integrateTank(v: VehicleState, left: number, right: number, dt: number, drag: number) {
   const st = vehicleStats(v);
   const m = tankMotion(left, right);
-  const target = (m.forward >= 0 ? m.forward : m.forward * 0.6) * st.maxSpeed * drag;
+  // Tracks hold on a grade (no roll-back) but climb slower.
+  const climb = climbFactor(gradeAt(v.x, v.z, v.yaw).along, m.forward >= 0);
+  const target = (m.forward >= 0 ? m.forward : m.forward * 0.6) * st.maxSpeed * drag * climb;
   const opposing = Math.sign(target) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.25;
   const accel = st.accel * (opposing ? 1.75 : 1);
   if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
@@ -1421,15 +1447,26 @@ function integrate(v: VehicleState, c: Control, dt: number) {
   const st = vehicleStats(v);
   const drive = clamp(c.throttle, -1, 1);
   const steer = clamp(c.steer, -1, 1);
-  const target = drive >= 0 ? drive * st.maxSpeed : drive * st.maxSpeed * 0.45;
+  const grade = gradeAt(v.x, v.z, v.yaw);
+  const climb = climbFactor(grade.along, drive >= 0);
+  const target = (drive >= 0 ? drive * st.maxSpeed : drive * st.maxSpeed * 0.45) * climb;
   const opposing = Math.sign(target) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.25;
   // A dump truck used to coast the length of the bridge after the stick was let go.
   const hauler = v.defId === "truck" || v.defId === "heavy";
   const stopping = c.brake > 0.5 || (hauler && Math.abs(drive) < 0.05);
-  const accel = st.accel * (opposing || stopping ? (hauler && stopping ? 4 : 1.75) : 1);
+  // Coasting (no pedal, no brake) on a grade only has rolling drag, so gravity can win.
+  const coasting = !stopping && Math.abs(drive) < 0.05 && Math.abs(grade.along) > 0.03;
+  const accel = coasting ? 0.3 : st.accel * (opposing || stopping ? (hauler && stopping ? 4 : 1.75) : 1);
   if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
   else v.speed = Math.max(target, v.speed - accel * dt);
-  if (Math.abs(v.speed) < 0.05 && Math.abs(drive) < 0.05) v.speed = 0;
+  // Slopes: gravity pulls the machine down the grade. Brakes (or a hauler's
+  // retarder when the pedal is up) hold it once it's nearly stopped.
+  if (Math.abs(grade.along) > 0.03) {
+    const holding = stopping && Math.abs(v.speed) < 1.2;
+    if (holding) v.speed *= 0.5;
+    else v.speed += rollAccel(grade.along) * dt;
+  }
+  if (Math.abs(v.speed) < 0.05 && Math.abs(drive) < 0.05 && Math.abs(grade.along) <= 0.03) v.speed = 0;
   const reverse = v.speed >= -0.2 ? 1 : -1;
   const factor = Math.min(1, Math.abs(v.speed) / 3.5);
   v.yaw += steer * st.turn * Math.max(0.42, factor) * reverse * dt;
@@ -1693,6 +1730,9 @@ function pourIntoTrucks(state: GameState) {
     // Hand-worked machines dump into the truck themselves.
     if (v.manual) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
+    // At a plant's feed pile the bucket goes into the hopper, not back into a truck.
+    const pad = nearestPad(state, v.x, v.z);
+    if (pad && FEED_PADS.has(pad.kind)) return;
     loadTruck(state, index, v.defId === "excavator" ? 16 : 22);
   });
 }
@@ -1730,7 +1770,9 @@ function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
       log(state, "Drilling stopped. The blast is called off and you got your money back.");
       return;
     }
+    const wasBoring = b.t < BORE_SECONDS;
     if (Math.abs(v.speed) < 0.5) b.t += dt;
+    if (wasBoring && b.t >= BORE_SECONDS) log(state, `Holes bored in ${d.sign}. Charging them now.`);
     if (b.t >= DRILL_SECONDS) {
       b.phase = "fuse";
       b.t = FUSE_SECONDS;
@@ -1998,7 +2040,8 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       } else if (v.operator) {
         c = aiControl(state, i);
       } else {
-        c = { ...ZERO };
+        // Parking brake on, so an idle machine doesn't roll down a grade.
+        c = { ...ZERO, brake: 1 };
         v.status = "Parked";
       }
     }
@@ -2076,6 +2119,13 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   const player = state.vehicles[state.active];
   if (player && !player.status) {
     player.status = player.busy ? "Working" : "In your seat";
+  }
+  {
+    const me = state.vehicles[state.active];
+    if (me && !state.watching && me.defId === "dozer") {
+      const msg = Ops.ripTick(state, me, dt, faceNearPlayer(state, me, 6));
+      if (msg) me.status = msg;
+    }
   }
   Ops.tick(state, opsBefore, dt, (v) => vehicleStats(v).capacity, (v) => {
     if (v.cargo > 0.04) dropInFront(state, v, v.x, v.z);
@@ -2726,7 +2776,10 @@ function priceRows(state: GameState, here: AreaId): HudModel["prices"] {
 function blastLabel(state: GameState) {
   const b = state.blast;
   if (!b) return "";
-  if (b.phase === "drill") return `Drilling blast holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`;
+  if (b.phase === "drill")
+    return b.t < BORE_SECONDS
+      ? `Drill rig boring holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`
+      : `Charging the holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Hold still.`;
   const v = state.vehicles[state.active];
   const far = v ? distTo(v.x, v.z, b.x, b.z) : 99;
   return `BLAST IN ${Math.ceil(b.t)} · you are ${far.toFixed(0)} m away${far < BLAST_RADIUS ? ` · GET BACK ${BLAST_RADIUS} m!` : " · safe"}`;
@@ -2955,6 +3008,8 @@ function areaHud(state: GameState) {
     officeTitle: onRoad ? "Yard office" : area === "mountain" ? "Mountain office" : area === "river" ? "Valley office" : "Ridge office",
     valleyOpen: open,
     mountainOpen: mountainOpen(state),
+    ripperControl: !!v && v.defId === "dozer" && !state.watching && Ops.on(3) && Ops.ops(state).ripper,
+    ripper: v?.ripper ?? 0,
     mountainHaul:
       area === "ridge" && mountainOpen(state) && !onRoad
         ? haulBlocker(state, "mountain") || `Haul ${v ? DEFS[v.defId].name : "machine"} straight to High mountain · ${formatMoney(MOUNTAIN_HAUL_FEE)}`

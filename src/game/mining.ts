@@ -30,7 +30,9 @@ export const SAFE_DISTANCE = BLAST_RADIUS;
 export const TEST_HOLE_COST = 150;
 /** Flat price of one blast (one charge), paid when you start drilling. */
 export const BLAST_COST = 750;
-export const DRILL_SECONDS = 10;
+/** Drill rig bores the holes (first 8 s), then the crew charges them (last 4 s). */
+export const DRILL_SECONDS = 12;
+export const BORE_SECONDS = 8;
 export const FUSE_SECONDS = 6;
 export const MIN_PURITY = 0.3;
 

@@ -73,7 +73,7 @@ describe("blast rules", () => {
     assert.equal(canBlastToday(3, 3), false);
     assert.equal(canBlastToday(3, 4), true);
   });
-  it("drilling takes about 10 seconds", () => {
-    assert.ok(DRILL_SECONDS >= 8 && DRILL_SECONDS <= 12);
+  it("drilling and charging take 12 seconds", () => {
+    assert.equal(DRILL_SECONDS, 12);
   });
 });

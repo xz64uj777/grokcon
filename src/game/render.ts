@@ -1,4 +1,5 @@
 import { nightness, on as onRound } from "@/game/ops";
+import { BORE_SECONDS, DRILL_SECONDS } from "@/game/mining";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
@@ -8,6 +9,8 @@ import { X1 } from "@/game/mountain";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
 import { buildMountain } from "@/game/mountain-scene";
+import { pileShape } from "@/game/piles";
+import { drapeMesh, heightAt, gradeAt } from "@/game/terrain";
 import type { Deposit, GameState, VehicleId } from "@/game/types";
 import { faceOf, mountainOpen, mountainUnlockable, vehicleStats } from "@/game/sim";
 
@@ -244,16 +247,18 @@ export function createWorld(host: HTMLElement): World {
   pullout.position.set(PASS_SUMMIT_X, 0.042, 112);
   pullout.receiveShadow = true;
   scene.add(pullout);
-  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340)), std(0xffffff, { map: groundTex, roughness: 1 }));
+  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340, 170, 170)), std(0xffffff, { map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
+  drapeMesh(ground, 0);
   scene.add(ground);
 
   const pitMat = std(0xb8aa9a, { roughness: 1, map: track(gravelTexture()) });
-  const pit = new THREE.Mesh(track(new THREE.CircleGeometry(1, 48)), pitMat);
+  const pit = new THREE.Mesh(track(new THREE.RingGeometry(0.001, 1, 48, 16)), pitMat);
   pit.rotation.x = -Math.PI / 2;
-  pit.position.set(PIT.x, 0.025, PIT.z);
+  pit.position.set(PIT.x, 0, PIT.z);
   pit.scale.set(PIT.rx, PIT.rz, 1);
+  drapeMesh(pit, 0.03);
   pit.receiveShadow = true;
   scene.add(pit);
   const bench = new THREE.Mesh(track(new THREE.RingGeometry(0.62, 0.78, 40)), std(0x5c4b3a, { roughness: 1 }));
@@ -367,6 +372,14 @@ export function createWorld(host: HTMLElement): World {
       blade.position.set(0, 0.55, -1.7);
       box(blade, 2.15, 0.85, 0.22, 0, 0.35, 0, steel);
       root.add(blade);
+      // Rear ripper: a single shank on a frame, hidden until the ripper is bought.
+      const ripper = new THREE.Group();
+      ripper.name = "ripper";
+      ripper.position.set(0, 0.9, 1.75);
+      box(ripper, 1.2, 0.25, 0.4, 0, 0, 0.2, steel);
+      box(ripper, 0.18, 1.3, 0.22, 0, -0.55, 0.45, steel);
+      ripper.visible = false;
+      root.add(ripper);
       box(root, 0.45, 0.35, 0.7, 0, 0.7, 1.45, trim);
     } else if (id === "loader") {
       wheels.push(addWheel(root, -0.95, 0.62, -1.15), addWheel(root, 0.95, 0.62, -1.15));
@@ -654,19 +667,38 @@ export function createWorld(host: HTMLElement): World {
       group.add(cut);
       group.rotation.y = faceOf(d).yaw;
     } else {
-      const scrape = new THREE.Mesh(track(new THREE.CircleGeometry(2.4, 16)), std(0x3a322b, { roughness: 1 }));
+      const scrape = new THREE.Mesh(track(new THREE.CircleGeometry(1.25, 16)), std(0x3a322b, { roughness: 1 }));
       scrape.rotation.x = -Math.PI / 2;
       scrape.position.y = 0.03;
       scrape.receiveShadow = true;
       group.add(scrape);
-      const count = 22;
+      // The heap itself: a rough cone of unit radius, scaled to the tonnage every frame.
+      const heapGeo = new THREE.ConeGeometry(1, 1, 18, 4, false);
+      const hp = heapGeo.attributes.position as THREE.BufferAttribute;
+      for (let k = 0; k < hp.count; k++) {
+        const y = hp.getY(k);
+        if (y > 0.49) continue;
+        const n = Math.sin(hp.getX(k) * 9.1 + hp.getZ(k) * 5.3) * 0.08;
+        hp.setXYZ(k, hp.getX(k) * (1 + n), y, hp.getZ(k) * (1 - n));
+      }
+      heapGeo.translate(0, 0.5, 0);
+      heapGeo.computeVertexNormals();
+      const heap = new THREE.Mesh(track(heapGeo), mat);
+      heap.userData.ore = true;
+      heap.userData.heap = true;
+      heap.castShadow = true;
+      heap.receiveShadow = true;
+      group.add(heap);
+      const count = 10;
       for (let i = 0; i < count; i++) {
         const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
         mesh.userData.ore = true;
         const size = 0.16 + ((i * 5) % 7) * 0.03;
         const angle = i * 2.399963229728653;
-        const ring = 0.2 + Math.sqrt((i + 0.5) / count) * 1.7;
-        mesh.position.set(Math.cos(angle) * ring * 0.45, size * 0.55, Math.sin(angle) * ring * 1.65);
+        // Loose lumps rolled down to the toe of the heap.
+        const ring = 0.85 + ((i * 3) % 4) * 0.06;
+        mesh.userData.toe = true;
+        mesh.position.set(Math.cos(angle) * ring, 0.08 + (1 - ring) * 0.75, Math.sin(angle) * ring);
         mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
         mesh.scale.set(size, size * 0.7, size * 0.9);
         mesh.castShadow = true;
@@ -762,6 +794,74 @@ export function createWorld(host: HTMLElement): World {
     const lit = state.ops?.lights;
     lightRig.intensity = lit && v ? k * 900 : 0;
     if (v) lightRig.position.set(v.x + 6, 14, v.z + 6);
+  }
+  // Blast drill rig: a crawler with a mast that bores a row of holes, then the holes get charged.
+  const drillRig = new THREE.Group();
+  {
+    const yellow = std(0xd9a21b, { roughness: 0.6, metalness: 0.2 });
+    const dark = std(0x2b2a28, { roughness: 0.9 });
+    const tracksL = new THREE.Mesh(track(new THREE.BoxGeometry(0.7, 0.7, 4.2)), dark);
+    tracksL.position.set(-1.1, 0.35, 0);
+    const tracksR = tracksL.clone();
+    tracksR.position.x = 1.1;
+    const body = new THREE.Mesh(track(new THREE.BoxGeometry(2.2, 1.3, 2.8)), yellow);
+    body.position.set(0, 1.25, 0.5);
+    const mast = new THREE.Mesh(track(new THREE.BoxGeometry(0.4, 7.5, 0.4)), yellow);
+    mast.position.set(0, 4.2, -1.6);
+    const rod = new THREE.Mesh(track(new THREE.CylinderGeometry(0.09, 0.09, 6, 6)), steel);
+    rod.name = "rod";
+    rod.position.set(0, 3.4, -1.95);
+    for (const m of [tracksL, tracksR, body, mast, rod]) {
+      m.castShadow = true;
+      drillRig.add(m);
+    }
+  }
+  drillRig.visible = false;
+  scene.add(drillRig);
+  const holeMat = std(0x161412, { roughness: 1 });
+  const primerMat = std(0xe26a2c, { roughness: 0.5, emissive: 0x5a1a00 });
+  const holes: THREE.Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const h = new THREE.Mesh(track(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 8)), holeMat);
+    h.visible = false;
+    scene.add(h);
+    holes.push(h);
+  }
+  function updateDrill(state: GameState) {
+    const b = state.blast;
+    if (!b || b.phase !== "drill") {
+      drillRig.visible = false;
+      for (const h of holes) h.visible = false;
+      return;
+    }
+    const d = state.deposits.find((o) => o.id === b.deposit);
+    const yaw = d ? faceOf(d).yaw : 0;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    const rx = -fz;
+    const rz = fx;
+    const boring = b.t < BORE_SECONDS;
+    const done = Math.min(6, Math.floor((b.t / BORE_SECONDS) * 6));
+    // Rig steps along the row of holes; parks beside it while charging.
+    const slot = boring ? done - 2.5 : 4;
+    const cx = b.x - fx * 3 + rx * slot * 1.4;
+    const cz = b.z - fz * 3 + rz * slot * 1.4;
+    drillRig.visible = true;
+    drillRig.position.set(cx, heightAt(cx, cz), cz);
+    drillRig.rotation.y = yaw;
+    const rod = drillRig.getObjectByName("rod");
+    if (rod) {
+      rod.rotation.y += boring ? 0.6 : 0;
+      const k = ((b.t / BORE_SECONDS) * 6) % 1;
+      rod.position.y = boring ? 3.4 - k * 2.6 : 3.4;
+    }
+    for (let i = 0; i < holes.length; i++) {
+      const hx = b.x - fx * 3 + rx * (i - 2.5) * 1.4 - fx * 2.2;
+      const hz = b.z - fz * 3 + rz * (i - 2.5) * 1.4 - fz * 2.2;
+      holes[i].visible = i < done || !boring;
+      holes[i].position.set(hx, heightAt(hx, hz) + 0.04, hz);
+      holes[i].material = !boring && (b.t - BORE_SECONDS) / (DRILL_SECONDS - BORE_SECONDS) > i / 6 ? primerMat : holeMat;
+    }
   }
   function updateWeather(intensity: number, dt: number) {
     const k = Math.max(0, Math.min(1, intensity));
@@ -896,7 +996,9 @@ export function createWorld(host: HTMLElement): World {
     const yaw = v.yaw + orbitOffset;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
-    _desired.set(v.x - fx * dist, 3 + dist * 0.5 * tall, v.z - fz * dist);
+    // Follow the ground: the camera rides at the higher of the machine's and its own spot's height.
+    const groundY = Math.max(heightAt(v.x, v.z), heightAt(v.x - fx * dist, v.z - fz * dist));
+    _desired.set(v.x - fx * dist, groundY + 3 + dist * 0.5 * tall, v.z - fz * dist);
     // Never park the camera inside a wall or cliff: lift it over the top instead.
     for (const b of BLOCKS) {
       if (b.kind !== "wall" && b.kind !== "cliff") continue;
@@ -908,7 +1010,7 @@ export function createWorld(host: HTMLElement): World {
     } else {
       camera.position.lerp(_desired, 1 - Math.exp(-3.4 * dt));
     }
-    _look.set(v.x + fx * (8 + dist * 0.35), 1.2, v.z + fz * (8 + dist * 0.35));
+    _look.set(v.x + fx * (8 + dist * 0.35), heightAt(v.x, v.z) + 1.2, v.z + fz * (8 + dist * 0.35));
     camera.lookAt(_look);
     if (shake > 0) {
       camera.position.x += (Math.random() - 0.5) * shake;
@@ -925,12 +1027,16 @@ export function createWorld(host: HTMLElement): World {
       const rig = rigs.get(v.uid);
       if (!rig) continue;
       const hauled = (state.deck ?? []).includes(v.uid);
-      rig.root.position.set(v.x, hauled ? DECK_Y : bridgeDeckY(v.x, v.z), v.z);
+      rig.root.position.set(v.x, hauled ? DECK_Y : bridgeDeckY(v.x, v.z) + heightAt(v.x, v.z), v.z);
+      // Sit on the slope: nose up on a climb, lean on a side slope.
+      rig.root.rotation.order = "YXZ";
       rig.root.rotation.y = v.yaw;
+      const g = hauled ? { along: 0, side: 0 } : gradeAt(v.x, v.z, v.yaw);
+      rig.root.rotation.z = Math.atan(g.side);
       if (v.defId === "dozer") {
-        rig.root.rotation.x = v.busy ? Math.sin(clock.t * 11) * 0.05 : 0;
+        rig.root.rotation.x = Math.atan(g.along) + (v.busy ? Math.sin(clock.t * 11) * 0.05 : 0);
       } else {
-        rig.root.rotation.x = 0;
+        rig.root.rotation.x = Math.atan(g.along);
       }
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;
@@ -1033,19 +1139,26 @@ export function createWorld(host: HTMLElement): World {
         });
       }
     }
+    for (const v of state.vehicles) {
+      if (v.defId !== "dozer") continue;
+      const shank = rigs.get(v.uid)?.root.getObjectByName("ripper");
+      if (!shank) continue;
+      shank.visible = !!state.ops?.ripper;
+      shank.position.y += (0.9 - (v.ripper ?? 0) * 0.75 - shank.position.y) * 0.25;
+    }
     const player = state.vehicles[state.active];
     for (const d of state.deposits) {
       const view = depositViews.get(d.id);
       if (!view) continue;
       const owned = state.claims.includes(d.claim);
-      view.group.position.set(d.x, 0, d.z);
+      view.group.position.set(d.x, heightAt(d.x, d.z), d.z);
       const fullness = d.max > 0 ? Math.max(0, Math.min(1, d.tons / d.max)) : 0;
       view.group.visible = d.tons > 0.15 || d.regen > 0 || d.overburden > 0.2;
       if (d.kind === "vein" && view.cut) {
         const oreDug = 1 - fullness;
         const cover = d.overburden > 0.2 ? Math.min(1, d.overburden / 36) : 0;
         const dug = Math.min(1, oreDug * 0.85 + (1 - cover) * 0.45);
-        view.group.position.set(d.x, 0, d.z);
+        view.group.position.set(d.x, heightAt(d.x, d.z), d.z);
         view.group.rotation.y = faceOf(d).yaw;
         view.group.scale.set(1, 1, 1);
         if (Math.abs(dug - view.lastDug) > 0.012) {
@@ -1056,16 +1169,14 @@ export function createWorld(host: HTMLElement): World {
         }
         (view.cut.material as THREE.MeshStandardMaterial).color.set(owned ? 0xffffff : 0x8d8680);
       } else {
-        view.group.position.set(d.x, 0, d.z);
+        view.group.position.set(d.x, heightAt(d.x, d.z), d.z);
         view.group.rotation.y = 0;
         // Loose material piles must scale with actual tonnage, not fullness.
         // New piles have max === tons, so fullness is always 1 and made every
         // dump look like the same tiny pile regardless of how much was unloaded.
-        const loosePile = d.kind === "pile";
-        const s = loosePile
-          ? Math.max(0.7, Math.min(3.4, 0.7 + Math.sqrt(Math.max(0, d.tons)) * 0.36))
-          : 0.62 + fullness * 0.42;
-        view.group.scale.setScalar(s);
+        // Heaped, cone or long windrow, sized from the tonnage (bulk density and angle of repose).
+        const shape = pileShape(d.kind === "pile" ? d.tons : Math.max(4, d.tons * 0.25));
+        view.group.scale.set(shape.radius, shape.height, shape.radius * shape.stretch);
         view.group.children.forEach((child) => {
           child.visible = true;
         });
@@ -1089,7 +1200,7 @@ export function createWorld(host: HTMLElement): World {
       const onScreen = Math.abs(_proj.x) < 0.78 && _proj.z < 1;
       view.sign.visible = !loose && onScreen && fade > 0.04 && view.group.visible;
       view.sign.scale.set(7.2 * fade, 3.4 * fade, 1);
-      view.sign.position.set(d.x, 3.4 + fullness * 2.4, d.z);
+      view.sign.position.set(d.x, heightAt(d.x, d.z) + 3.4 + fullness * 2.4, d.z);
     }
     // Dust trails behind every moving machine (pooled; the player kicks up the most).
     state.vehicles.forEach((v, vi) => {
@@ -1162,6 +1273,7 @@ export function createWorld(host: HTMLElement): World {
     washGroup.visible = !!state.washPlant;
     updateWeather(rainAt(state.market.seed, state.seconds), dt);
     applyNight(state);
+    updateDrill(state);
     sky.position.set(camera.position.x, 0, camera.position.z);
     renderer.render(scene, camera);
   }
