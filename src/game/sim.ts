@@ -478,6 +478,8 @@ export function homeClaim(area: AreaId) {
 export const FEED_RATES: Partial<Record<VehicleId, number>> = { excavator: 1.8, loader: 1.4, skid: 0.5 };
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 export const YARD_FEED_RATE = 0.1;
+/** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
+export const YARD_FEED_KEEP = 0.8;
 export const FEED_REACH = 10;
 
 export function feedId(padId: string) {
@@ -529,7 +531,7 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
       v.status = `Feeding the ${pad.name.toLowerCase()}`;
       feeders.push({ rate, keep: player ? 1 : CREW_KEEP, player });
     });
-    if (!feeders.length) feeders.push({ rate: YARD_FEED_RATE, keep: 1, player: false });
+    if (!feeders.length) feeders.push({ rate: YARD_FEED_RATE, keep: YARD_FEED_KEEP, player: false });
     let paid = 0;
     let tons = 0;
     let byPlayer = false;

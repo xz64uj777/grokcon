@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, YARD_FEED_RATE, FEED_RATES } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -76,4 +76,26 @@ test("separate nearby piles survive save and reload", () => {
   const back = readSaveText(currentSaveText()!)!;
   const tons = ["p-a", "p-b", "p-c"].map((id) => back.deposits.find((d) => d.id === id)?.tons);
   assert.deepEqual(tons, [3, 30, 200]);
+});
+
+test("yard feeder keeps a 20% cut, paying less than crew feeding", () => {
+  const pay = (crew: boolean) => {
+    const s = freshGame("T");
+    s.cash = 1e6;
+    s.claims.push(5);
+    const pad = wash();
+    if (crew) {
+      buyVehicle(s, "loader");
+      const m = s.vehicles[s.vehicles.length - 1];
+      m.operator = true;
+      m.x = pad.x + 3; m.z = pad.z + 3;
+    }
+    addFeedPile(s, pad, "gold", 2, 1);
+    const c0 = s.cash;
+    for (let i = 0; i < 300; i++) step(s, idle, 0.1, false);
+    assert.equal(feedPile(s), undefined);
+    return s.cash - c0;
+  };
+  assert.equal(YARD_FEED_KEEP, 0.8);
+  assert.ok(pay(false) < pay(true), `${pay(false)} vs ${pay(true)}`);
 });
