@@ -91,9 +91,9 @@ test("fix: summit mill pays near sluice price for gold, even with the sluice pre
   for (let i = 0; i < 90; i++) step(s, { throttle: 0, steer: 0, action: true }, 1 / 30, true);
   // The truck tips a feed pile at the mill (no pay yet)...
   assert.equal(t.cargo < 0.05, true);
-  assert.equal(Math.round(s.cash - c0), 0);
+  assert.ok(s.cash - c0 < 200, `${s.cash - c0}`); // only the slow yard feeder so far
   const pile = s.deposits.find((d) => d.kind === "pile" && d.ore === "gold" && Math.hypot(d.x - 2052, d.z - 50) < 12);
-  assert.ok(pile && pile.tons > 6.9);
+  assert.ok(pile && pile.tons > 6);
   // ...and a loader feeding it in gets paid near the sluice price.
   buyVehicle(s, "loader");
   const l = s.vehicles[s.vehicles.length - 1];

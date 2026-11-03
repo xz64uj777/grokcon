@@ -4,7 +4,7 @@ import { onHaulRoad } from "@/game/lowboy";
 import { WASH_PLANT, areaOf } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
-import { MARKET_KEYS, ensureLowboy, freshGame } from "@/game/sim";
+import { MARKET_KEYS, ensureLowboy, freshGame, homeClaim } from "@/game/sim";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
 
 /** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
@@ -179,9 +179,9 @@ function sanitize(raw: unknown): GameState | null {
         x: posX(s.x, 0),
         z: posZ(s.z, s.x, 0),
         regen: 0,
-        claim: areaOf(typeof s.x === "number" ? s.x : 0) === "river" ? 5 : 1,
+        claim: homeClaim(areaOf(typeof s.x === "number" ? s.x : 0)),
         radius: 6,
-        sign: "PILE",
+        sign: s.id.startsWith("feed-") ? "FEED" : "PILE",
         purity: num(s.purity, 1, 0.3, 1),
         overburden: 0,
         grade: 1,
@@ -194,26 +194,7 @@ function sanitize(raw: unknown): GameState | null {
       };
       if (pile.tons >= 0.2) state.deposits.push(pile);
     }
-    const drop = new Set<string>();
-    const loose = state.deposits.filter((d) => d.kind === "pile" && d.id.startsWith("pile-"));
-    for (let i = 0; i < loose.length; i++) {
-      const a = loose[i];
-      if (drop.has(a.id)) continue;
-      for (let j = i + 1; j < loose.length; j++) {
-        const b = loose[j];
-        if (drop.has(b.id) || b.ore !== a.ore) continue;
-        if (Math.hypot(a.x - b.x, a.z - b.z) > 18) continue;
-        const t = a.tons + b.tons;
-        if (t > 0) {
-          a.x = (a.x * a.tons + b.x * b.tons) / t;
-          a.z = (a.z * a.tons + b.z * b.tons) / t;
-        }
-        a.tons = t;
-        a.max = Math.max(a.max, b.max, t);
-        drop.add(b.id);
-      }
-    }
-    if (drop.size) state.deposits = state.deposits.filter((d) => !drop.has(d.id));
+    // Each loose pile comes back on its own (no merging), so heaps keep their size and shape.
   }
   if (o.contract && typeof o.contract === "object") {
     const c = o.contract as Record<string, unknown>;
