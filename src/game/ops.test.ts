@@ -110,6 +110,41 @@ test("R8/R9 hired crew keeps working in the dark, and stops when the tank is emp
   assert.equal(s.cash, 1000 - (100 * O.PRICES.diesel + O.PRICES.callout));
 });
 
+test("the yard pump sells gas and diesel cheaper than a delivery", () => {
+  assert.ok(O.PRICES.gas < O.PRICES.dieselPump);
+  assert.ok(O.PRICES.dieselPump < O.PRICES.diesel);
+  const s = freshGame("Pump");
+  s.cash = 5000;
+  const v = s.vehicles[0];
+  O.ops(s).fuel[v.uid] = 0.5;
+  v.x = O.FUEL_BAYS[0].x;
+  v.z = O.FUEL_BAYS[0].z;
+  v.speed = 0;
+  O.tick(s, O.before(s), 1, () => 2, () => {});
+  const filled = O.ops(s).fuel[v.uid] - 0.5;
+  assert.ok(filled > 0.4, `only filled ${filled}`);
+  const spent = 5000 - s.cash;
+  assert.ok(Math.abs(spent - filled * O.tankLitres(v) * O.PRICES.gas) < 0.05, `spent ${spent}`);
+  assert.equal(v.status, "At the gas pump");
+});
+
+test("a hired machine low on fuel drives to the pumps", () => {
+  const s = freshGame("Pump");
+  const v = s.vehicles[0];
+  s.watching = true;
+  s.active = 1;
+  v.hired = true;
+  v.operator = true;
+  v.x = -8;
+  v.z = 20;
+  v.speed = 0;
+  O.ops(s).fuel[v.uid] = 0.2;
+  const start = Math.hypot(v.x - O.FUEL_BAYS[0].x, v.z - O.FUEL_BAYS[0].z);
+  for (let i = 0; i < 30 * 6; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+  const now = Math.hypot(v.x - O.FUEL_BAYS[0].x, v.z - O.FUEL_BAYS[0].z);
+  assert.ok(now < start - 4, `${v.status} dist ${now.toFixed(1)} from ${start.toFixed(1)}`);
+});
+
 test("R11 inspector fines a beat-up site and rewards a clean one", () => {
   const s = freshGame("T");
   s.cash = 10000;

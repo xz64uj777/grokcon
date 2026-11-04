@@ -5,6 +5,8 @@
  */
 import type { GameState, OreId, PadKind, VehicleState } from "@/game/types";
 import { gradeAt } from "@/game/terrain";
+import { X0, areaOf } from "@/game/river";
+import { X1 } from "@/game/mountain";
 import * as C from "@/game/career";
 
 export const DAY = 300;
@@ -32,7 +34,11 @@ export const PRICES = {
   screen: 16000,
   lights: 7500,
   fuelTruck: 38000,
+  /** Delivered diesel, used by the fuel truck and the emergency call-out. */
   diesel: 1.35,
+  /** Pump price. Driving to a fuel bay skips the call-out. */
+  dieselPump: 1.05,
+  gas: 0.85,
   callout: 75,
   fine: 1200,
 };
@@ -273,9 +279,35 @@ export function bridgeClock(state: GameState) {
 }
 
 // ---- Round 7, 9: tires and fuel ---------------------------------------------
-/** Litres in a full tank. */
+/** Litres in a full tank. The crusher burns none. Pickups, skids and light plants take gas. */
 export function tankLitres(v: VehicleState) {
-  return ({ pickup: 100, skid: 110, dozer: 450, loader: 380, excavator: 400, truck: 300, heavy: 900, lowboy: 600, crusher: 0 } as Record<string, number>)[v.defId] ?? 300;
+  return ({ pickup: 100, skid: 80, light: 40, dozer: 450, loader: 380, excavator: 400, truck: 300, heavy: 900, lowboy: 600, crusher: 0 } as Record<string, number>)[v.defId] ?? 300;
+}
+export function fuelKind(id: string): "gas" | "diesel" | "none" {
+  if (id === "crusher") return "none";
+  if (id === "pickup" || id === "skid" || id === "light") return "gas";
+  return "diesel";
+}
+export function pumpPrice(id: string) {
+  return fuelKind(id) === "gas" ? PRICES.gas : PRICES.dieselPump;
+}
+
+/** One diesel and gas island on each map, beside the yard. */
+export const FUEL_BAYS = [
+  { area: "ridge" as const, x: -22, z: 44 },
+  { area: "river" as const, x: X0 + 58, z: 36 },
+  { area: "mountain" as const, x: X1 - 42, z: 42 },
+];
+export const PUMP_REACH = 7;
+
+/** Where a low tank should drive. Null if it does not need fuel. The point is the bay, or the machine itself when it is already under the canopy. */
+export function fuelAim(state: GameState, v: VehicleState): { x: number; z: number } | null {
+  if (!on(9) || tankLitres(v) <= 0) return null;
+  if ((ops(state).fuel[v.uid] ?? 1) > 0.34) return null;
+  const bay = FUEL_BAYS.find((b) => b.area === areaOf(v.x));
+  if (!bay) return null;
+  if (Math.hypot(v.x - bay.x, v.z - bay.z) <= PUMP_REACH) return { x: v.x, z: v.z };
+  return { x: bay.x, z: bay.z };
 }
 /** A full tank lasts about one and a half game days of steady work. */
 export function burn(v: VehicleState, dt: number) {
@@ -381,13 +413,31 @@ export function tick(
     if (on(9)) {
       const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * C.wearFuel(o.wear[v.uid] ?? 0) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1);
       o.fuel[v.uid] = Math.max(0, f);
-      if (o.fuelTruck && o.fuel[v.uid] < 0.25) {
+      // The fuel truck is an emergency delivery. The pumps are cheaper, so it only rolls when a tank is nearly dry.
+      if (o.fuelTruck && o.fuel[v.uid] < 0.1) {
         const litres = (1 - o.fuel[v.uid]) * tankLitres(v);
         const cost = litres * PRICES.diesel;
         if (state.cash >= cost) {
           state.cash -= cost;
           o.upkeep += cost;
           o.fuel[v.uid] = 1;
+        }
+      }
+      const bay = FUEL_BAYS.find((b) => b.area === areaOf(v.x));
+      const atPump = !!bay && Math.hypot(v.x - bay.x, v.z - bay.z) <= PUMP_REACH && Math.abs(v.speed) < 1.2;
+      if (atPump && o.fuel[v.uid] < 0.995 && fuelKind(v.defId) !== "none") {
+        const room = 0.995 - o.fuel[v.uid];
+        const price = pumpPrice(v.defId);
+        let litres = Math.min(room, dt * 0.5) * tankLitres(v);
+        if (litres * price > state.cash) litres = price > 0 ? state.cash / price : 0;
+        if (litres > 0.01) {
+          const cost = litres * price;
+          state.cash -= cost;
+          o.upkeep += cost;
+          o.fuel[v.uid] = Math.min(1, o.fuel[v.uid] + litres / tankLitres(v));
+          v.status = fuelKind(v.defId) === "gas" ? "At the gas pump" : "At the diesel pump";
+        } else if (o.fuel[v.uid] < 0.995) {
+          v.status = "No cash for the pump";
         }
       }
       if (o.fuel[v.uid] <= 0 && player && state.cash < refuelCost(state, v)) rescue(state, v, yard(v));
@@ -487,7 +537,7 @@ export function shopButtons(state: GameState): OpsButton[] {
   add(3, "ripper", "Dozer ripper", PRICES.ripper, "Rip hard rock with the dozer so it digs at normal speed. No blast needed.");
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);
   add(8, "lights", "Work lights", PRICES.lights, "A brighter pool on the machine you are driving. Yard light plants and every machine's own lamps already come on at night.");
-  add(9, "fuelTruck", "Fuel truck", PRICES.fuelTruck, "Tops up every machine on site. You still pay for diesel.");
+  add(9, "fuelTruck", "Fuel truck", PRICES.fuelTruck, "Emergency diesel delivery when a tank is nearly empty. The yard pumps are cheaper, and pickups and skids take gas.");
   return b;
 }
 
@@ -498,7 +548,7 @@ export function fieldButtons(state: GameState, ctx: Ctx): OpsButton[] {
   if (!v) return b;
   if (on(2) && o.scanner && ctx.nearFace) b.push({ id: "scan", label: "Scan", detail: "", enabled: true });
   if (on(7) && o.flat.includes(v.uid)) b.push({ id: "tires", label: `Tires ${money(tireCost(v))}`, detail: "", enabled: state.cash >= tireCost(v) });
-  if (on(9) && !o.fuelTruck && (o.fuel[v.uid] ?? 1) < 0.5) b.push({ id: "fuel", label: `Fuel ${money(refuelCost(state, v))}`, detail: "", enabled: state.cash >= refuelCost(state, v) });
+  if (on(9) && !o.fuelTruck && (o.fuel[v.uid] ?? 1) < 0.5) b.push({ id: "fuel", label: `Deliver fuel ${money(refuelCost(state, v))}`, detail: "Comes to you. The yard pumps are cheaper.", enabled: state.cash >= refuelCost(state, v) });
   if (C.isWorker(v)) {
     const w = (o.wear ?? {})[v.uid] ?? 0;
     const broke = (o.broke ?? []).includes(v.uid);

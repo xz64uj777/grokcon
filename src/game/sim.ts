@@ -1026,6 +1026,15 @@ function aiControl(state: GameState, index: number): Control {
     v.status = "Backing off a wall";
     return { throttle: -0.65, steer: v.bias, action: false, brake: 0 };
   }
+  const pumps = Ops.fuelAim(state, v);
+  if (pumps) {
+    if (distTo(v.x, v.z, pumps.x, pumps.z) < 1) {
+      v.status = Ops.fuelKind(v.defId) === "gas" ? "At the gas pump" : "At the diesel pump";
+      return { throttle: 0, steer: 0, action: false, brake: 1 };
+    }
+    v.status = "Heading to the fuel pumps";
+    return seek(v, pumps.x, pumps.z, 4);
+  }
   if (v.defId === "light") {
     v.status = Ops.nightness(state.seconds) > 0.35 ? "Lights on" : "Light plant parked";
     return { throttle: 0, steer: 0, action: false, brake: 1 };

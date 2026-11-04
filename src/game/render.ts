@@ -1,4 +1,4 @@
-import { nightness, on as onRound } from "@/game/ops";
+import { FUEL_BAYS, nightness, on as onRound } from "@/game/ops";
 import { BORE_SECONDS, DRILL_SECONDS } from "@/game/mining";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
@@ -831,6 +831,27 @@ export function createWorld(host: HTMLElement): World {
     sign.position.set(pad.x, 6.2, pad.z);
     sign.scale.set(7.5, 3.2, 1);
     into.add(sign);
+  }
+
+  const pumpBody = std(0xe7e1d6, { roughness: 0.6 });
+  const canopy = std(0xc4552a, { roughness: 0.55 });
+  for (const bay of FUEL_BAYS) {
+    const g = new THREE.Group();
+    g.position.set(bay.x, 0, bay.z);
+    box(g, 7.2, 0.1, 3.6, 0, 0.06, 0, std(0x3c403c, { roughness: 1 }));
+    for (const x of [-2.8, 2.8]) {
+      for (const z of [-1.3, 1.3]) box(g, 0.16, 3.1, 0.16, x, 1.6, z, steel);
+    }
+    box(g, 6.6, 0.14, 3.5, 0, 3.2, 0, canopy);
+    box(g, 0.5, 1.25, 0.32, -1.15, 0.72, 0, pumpBody);
+    box(g, 0.5, 1.25, 0.32, 1.15, 0.72, 0, pumpBody);
+    box(g, 0.08, 0.08, 0.08, -1.15, 1.45, 0.2, std(0x2f8f78));
+    box(g, 0.08, 0.08, 0.08, 1.15, 1.45, 0.2, std(0xc4552a));
+    scene.add(g);
+    const sign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: track(textTexture("DIESEL  ·  GAS", "#e6b325")), transparent: true, depthWrite: false, fog: false })));
+    sign.position.set(bay.x, 4.2, bay.z);
+    sign.scale.set(8, 2.6, 1);
+    scene.add(sign);
   }
 
   const gatePost = new THREE.Mesh(track(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6)), beaconMat);
