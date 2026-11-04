@@ -42,6 +42,8 @@ export const VALLEY_SPUR = { minX: X0 + 24, maxX: X0 + 64, minZ: 48, maxZ: 108 }
 export const MOUNTAIN_ROAD = { minX: X0 + 78, maxX: X1 - 36, minZ: 86, maxZ: 108 };
 /** Drops off that road to the edge of the mountain camp. The camp itself stays open ground. */
 export const MOUNTAIN_SPUR = { minX: X1 - 58, maxX: X1 - 18, minZ: 72, maxZ: 108 };
+/** Gravel from the camp pad up onto the spur, so the way out is a road and not a mountainside. */
+export const MOUNTAIN_LINK = { minX: X1 - 56, maxX: X1 - 16, minZ: 44, maxZ: 110 };
 /** Past this the mountain road counts as High mountain, not River Valley. */
 export const MOUNTAIN_GATE_X = 1500;
 
@@ -56,7 +58,7 @@ function inBox(p: Point, b: { minX: number; maxX: number; minZ: number; maxZ: nu
 
 /** A hill footprint (center plus radii) sitting on the marked north road. */
 export function hillBlocksRoad(x: number, z: number, rx: number, rz: number) {
-  const boxes = [HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR, MOUNTAIN_ROAD, MOUNTAIN_SPUR];
+  const boxes = [HAUL_ROAD, RIDGE_SPUR, VALLEY_SPUR, MOUNTAIN_ROAD, MOUNTAIN_SPUR, MOUNTAIN_LINK];
   return boxes.some((b) => x + rx > b.minX - 8 && x - rx < b.maxX + 8 && z + rz > b.minZ - 4 && z - rz < b.maxZ + 6);
 }
 

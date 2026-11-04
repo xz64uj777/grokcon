@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, onMountainRoad, areaIn, spotsUsed, stepHitch, MOUNTAIN_GATE_X, MOUNTAIN_ROAD } from "./lowboy.ts";
+import { blockRoadGate, deckFit, deckSpots, hillBlocksRoad, inDropYard, passPeaks, onHaulRoad, onMountainRoad, areaIn, spotsUsed, stepHitch, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD } from "./lowboy.ts";
 import { RIVER, X0 } from "./river.ts";
 import { X1 } from "./mountain.ts";
+import { ensureLowboy, freshGame, step, toggleCrew } from "./sim.ts";
 
 describe("lowboy deck space", () => {
   it("gives small machines one spot and big machines the whole deck", () => {
@@ -81,10 +82,27 @@ describe("north road", () => {
       { x: MOUNTAIN_GATE_X - 6, z: roadZ + 40, r: 16 },
       { x: MOUNTAIN_GATE_X + 14, z: roadZ - 42, r: 18 },
       { x: MOUNTAIN_ROAD.maxX - 24, z: roadZ + 46, r: 20 },
-      { x: MOUNTAIN_ROAD.maxX - 8, z: roadZ - 58, r: 14 },
+      { x: X1 + 28, z: 16, r: 14 },
     ];
     for (const peak of peaks) assert.equal(hillBlocksRoad(peak.x, peak.z, peak.r, peak.r), false);
     assert.equal(hillBlocksRoad(MOUNTAIN_GATE_X, roadZ, 14, 14), true);
+    assert.equal(hillBlocksRoad(MOUNTAIN_LINK.minX + 10, 60, 12, 12), true);
+  });
+
+  it("drives to the selected map with an empty deck", () => {
+    const s = freshGame("Empty");
+    s.cash = 5000;
+    s.claims.push(4, 5, 6, 8);
+    s.watching = true;
+    ensureLowboy(s);
+    const rig = s.vehicles.find((v) => v.defId === "lowboy")!;
+    toggleCrew(s, s.vehicles.indexOf(rig));
+    rig.workFace = "map:ridge";
+    rig.x = X1 - 30;
+    rig.z = 52;
+    for (let i = 0; i < 30 * 15; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+    assert.ok(rig.z > 78, `stopped at the mountain edge z=${rig.z.toFixed(1)} ${rig.status}`);
+    assert.match(rig.status, /Ridge/);
   });
 });
 

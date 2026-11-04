@@ -749,6 +749,11 @@ function bestPile(state: GameState, v: VehicleState) {
   return best;
 }
 
+/** A mountain bench wall is still between these two points. */
+function benchBetween(x: number, z: number, tx: number, tz: number) {
+  return areaOf(x) === "mountain" && switchbackWaypoint(x, z, tx, tz) != null;
+}
+
 function routeTo(v: VehicleState, tx: number, tz: number) {
   if (areaOf(v.x) === "river") return routeRiver(v, tx, tz);
   if (areaOf(v.x) === "mountain") {
@@ -977,6 +982,12 @@ function lowboyDrive(state: GameState, v: VehicleState): Control {
   }
   const job = haulCandidate(state, v, dest);
   if (!job) {
+    if (areaOf(v.x) !== dest || onHaulRoad(v.x, v.z)) {
+      v.status = `Heading to ${areaName(dest)}`;
+      const pad = yardPad(dest);
+      const aim = lowboyAim(v, pad.x, pad.z);
+      return seek(v, aim.x, aim.z, 6);
+    }
     v.status = `No parked machine here to haul to ${areaName(dest)}.`;
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
@@ -1064,22 +1075,25 @@ function aiControl(state: GameState, index: number): Control {
     const loadsTrucks = def.id === "loader" || def.id === "excavator";
     if (loadsTrucks) {
       const truck = nearestHauler(state, v, 480, true);
-      if (truck) {
+      if (truck && !benchBetween(v.x, v.z, truck.x, truck.z)) {
         target = truck;
         arrive = 7.5;
         label = `Loading ${DEFS[truck.defId].name}`;
         return;
       }
+      // The truck is still on another bench. Hold the face. Meeting on the wall is what stuck the claim truck.
+      if (truck && areaOf(v.x) === "mountain") return;
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
-    if (pad) {
-      target = pad;
-      arrive = Math.max(5, pad.r * 0.62);
-      label = `Hauling to ${pad.name}`;
-    }
+    if (!pad) return;
+    if (loadsTrucks && benchBetween(v.x, v.z, pad.x, pad.z)) return;
+    target = pad;
+    arrive = Math.max(5, pad.r * 0.62);
+    label = `Hauling to ${pad.name}`;
   };
 
-  const waitingTruck = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, full ? 480 : 28, true) : null;
+  const waitingTruckRaw = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, full ? 480 : 28, true) : null;
+  const waitingTruck = waitingTruckRaw && !benchBetween(v.x, v.z, waitingTruckRaw.x, waitingTruckRaw.z) ? waitingTruckRaw : null;
 
   if (def.push > 0) {
     const scoreVein = (d: Deposit) => {
@@ -1193,7 +1207,15 @@ function aiControl(state: GameState, index: number): Control {
         }
       }
       if (digger) {
-        if (diggerD < 8) {
+        const wrongRock = v.cargo > 1 && !!v.cargoOre && !!digger.cargoOre && digger.cargoOre !== v.cargoOre;
+        if (wrongRock) haulTarget();
+        const leave = target as { x: number; z: number } | null;
+        if (wrongRock && leave) {
+          v.status = label;
+          return seek(v, leave.x, leave.z, arrive);
+        }
+        const blocked = benchBetween(v.x, v.z, digger.x, digger.z);
+        if (!blocked && diggerD < 8) {
           v.status = "Under the bucket";
           return { throttle: 0, steer: 0, action: false, brake: 1 };
         }
@@ -1793,7 +1815,7 @@ function resolveCircle(state: GameState, v: VehicleState, radius: number) {
     v.status = "The mountain road is for the lowboy";
     return;
   }
-  if (v.defId === "lowboy" && (onHaulRoad(v.x, v.z) || v.z > 64)) {
+  if (v.defId === "lowboy" && (onHaulRoad(v.x, v.z) || (v.x > X1 - 70 && v.x < X1 + 10 && v.z > 48))) {
     clampLowboy(v);
     return;
   }

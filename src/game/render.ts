@@ -4,7 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
-import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
+import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
 import { X1 } from "@/game/mountain";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
 import { buildValley } from "@/game/valley";
@@ -222,7 +222,7 @@ export function createWorld(host: HTMLElement): World {
   const snowMat = std(0xe7eef2, { roughness: 0.9, flatShading: true });
   const pineMat = std(0x2c4a38, { roughness: 1, flatShading: true });
   const rockMat = std(0x6e6a66, { roughness: 1, flatShading: true });
-  for (const slab of [linkShoulder, MOUNTAIN_ROAD, MOUNTAIN_SPUR, linkCamp]) {
+  for (const slab of [linkShoulder, MOUNTAIN_ROAD, MOUNTAIN_SPUR, MOUNTAIN_LINK, linkCamp]) {
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(slab.maxX - slab.minX, slab.maxZ - slab.minZ)), slab === linkShoulder ? dirtMat : roadMat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set((slab.minX + slab.maxX) / 2, slab === linkShoulder ? 0.02 : 0.046, (slab.minZ + slab.maxZ) / 2);
@@ -266,7 +266,7 @@ export function createWorld(host: HTMLElement): World {
     { x: MOUNTAIN_GATE_X - 6, z: roadZ + 40, r: 16, h: 36 },
     { x: MOUNTAIN_GATE_X + 14, z: roadZ - 42, r: 18, h: 42 },
     { x: MOUNTAIN_ROAD.maxX - 24, z: roadZ + 46, r: 20, h: 48 },
-    { x: MOUNTAIN_ROAD.maxX - 8, z: roadZ - 58, r: 14, h: 32 },
+    { x: X1 + 28, z: 16, r: 14, h: 32 },
   ];
   for (const peak of gatePeaks) {
     if (hillBlocksRoad(peak.x, peak.z, peak.r, peak.r)) continue;
