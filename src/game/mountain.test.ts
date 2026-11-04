@@ -206,7 +206,7 @@ test("the quarry road is signed once the lease is open, and closed until you pay
   assert.ok(rig.x > 1400, `leased lowboy did not drive the quarry road, x=${rig.x}`);
 });
 
-test("a hired lowboy driver loads a machine assigned to another map", () => {
+test("a hired lowboy drives to the selected map without loading first", () => {
   const s = freshGame("T");
   s.cash = 5000;
   s.claims.push(4, 5, 6, 8);
@@ -227,6 +227,8 @@ test("a hired lowboy driver loads a machine assigned to another map", () => {
   assert.deepEqual(rigCard?.sources.map((o) => o.label), ["Ridge pit", "River Valley", "High mountain"]);
   const home = buildHud(s, true).crew[0].sources.find((o) => o.value === "1");
   assert.match(home?.label ?? "", /Ridge pit/);
-  for (let i = 0; i < 30 * 8; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
-  assert.ok((s.deck ?? []).includes(pickup.uid), rig.status);
+  for (let i = 0; i < 30 * 6; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+  assert.equal((s.deck ?? []).includes(pickup.uid), false, rig.status);
+  assert.match(rig.status, /High mountain/);
+  assert.ok(rig.z > 50, `did not leave the yard, z=${rig.z.toFixed(1)}`);
 });

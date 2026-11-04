@@ -938,26 +938,6 @@ function lowboyDest(v: VehicleState): AreaId | null {
   return null;
 }
 
-function haulCandidate(state: GameState, rig: VehicleState, dest: AreaId): VehicleState | null {
-  let best: VehicleState | null = null;
-  let bestD = Infinity;
-  const here = areaOf(rig.x);
-  state.vehicles.forEach((o, i) => {
-    if (o === rig || o.defId === "crusher" || o.defId === "lowboy") return;
-    if ((state.deck ?? []).includes(o.uid)) return;
-    if (o.cargo > 0.05 || o.operator) return;
-    if (i === state.active && !state.watching) return;
-    if (Math.abs(o.speed) > 0.6) return;
-    if (areaOf(o.x) !== here || areaOf(o.x) === dest) return;
-    const d = distTo(rig.x, rig.z, o.x, o.z);
-    if (d < bestD) {
-      bestD = d;
-      best = o;
-    }
-  });
-  return best;
-}
-
 function lowboyDrive(state: GameState, v: VehicleState): Control {
   if (!state.deck) state.deck = [];
   const cargo = state.deck
@@ -980,34 +960,15 @@ function lowboyDrive(state: GameState, v: VehicleState): Control {
     v.status = "Pick a map to haul to.";
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
-  const job = haulCandidate(state, v, dest);
-  if (!job) {
-    if (areaOf(v.x) !== dest || onHaulRoad(v.x, v.z)) {
-      v.status = `Heading to ${areaName(dest)}`;
-      const pad = yardPad(dest);
-      const aim = lowboyAim(v, pad.x, pad.z);
-      return seek(v, aim.x, aim.z, 6);
-    }
-    v.status = `No parked machine here to haul to ${areaName(dest)}.`;
+  const pad = yardPad(dest);
+  const there = areaOf(v.x) === dest && v.z < 78 && distTo(v.x, v.z, pad.x, pad.z) < 18 && !onHaulRoad(v.x, v.z);
+  if (there) {
+    v.status = `Waiting at ${areaName(dest)}`;
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
-  if (distTo(v.x, v.z, job.x, job.z) < 9 && Math.abs(v.speed) < 2) {
-    const ids = state.deck.map((id) => state.vehicles.find((o) => o.uid === id)?.defId ?? "");
-    const why = deckFit(ids, job.defId);
-    if (!why) {
-      job.speed = 0;
-      state.deck.push(job.uid);
-      bindDeck(state);
-      snapDeck(state);
-      v.status = `${DEFS[job.defId].name} is on the deck`;
-      return { throttle: 0, steer: 0, action: false, brake: 1 };
-    }
-    v.status = why;
-    return { throttle: 0, steer: 0, action: false, brake: 1 };
-  }
-  v.status = `Picking up ${DEFS[job.defId].name} for ${areaName(dest)}`;
-  const aim = lowboyAim(v, job.x, job.z);
-  return seek(v, aim.x, aim.z, 5);
+  v.status = `Heading to ${areaName(dest)}`;
+  const aim = lowboyAim(v, pad.x, pad.z);
+  return seek(v, aim.x, aim.z, 6);
 }
 
 function aiControl(state: GameState, index: number): Control {
