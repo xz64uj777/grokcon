@@ -309,10 +309,11 @@ export function createWorld(host: HTMLElement): World {
   drapeMesh(pit, 0.03);
   pit.receiveShadow = true;
   scene.add(pit);
-  const bench = new THREE.Mesh(track(new THREE.RingGeometry(0.62, 0.78, 40)), std(0x5c4b3a, { roughness: 1 }));
+  const bench = new THREE.Mesh(track(new THREE.RingGeometry(0.62, 0.78, 72, 6)), std(0x5c4b3a, { roughness: 1 }));
   bench.rotation.x = -Math.PI / 2;
-  bench.position.set(PIT.x, 0.03, PIT.z);
+  bench.position.set(PIT.x, 0, PIT.z);
   bench.scale.set(PIT.rx, PIT.rz, 1);
+  drapeMesh(bench, 0.08);
   bench.receiveShadow = true;
   scene.add(bench);
 
@@ -372,7 +373,7 @@ export function createWorld(host: HTMLElement): World {
     const rigBeams: THREE.SpotLight[] = [];
     let glow: THREE.PointLight | null = null;
     const addLamps = (parent: THREE.Object3D, y: number, z: number, half: number) => {
-      rigBeams.push(mountLamps(parent, y, z, half));
+      mountLamps(parent, y, z, half);
     };
     const body = id === "pickup" ? rust : id === "truck" ? white : id === "heavy" ? orange : id === "lowboy" ? lowboyPaint : paint;
     const trim = id === "pickup" ? cream : id === "truck" ? orange : id === "lowboy" ? steel : paintDark;
@@ -612,7 +613,8 @@ export function createWorld(host: HTMLElement): World {
         head.add(bank);
       }
       root.add(head);
-      glow = new THREE.PointLight(0xfff1d0, 0, 58, 1.5);
+      downBeam(root, 6.2, 0.45);
+      glow = new THREE.PointLight(0xfff1d0, 55, 58, 1.5);
       glow.position.set(0, 6, 0.4);
       root.add(glow);
       wheels.push(addWheel(root, -0.7, 0.4, -0.7), addWheel(root, 0.7, 0.4, -0.7));
@@ -632,15 +634,15 @@ export function createWorld(host: HTMLElement): World {
       wheels.push(addWheel(root, -wx, 0.52, -2.2 * len), addWheel(root, wx, 0.52, -2.2 * len));
       wheels.push(addWheel(root, -wx, 0.55, 0.35 * len), addWheel(root, wx, 0.55, 0.35 * len));
       wheels.push(addWheel(root, -wx, 0.55, 1.45 * len), addWheel(root, wx, 0.55, 1.45 * len));
-      addLamps(root, 1.55, -2.15 * len - 0.95, 0.55 * len);
+      addLamps(root, 1.35, -2.15 * len - 1.2, 0.55 * len);
     }
 
-    if (id === "pickup") addLamps(root, 1.05, -2.1, 0.52);
-    else if (id === "skid") addLamps(root, 1.62, -0.42, 0.4);
-    else if (id === "dozer") addLamps(root, 1.48, -1.18, 0.48);
-    else if (id === "loader") addLamps(root, 1.68, -1.5, 0.58);
-    else if (id === "excavator" && house) addLamps(house, 1.5, -1.08, 0.4);
-    else if (id === "lowboy") addLamps(root, 1.5, -5.08, 0.9);
+    if (id === "pickup") addLamps(root, 1.02, -2.22, 0.58);
+    else if (id === "skid") addLamps(root, 1.72, -0.22, 0.42);
+    else if (id === "dozer") addLamps(root, 2.08, -0.42, 0.46);
+    else if (id === "loader") addLamps(root, 2.42, 0.05, 0.5);
+    else if (id === "excavator" && house) addLamps(house, 1.85, -1.08, 0.42);
+    else if (id === "lowboy") addLamps(root, 1.5, -5.2, 0.95);
 
     const beams = rigBeams;
 
@@ -864,8 +866,18 @@ export function createWorld(host: HTMLElement): World {
   const lightRig = new THREE.PointLight(0xfff1d0, 0, 70, 1.6);
   lightRig.position.set(0, 14, 0);
   scene.add(lightRig);
-  const lampMat = std(0xfff6df, { emissive: 0xfff1c4, emissiveIntensity: 0.85, roughness: 0.3 });
-  const lampGeo = track(new THREE.BoxGeometry(0.34, 0.18, 0.1));
+  const lampMat = track(new THREE.MeshBasicMaterial({ color: 0xfff6df }));
+  const lampGeo = track(new THREE.BoxGeometry(0.42, 0.26, 0.14));
+  const beamMat = track(new THREE.MeshBasicMaterial({
+    color: 0xfff3c4,
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    fog: true,
+  }));
+  const beamGeo = track(new THREE.ConeGeometry(1.5, 10, 14, 1, true));
   function mountLamps(parent: THREE.Object3D, y: number, z: number, half: number) {
     for (const x of [-half, half]) {
       const lamp = new THREE.Mesh(lampGeo, lampMat);
@@ -873,14 +885,20 @@ export function createWorld(host: HTMLElement): World {
       lamp.castShadow = false;
       parent.add(lamp);
     }
-    const spot = new THREE.SpotLight(0xfff3d2, 0, 30, 0.65, 0.4, 1.1);
-    spot.position.set(0, y, z);
-    spot.castShadow = false;
-    const aim = new THREE.Object3D();
-    aim.position.set(0, Math.max(0.15, y - 2.5), z - 16);
-    parent.add(spot, aim);
-    spot.target = aim;
-    return spot;
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.rotation.x = -Math.PI / 2;
+    beam.position.set(0, y - 0.25, z - 5.1);
+    beam.frustumCulled = false;
+    beam.renderOrder = 2;
+    parent.add(beam);
+  }
+  function downBeam(parent: THREE.Object3D, y: number, z: number) {
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.rotation.x = Math.PI;
+    beam.position.set(0, y - 5, z);
+    beam.frustumCulled = false;
+    beam.renderOrder = 2;
+    parent.add(beam);
   }
   /** Portable light plant: trailer, mast, and a pool of light that comes on at night. */
   const towerLights: THREE.PointLight[] = [];
@@ -899,7 +917,8 @@ export function createWorld(host: HTMLElement): World {
       head.add(bank);
     }
     g.add(head);
-    const glow = new THREE.PointLight(0xfff1d0, 0, 48, 1.7);
+    downBeam(g, 6.6, 0.3);
+    const glow = new THREE.PointLight(0xfff1d0, 40, 48, 1.7);
     glow.position.set(0, 6.4, 0);
     g.add(glow);
     towerLights.push(glow);
@@ -916,8 +935,8 @@ export function createWorld(host: HTMLElement): World {
   function applyNight(state: GameState) {
     if (!onRound(8)) return;
     const k = nightness(state.seconds);
-    lampMat.emissiveIntensity = 0.85 + k * 2;
-    for (const glow of towerLights) glow.intensity = k * 140;
+    beamMat.opacity = 0.4 + k * 0.35;
+    for (const glow of towerLights) glow.intensity = 40 + k * 110;
     drillLight.intensity = drillRig.visible ? k * 55 : 0;
     if (k <= 0) {
       lightRig.intensity = 0;
@@ -1182,8 +1201,7 @@ export function createWorld(host: HTMLElement): World {
       } else {
         rig.root.rotation.x = Math.atan(g.along);
       }
-      const nightHere = night;
-      if (rig.glow) rig.glow.intensity = nightHere * 170;
+      if (rig.glow) rig.glow.intensity = 55 + night * 130;
       beamOrder.push({ d: Math.hypot(v.x - camera.position.x, v.z - camera.position.z), beams: rig.beams });
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;

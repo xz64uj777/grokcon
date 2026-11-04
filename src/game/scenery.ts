@@ -4,7 +4,7 @@
  * Everything is procedural (canvas textures, merged or instanced low-poly meshes).
  * Purely visual: collision still comes from BLOCKS in the catalog.
  */
-import { PIT_DEPTH } from "@/game/terrain";
+import { PIT_DEPTH, heightAt } from "@/game/terrain";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BLOCKS, BOUNDS, PADS, PIT, inPit } from "@/game/catalog";
@@ -218,6 +218,15 @@ export function buildPitWalls(scene: THREE.Scene, track: Track, kind: "wall" | "
 
 export type Road = { w: number; h: number; x: number; z: number };
 
+/** Keep a mesh's own height, but sit it on the hills instead of a flat y. */
+function layOnGround(geo: THREE.BufferGeometry | null) {
+  if (!geo) return;
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)) + pos.getY(i));
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+}
+
 /** Haul roads with tire-track texture and low berms along both long edges. */
 export function buildRoads(scene: THREE.Scene, track: Track, roads: Road[]) {
   const tex = track(roadTexture());
@@ -227,7 +236,7 @@ export function buildRoads(scene: THREE.Scene, track: Track, roads: Road[]) {
     const alongZ = rd.h >= rd.w;
     const long = alongZ ? rd.h : rd.w;
     const wide = alongZ ? rd.w : rd.h;
-    const g = new THREE.PlaneGeometry(wide, long);
+    const g = new THREE.PlaneGeometry(wide, long, Math.max(1, Math.round(wide / 4)), Math.max(1, Math.round(long / 4)));
     g.rotateX(-Math.PI / 2);
     if (!alongZ) g.rotateY(Math.PI / 2);
     // stretch the texture along the road so the tire tracks run its length
@@ -253,6 +262,7 @@ export function buildRoads(scene: THREE.Scene, track: Track, roads: Road[]) {
   }
   const road = mergeGeometries(roadGeos, false);
   roadGeos.forEach((g) => g.dispose());
+  layOnGround(road);
   if (road) {
     track(road);
     const m = new THREE.Mesh(road, track(new THREE.MeshStandardMaterial({ map: tex, roughness: 1 })));
@@ -261,6 +271,7 @@ export function buildRoads(scene: THREE.Scene, track: Track, roads: Road[]) {
   }
   const berm = mergeGeometries(bermGeos.map((g) => g.toNonIndexed()), false);
   bermGeos.forEach((g) => g.dispose());
+  layOnGround(berm);
   if (berm) {
     track(berm);
     const m = new THREE.Mesh(berm, track(new THREE.MeshStandardMaterial({ color: 0x7a644e, roughness: 1, flatShading: true })));
