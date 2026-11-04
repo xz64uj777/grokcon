@@ -100,6 +100,27 @@ test("yard feeder keeps a 20% cut, paying less than crew feeding", () => {
   assert.ok(pay(false) < pay(true), `${pay(false)} vs ${pay(true)}`);
 });
 
+test("a parked crusher does not slide when another machine is against it", () => {
+  const s = freshGame("Crusher");
+  const plant = s.vehicles.find((v) => v.defId === "crusher")!;
+  const truck = s.vehicles[0];
+  plant.x = 20;
+  plant.z = 20;
+  plant.yaw = 0.4;
+  plant.speed = 2;
+  plant.operator = false;
+  truck.x = plant.x + 2;
+  truck.z = plant.z;
+  truck.speed = 4;
+  s.active = 0;
+  s.watching = false;
+  for (let i = 0; i < 60; i++) step(s, idle, 1 / 30, true);
+  assert.equal(plant.x, 20);
+  assert.equal(plant.z, 20);
+  assert.equal(plant.speed, 0);
+  assert.equal(plant.operator, false);
+});
+
 test("a light plant can be bought again and stays parked", () => {
   const s = freshGame("Lights");
   s.cash = 40000;

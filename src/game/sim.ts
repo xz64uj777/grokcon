@@ -1013,7 +1013,7 @@ function aiControl(state: GameState, index: number): Control {
     }
     if (!digger) {
       v.status = "Plant parked";
-      return { ...ZERO };
+      return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
     const dx = digger.x - v.x;
     const dz = digger.z - v.z;
@@ -2189,10 +2189,15 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   if (state.market.day !== dayBefore) Ops.newDay(state);
   const controls: Control[] = [];
   const work: WorkOpts[] = [];
+  const held: { v: VehicleState; x: number; z: number; yaw: number }[] = [];
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
     v.busy = false;
     v.manual = false;
+    // A parked crusher is a plant, not a vehicle. Don't let a bump or a grade walk it off.
+    if (v.defId === "crusher" && !v.operator && !(i === state.active && !state.watching)) {
+      held.push({ v, x: v.x, z: v.z, yaw: v.yaw });
+    }
     if (aboard(v)) {
       controls.push({ ...ZERO });
       work.push(AUTO_CREW);
@@ -2285,6 +2290,13 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     v.status = "Backed out of the west cliff";
   }
   if (rigBefore && rigPrev) trailerCollide(state, rigBefore, rigPrev);
+  for (const h of held) {
+    h.v.x = h.x;
+    h.v.z = h.z;
+    h.v.yaw = h.yaw;
+    h.v.speed = 0;
+    h.v.status = "Plant parked";
+  }
   pourIntoTrucks(state);
   const sales: StepFX["sales"] = [];
   const breaks: StepFX["breaks"] = [];
