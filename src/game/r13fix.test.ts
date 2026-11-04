@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -98,4 +98,20 @@ test("yard feeder keeps a 20% cut, paying less than crew feeding", () => {
   };
   assert.equal(YARD_FEED_KEEP, 0.8);
   assert.ok(pay(false) < pay(true), `${pay(false)} vs ${pay(true)}`);
+});
+
+test("a light plant can be bought again and stays parked", () => {
+  const s = freshGame("Lights");
+  s.cash = 40000;
+  assert.equal(buyVehicle(s, "light"), "");
+  assert.equal(s.cash, 40000 - 3200);
+  assert.equal(buyVehicle(s, "light"), "");
+  assert.equal(s.cash, 40000 - 3200 - 6400);
+  const plant = s.vehicles.find((v) => v.defId === "light")!;
+  plant.x = 12;
+  plant.z = 40;
+  s.watching = true;
+  assert.equal(toggleCrew(s, s.vehicles.indexOf(plant)), "");
+  for (let i = 0; i < 90; i++) step(s, idle, 1 / 30, false);
+  assert.ok(Math.hypot(plant.x - 12, plant.z - 40) < 1.5, `${plant.x.toFixed(1)} ${plant.z.toFixed(1)} ${plant.status}`);
 });

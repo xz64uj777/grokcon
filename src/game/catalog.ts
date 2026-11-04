@@ -456,6 +456,7 @@ export const VEHICLE_ORDER: VehicleId[] = [
   "truck",
   "excavator",
   "heavy",
+  "light",
 ];
 
 export const DEFS: Record<VehicleId, VehicleDef> = {
@@ -620,6 +621,24 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
     receives: false,
     upgradeScale: 1.4,
     bodyLabel: "Jaw",
+  },
+  light: {
+    id: "light",
+    name: "Light plant",
+    blurb: "Tow it to a face and park it. The lamp bank comes on at night. Up to four. Each one costs more.",
+    price: 3200,
+    capacity: 0,
+    maxSpeed: 9,
+    accel: 7,
+    turn: 1.7,
+    dig: 0,
+    scoop: 0,
+    push: 0,
+    range: 4,
+    radius: 1.6,
+    receives: false,
+    upgradeScale: 1,
+    bodyLabel: "Mast",
   },
 };
 

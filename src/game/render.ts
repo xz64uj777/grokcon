@@ -39,6 +39,7 @@ type Rig = {
   hitch: THREE.Group | null;
   deckPivot: THREE.Group | null;
   beams: THREE.SpotLight[];
+  glow: THREE.PointLight | null;
 };
 
 type DepositView = {
@@ -369,6 +370,7 @@ export function createWorld(host: HTMLElement): World {
     let deckPivot: THREE.Group | null = null;
     let hitch: THREE.Group | null = null;
     const rigBeams: THREE.SpotLight[] = [];
+    let glow: THREE.PointLight | null = null;
     const addLamps = (parent: THREE.Object3D, y: number, z: number, half: number) => {
       rigBeams.push(mountLamps(parent, y, z, half));
     };
@@ -596,6 +598,25 @@ export function createWorld(host: HTMLElement): World {
         box(hitch, 0.16, 0.1, 1.15, -1.05, 0.92, z, paintDark);
         box(hitch, 0.16, 0.1, 1.15, 1.05, 0.92, z, paintDark);
       }
+    } else if (id === "light") {
+      box(root, 1.6, 0.42, 2.6, 0, 0.55, 0.2, paintDark);
+      box(root, 0.9, 0.45, 0.8, 0, 0.95, -0.7, cabMat);
+      box(root, 0.14, 5.4, 0.14, 0, 3.4, 0.45, steel);
+      const head = new THREE.Group();
+      head.position.set(0, 6.2, 0.45);
+      for (const side of [-1, 1]) {
+        const bank = new THREE.Mesh(lampGeo, lampMat);
+        bank.scale.set(2.2, 1.6, 1.4);
+        bank.position.set(side * 0.42, 0, 0);
+        bank.castShadow = false;
+        head.add(bank);
+      }
+      root.add(head);
+      glow = new THREE.PointLight(0xfff1d0, 0, 58, 1.5);
+      glow.position.set(0, 6, 0.4);
+      root.add(glow);
+      wheels.push(addWheel(root, -0.7, 0.4, -0.7), addWheel(root, 0.7, 0.4, -0.7));
+      wheels.push(addWheel(root, -0.7, 0.4, 0.9), addWheel(root, 0.7, 0.4, 0.9));
     } else {
       const len = id === "heavy" ? 1.25 : 1;
       box(root, 1.7 * len, 0.45, 2.1, 0, 1.05, -1.7 * len, body);
@@ -635,6 +656,7 @@ export function createWorld(host: HTMLElement): World {
       hitch,
       deckPivot,
       beams,
+      glow,
     };
   }
 
@@ -895,7 +917,7 @@ export function createWorld(host: HTMLElement): World {
     if (!onRound(8)) return;
     const k = nightness(state.seconds);
     lampMat.emissiveIntensity = 0.85 + k * 2;
-    for (const glow of towerLights) glow.intensity = k * 80;
+    for (const glow of towerLights) glow.intensity = k * 140;
     drillLight.intensity = drillRig.visible ? k * 55 : 0;
     if (k <= 0) {
       lightRig.intensity = 0;
@@ -1143,6 +1165,8 @@ export function createWorld(host: HTMLElement): World {
     clock.t += dt;
     if (bound !== state) bound = state;
     ensure(state);
+    const night = onRound(8) ? nightness(state.seconds) : 0;
+    const beamOrder: { d: number; beams: THREE.SpotLight[] }[] = [];
     for (const v of state.vehicles) {
       const rig = rigs.get(v.uid);
       if (!rig) continue;
@@ -1158,10 +1182,9 @@ export function createWorld(host: HTMLElement): World {
       } else {
         rig.root.rotation.x = Math.atan(g.along);
       }
-      const night = onRound(8) ? nightness(state.seconds) : 0;
-      const near = Math.hypot(v.x - camera.position.x, v.z - camera.position.z) < 95;
-      const beam = near ? night * 24 : 0;
-      for (const spot of rig.beams) spot.intensity = beam;
+      const nightHere = night;
+      if (rig.glow) rig.glow.intensity = nightHere * 170;
+      beamOrder.push({ d: Math.hypot(v.x - camera.position.x, v.z - camera.position.z), beams: rig.beams });
       if (rig.hitch && v.defId === "lowboy") {
         const art = (v.trailerYaw ?? v.yaw) - v.yaw;
         rig.hitch.rotation.y = Math.atan2(Math.sin(art), Math.cos(art));
@@ -1263,6 +1286,11 @@ export function createWorld(host: HTMLElement): World {
         });
       }
     }
+    beamOrder.sort((a, b) => a.d - b.d);
+    beamOrder.forEach((item, i) => {
+      const beam = i < 3 ? night * 48 : 0;
+      for (const spot of item.beams) spot.intensity = beam;
+    });
     for (const v of state.vehicles) {
       if (v.defId !== "dozer") continue;
       const shank = rigs.get(v.uid)?.root.getObjectByName("ripper");

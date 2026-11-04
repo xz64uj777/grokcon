@@ -13,7 +13,8 @@ export type VehicleId =
   | "truck"
   | "heavy"
   | "crusher"
-  | "lowboy";
+  | "lowboy"
+  | "light";
 
 export type UpgradeKind = "engine" | "body" | "hydro";
 

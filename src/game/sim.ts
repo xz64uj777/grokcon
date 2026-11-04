@@ -988,6 +988,10 @@ function aiControl(state: GameState, index: number): Control {
     v.status = "Backing off a wall";
     return { throttle: -0.65, steer: v.bias, action: false, brake: 0 };
   }
+  if (v.defId === "light") {
+    v.status = Ops.nightness(state.seconds) > 0.35 ? "Lights on" : "Light plant parked";
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
+  }
   if (v.defId === "lowboy") return lowboyDrive(state, v);
 
   if (def.id === "crusher") {
@@ -2376,10 +2380,15 @@ export function lotButtons(state: GameState) {
   return out;
 }
 
+function yardCap(id: VehicleId) {
+  if (id === "skid") return 3;
+  if (id === "light") return 4;
+  return 1;
+}
+
 function canAdd(state: GameState, id: VehicleId, leaving?: VehicleId) {
   const count = state.vehicles.filter((v) => v.defId === id).length - (leaving === id ? 1 : 0);
-  if (id !== "skid" && count > 0) return "Already on the yard.";
-  if (id === "skid" && count >= 3) return "Yard limit.";
+  if (count >= yardCap(id)) return id === "skid" ? "Three skid steers is the yard limit." : id === "light" ? "Four light plants is the yard limit." : "Already on the yard.";
   return "";
 }
 
@@ -2494,10 +2503,10 @@ function spend(state: GameState, cost: number, msg: string) {
 
 export function buyVehicle(state: GameState, id: VehicleId) {
   const count = state.vehicles.filter((v) => v.defId === id).length;
-  if (id !== "skid" && count > 0) return "Already on the yard.";
-  if (id === "skid" && count >= 3) return "Three skid steers is the yard limit.";
+  const blocked = canAdd(state, id);
+  if (blocked) return blocked;
   const def = DEFS[id];
-  const price = id === "skid" ? def.price * (count + 1) : def.price;
+  const price = yardCap(id) > 1 ? def.price * (count + 1) : def.price;
   if (!spend(state, price, `${def.name} is on the yard for ${formatMoney(price)}.`)) return "Not enough cash.";
   const nv = makeVehicle(id, state.vehicles.length);
   if (currentArea(state) === "river") placeInArea(state, nv, "river");
@@ -3079,9 +3088,9 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
   const machines: HudModel["machines"] = VEHICLE_ORDER.filter((id) => id !== "pickup" && id !== "crusher").map((id) => {
     const def = DEFS[id];
     const count = state.vehicles.filter((v) => v.defId === id).length;
-    const price = id === "skid" ? def.price * (count + 1) : def.price;
-    const owned = id === "skid" ? count >= 3 : count > 0;
-    const blurb = id === "skid" && count > 0 && count < 3 ? `${count} on the yard. Next one is ${formatMoney(price)}.` : def.blurb;
+    const price = yardCap(id) > 1 ? def.price * (count + 1) : def.price;
+    const owned = count >= yardCap(id);
+    const blurb = yardCap(id) > 1 && count > 0 && count < yardCap(id) ? `${count} on the yard. Next one is ${formatMoney(price)}.` : def.blurb;
     return {
       id,
       name: def.name,
