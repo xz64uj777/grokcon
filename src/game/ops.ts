@@ -37,7 +37,7 @@ export const PRICES = {
   fine: 1200,
 };
 
-export type Event = { kind: "flood" | "double" | "breakdown"; day: number; ore?: OreId; uid?: string };
+export type Event = { kind: "flood" | "double" | "breakdown" | "rockslide"; day: number; ore?: OreId; uid?: string; gap?: number };
 
 export type Ops = {
   ramp: boolean;
@@ -66,6 +66,7 @@ export type Ops = {
   broke: string[];
   story: number;
   lotTaken: { day: number; ids: string[] };
+  brakeHeat: Record<string, number>;
 };
 
 export function freshOps(): Ops {
@@ -93,6 +94,7 @@ export function freshOps(): Ops {
     broke: [],
     story: 0,
     lotTaken: { day: -1, ids: [] },
+    brakeHeat: {},
   };
 }
 
@@ -116,8 +118,8 @@ export function readOps(raw: unknown): Ops {
   o.nuggetDay = numMap(r.nuggetDay, -1, 1e7);
   o.ripped = Array.isArray(r.ripped) ? r.ripped.filter((x): x is string => typeof x === "string") : [];
   const e = r.event as Record<string, unknown> | null;
-  if (e && (e.kind === "flood" || e.kind === "double" || e.kind === "breakdown"))
-    o.event = { kind: e.kind, day: n(e.day, 0, 0, 1e7), ore: typeof e.ore === "string" ? (e.ore as OreId) : undefined, uid: typeof e.uid === "string" ? e.uid : undefined };
+  if (e && (e.kind === "flood" || e.kind === "double" || e.kind === "breakdown" || e.kind === "rockslide"))
+    o.event = { kind: e.kind, day: n(e.day, 0, 0, 1e7), ore: typeof e.ore === "string" ? (e.ore as OreId) : undefined, uid: typeof e.uid === "string" ? e.uid : undefined, ...(typeof e.gap === "number" ? { gap: Math.floor(n(e.gap, 0, 0, 2)) } : {}) };
   o.tread = numMap(r.tread, 0, 1);
   o.flat = Array.isArray(r.flat) ? r.flat.filter((x): x is string => typeof x === "string") : [];
   o.fuel = numMap(r.fuel, 0, 1);
@@ -131,6 +133,7 @@ export function readOps(raw: unknown): Ops {
   const lt = (r.lotTaken ?? {}) as Record<string, unknown>;
   o.lotTaken = { day: n(lt.day, -1, -1, 1e7), ids: Array.isArray(lt.ids) ? lt.ids.filter((x): x is string => typeof x === "string") : [] };
   o.nextInspect = n(r.nextInspect, 4, 0, 1e7);
+  o.brakeHeat = numMap(r.brakeHeat, 0, 1);
   o.lastInspect = typeof r.lastInspect === "string" ? r.lastInspect.slice(0, 120) : "";
   return o;
 }
@@ -222,6 +225,7 @@ export function saleMult(state: GameState, ore: OreId, pad: PadKind) {
   if (on(5) && o.event?.kind === "double" && o.event.ore === ore && o.event.day === state.market.day) m *= 2;
   if (on(6) && o.screen && pad === "wash") m *= 1.12;
   if (pad === "wash" || pad === "sluice") m *= C.seasonWash(C.seasonOf(state.market.day));
+  if (pad === "mill" && C.seasonOf(state.market.day) === "winter") m *= 0.85;
   return m;
 }
 export function onSale(state: GameState, net: number, tons: number) {
@@ -239,7 +243,7 @@ export function onSale(state: GameState, net: number, tons: number) {
 }
 
 // ---- Round 5: events --------------------------------------------------------
-export function rollEvent(seed: number, day: number, valley: boolean, uids: string[]): Event | null {
+export function rollEvent(seed: number, day: number, valley: boolean, uids: string[], mountain = false): Event | null {
   const r = hash(seed, day, 5);
   if (valley && r < 0.12) return { kind: "flood", day };
   if (r < 0.24) {
@@ -247,6 +251,7 @@ export function rollEvent(seed: number, day: number, valley: boolean, uids: stri
     return { kind: "double", day, ore: ores[Math.floor(hash(seed, day, 6) * ores.length)] };
   }
   if (r < 0.33 && uids.length) return { kind: "breakdown", day, uid: uids[Math.floor(hash(seed, day, 7) * uids.length)] };
+  if (mountain && r < 0.45) return { kind: "rockslide", day, gap: Math.floor(hash(seed, day, 8) * 3) % 3 };
   return null;
 }
 export function bridgeClosed(state: GameState) {
@@ -309,7 +314,7 @@ export function newDay(state: GameState) {
   }
   if (on(5)) {
     const uids = state.vehicles.filter((v) => !isPlant(v) && v.hired).map((v) => v.uid);
-    o.event = rollEvent(state.market.seed, day, state.claims.length >= 4 || state.washPlant, uids);
+    o.event = rollEvent(state.market.seed, day, state.claims.length >= 4 || state.washPlant, uids, state.claims.includes(8));
     if (o.event?.kind === "flood") say(state, "Flood warning: the river is over the bridge deck. Bridge closed today.");
     else if (o.event?.kind === "double" && o.event.ore) say(state, `A buyer is short: ${o.event.ore} pays double today.`);
     else if (o.event?.kind === "breakdown") {
@@ -370,7 +375,7 @@ export function tick(
   for (let i = 0; i < state.vehicles.length; i++) {
     const v = state.vehicles[i];
     const p = prev.get(v.uid);
-    if (!p || isPlant(v)) continue;
+    if (!p || isPlant(v) || (state.deck ?? []).includes(v.uid)) continue;
     const player = i === state.active && !state.watching;
     let stop = "";
     if (on(9)) {
@@ -417,6 +422,27 @@ export function tick(
       v.speed = 0;
       v.status = stop;
       continue;
+    }
+    if (!o.brakeHeat) o.brakeHeat = {};
+    if (v.defId === "truck" || v.defId === "heavy" || v.defId === "lowboy") {
+      const g = gradeAt(v.x, v.z, v.yaw);
+      const loaded = v.cargo > 0.5 || (v.defId === "lowboy" && (state.deck ?? []).length > 0);
+      const prevHeat = o.brakeHeat[v.uid] ?? 0;
+      const atPullout = Math.abs(v.x - 512) <= 18 && v.z >= 86 && v.z <= 116 && Math.abs(v.speed) < 1;
+      let nextHeat = prevHeat;
+      if (loaded && g.along < -0.05 && Math.abs(v.speed) > 1.8) {
+        nextHeat = Math.min(1, prevHeat + dt * (0.08 + Math.abs(g.along) * 0.75));
+      } else {
+        nextHeat = Math.max(0, prevHeat - dt * (atPullout ? 0.45 : 0.08));
+        if (atPullout && prevHeat >= 0.35 && nextHeat < 0.35 && player) {
+          say(state, "Brakes cooled at the pass summit pull-out.");
+        }
+      }
+      o.brakeHeat[v.uid] = nextHeat;
+      if (nextHeat >= 0.75) {
+        if (Math.abs(v.speed) > 4.5) v.speed = Math.sign(v.speed) * 4.5;
+        v.status = "Hot brakes · pull out or ease off";
+      }
     }
     if (moved > 0) {
       const g = gradeAt(v.x, v.z, v.yaw);

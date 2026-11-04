@@ -1,7 +1,7 @@
 import * as Ops from "@/game/ops";
 import * as Career from "@/game/career";
 import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
-import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
+import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, SWITCHBACKS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
   BASE_DEPOSITS,
   BLOCKS,
@@ -456,6 +456,7 @@ function closestDeposit(
   let bestD = Infinity;
   for (const d of state.deposits) {
     if (kind !== "any" && d.kind !== kind) continue;
+    if (kind === "pile" && d.id.startsWith("feed-")) continue;
     if (v && !acceptsJob(state, v, d)) continue;
     if (d.tons < 0.08 && d.regen <= 0) continue;
     const dist = distTo(x, z, d.x, d.z);
@@ -573,7 +574,7 @@ function feedJob(state: GameState, v: VehicleState): Control | null {
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
-    if (!d.id.startsWith("feed-") || d.tons <= 0.01 || !sameArea(v, d)) continue;
+    if (!d.id.startsWith("feed-") || d.tons <= 0.01 || !sameArea(v, d) || otherBank(v.x, d.x)) continue;
     const dist = distTo(v.x, v.z, d.x, d.z);
     if (dist < bestD) {
       bestD = dist;
@@ -593,7 +594,7 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
   let best: Deposit | null = null;
   let bestD = 16;
   for (const d of state.deposits) {
-    if (d.kind !== "pile" || d.ore !== ore) continue;
+    if (d.kind !== "pile" || d.ore !== ore || d.id.startsWith("feed-") || d.id === "slide-gap") continue;
     const dist = distTo(x, z, d.x, d.z);
     if (dist < bestD) {
       bestD = dist;
@@ -740,7 +741,7 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!sameArea(d, v)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore);
+    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) + (d.id === "slide-gap" ? 2500 : 0);
     if (s > score) {
       score = s;
       best = d;
@@ -938,24 +939,61 @@ function lowboyDest(v: VehicleState): AreaId | null {
   return null;
 }
 
+function haulCandidate(state: GameState, rig: VehicleState, dest: AreaId): VehicleState | null {
+  if (onHaulRoad(rig.x, rig.z) || areaOf(rig.x) === dest) return null;
+  const loadedIds = (state.deck ?? []).map((id) => state.vehicles.find((o) => o.uid === id)?.defId ?? "");
+  let best: VehicleState | null = null;
+  let bestD = Infinity;
+  for (let i = 0; i < state.vehicles.length; i++) {
+    const o = state.vehicles[i];
+    if (o === rig || o.defId === "lowboy" || o.defId === "crusher") continue;
+    if (!state.watching && i === state.active) continue;
+    if ((state.deck ?? []).includes(o.uid)) continue;
+    if (o.cargo > 0.05 || Math.abs(o.speed) > 0.5) continue;
+    if (areaOf(o.x) !== areaOf(rig.x)) continue;
+    if (orderArea(state, o) !== dest) continue;
+    if (deckFit(loadedIds, o.defId) !== "") continue;
+    const d = distTo(rig.x, rig.z, o.x, o.z);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
 function lowboyDrive(state: GameState, v: VehicleState): Control {
   if (!state.deck) state.deck = [];
   const cargo = state.deck
     .map((id) => state.vehicles.find((o) => o.uid === id))
     .filter((o): o is VehicleState => !!o);
+  const dest = lowboyDest(v) ?? (cargo[0] ? orderArea(state, cargo[0]) : null);
+  const more = dest ? haulCandidate(state, v, dest) : null;
+  if (more && dest) {
+    if (distTo(v.x, v.z, more.x, more.z) < 9 && Math.abs(v.speed) < 2) {
+      more.speed = 0;
+      state.deck.push(more.uid);
+      bindDeck(state);
+      snapDeck(state);
+      v.status = `${DEFS[more.defId].name} is on the deck`;
+      return { throttle: 0, steer: 0, action: false, brake: 1 };
+    }
+    v.status = `Picking up ${DEFS[more.defId].name} for ${areaName(dest)}`;
+    const aim = lowboyAim(v, more.x, more.z);
+    return seek(v, aim.x, aim.z, 5);
+  }
   if (cargo.length) {
-    const dest = lowboyDest(v) ?? orderArea(state, cargo[0]) ?? areaOf(v.x);
-    const pad = yardPad(dest);
-    const home = areaOf(v.x) === dest && v.z < 78 && distTo(v.x, v.z, pad.x, pad.z) < 20 && !onHaulRoad(v.x, v.z);
+    const targetDest = dest ?? areaOf(v.x);
+    const pad = yardPad(targetDest);
+    const home = areaOf(v.x) === targetDest && v.z < 78 && distTo(v.x, v.z, pad.x, pad.z) < 20 && !onHaulRoad(v.x, v.z);
     if (home) {
       v.status = uncouple(state, v) || `Dropped the ${DEFS[cargo[0].defId].name}`;
       return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
-    v.status = `Hauling to ${areaName(dest)}`;
+    v.status = `Hauling to ${areaName(targetDest)}`;
     const aim = lowboyAim(v, pad.x, pad.z);
     return seek(v, aim.x, aim.z, 6);
   }
-  const dest = lowboyDest(v);
   if (!dest) {
     v.status = "Pick a map to haul to.";
     return { throttle: 0, steer: 0, action: false, brake: 1 };
@@ -1172,7 +1210,7 @@ function aiControl(state: GameState, index: number): Control {
         }
       }
       if (digger) {
-        const wrongRock = v.cargo > 1 && !!v.cargoOre && !!digger.cargoOre && digger.cargoOre !== v.cargoOre;
+        const wrongRock = v.cargo > 1 && !!v.cargoOre && !!digger.cargoOre && digger.cargoOre !== "dirt" && digger.cargoOre !== v.cargoOre;
         if (wrongRock) haulTarget();
         const leave = target as { x: number; z: number } | null;
         if (wrongRock && leave) {
@@ -1186,6 +1224,14 @@ function aiControl(state: GameState, index: number): Control {
         }
         v.status = `Pulling up to the ${DEFS[digger.defId].name}`;
         return seek(v, digger.x, digger.z, 6);
+      }
+      if (v.cargo > 0.25 && v.cargoOre) {
+        haulTarget();
+        const pad = target as { x: number; z: number } | null;
+        if (pad) {
+          v.status = label;
+          return seek(v, pad.x, pad.z, arrive);
+        }
       }
       if (v.cargo < 0.2) {
         let park: VehicleState | null = null;
@@ -1620,7 +1666,7 @@ function performAction(
         src.tons -= take;
       }
       if (take > 0) {
-        addPile(state, ore, take, dropX, dropZ, src.claim, purity);
+        if (src.id !== "slide-gap") addPile(state, ore, take, dropX, dropZ, src.claim, purity);
         if (takeBite(v, dt, 0.34)) breaks.push({ x: src.x, z: src.z, tx: dropX, tz: dropZ, ore });
         v.busy = true;
         if (player) state.tutorial.loaded = true;
@@ -1891,11 +1937,56 @@ function resolveVehicles(state: GameState) {
   }
 }
 
+export const ROAD_CLEAR_BONUS = 1800;
+
+/** Drop a rockslide across one of the mountain switchback gaps. Clearing it pays ROAD_CLEAR_BONUS. */
+export function spawnRockslide(state: GameState, gap = 0) {
+  const w = SWITCHBACKS[Math.max(0, Math.min(SWITCHBACKS.length - 1, gap))];
+  const existing = state.deposits.find((d) => d.id === "slide-gap");
+  if (existing) {
+    existing.x = w.gapX;
+    existing.z = w.z;
+    existing.tons = Math.max(existing.tons, 16);
+    existing.max = Math.max(existing.max, 16);
+  } else {
+    state.deposits.push({
+      id: "slide-gap",
+      kind: "pile",
+      ore: "dirt",
+      tons: 16,
+      max: 16,
+      x: w.gapX,
+      z: w.z,
+      regen: 0,
+      claim: MOUNTAIN_CLAIM,
+      radius: 7,
+      sign: "ROCKSLIDE",
+      purity: 1,
+      overburden: 0,
+      grade: 1,
+      stress: 0,
+      bench: 1,
+      benchProgress: 0,
+      hard: false,
+      tested: true,
+      lastBlastDay: -1,
+    });
+  }
+  log(state, `Rockslide on the mountain switchback! Clear it with a dozer or loader for a ${formatMoney(ROAD_CLEAR_BONUS)} bonus.`);
+}
+
 function regen(state: GameState, dt: number) {
   for (let i = state.deposits.length - 1; i >= 0; i--) {
     const d = state.deposits[i];
     if (d.regen > 0 && d.tons < d.max) d.tons = Math.min(d.max, d.tons + d.regen * dt);
-    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.12) state.deposits.splice(i, 1);
+    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.2) {
+      if (d.id === "slide-gap") {
+        state.cash += ROAD_CLEAR_BONUS;
+        state.lifetime += ROAD_CLEAR_BONUS;
+        log(state, `Switchback rockslide cleared! +${formatMoney(ROAD_CLEAR_BONUS)} road bonus.`);
+      }
+      state.deposits.splice(i, 1);
+    }
   }
 }
 
@@ -2024,7 +2115,14 @@ export function rainNow(state: GameState) {
 /** Share of top speed the ground allows here (mud in the valley; 1 elsewhere). */
 export function groundFactor(state: GameState, v: VehicleState) {
   if (onBridge(v.x, v.z)) return 1;
-  if (areaOf(v.x) === "mountain") return coldFactor(rainNow(state));
+  if (areaOf(v.x) === "mountain") {
+    const base = coldFactor(rainNow(state));
+    if (v.defId !== "dozer") {
+      const slide = state.deposits.find((d) => d.id === "slide-gap" && d.tons > 0.2);
+      if (slide && distTo(v.x, v.z, slide.x, slide.z) <= 9) return Math.min(base, 0.35);
+    }
+    return base;
+  }
   return mudSpeedFactor(v.defId, mudDepth(v.x, v.z, state.wet));
 }
 
@@ -2186,7 +2284,11 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   state.wet = stepWet(state.wet, rainNow(state), dt);
   if (Career.seasonOf(state.market.day) === "rain") state.wet = Math.max(state.wet, 0.5);
   if (advanceMarket(state.market, state.seconds, MARKET_KEYS)) log(state, "New day. Ore prices moved. Check the price board.");
-  if (state.market.day !== dayBefore) Ops.newDay(state);
+  if (state.market.day !== dayBefore) {
+    Ops.newDay(state);
+    const ev = Ops.ops(state).event;
+    if (ev?.kind === "rockslide" && ev.day === state.market.day) spawnRockslide(state, ev.gap ?? 0);
+  }
   const controls: Control[] = [];
   const work: WorkOpts[] = [];
   const held: { v: VehicleState; x: number; z: number; yaw: number }[] = [];

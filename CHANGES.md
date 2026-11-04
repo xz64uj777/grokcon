@@ -218,4 +218,8 @@ It's built to stay smooth on a phone. On a strong phone like the Z Fold the game
 
 ## Round 3 (site operations, rounds 1–11)
 
-All rules are in `src/game/ops.ts` with tests in `src/game/ops.test.ts`. Save format is now version 4; older saves load with nothing new bought and full tanks. Round 12 (high mountain mine) was skipped: it needs a whole new map. Preview builds for each round are in /workspace/ridge-ore-preview-r1 … r11 (`VITE_OPS_LEVEL=N`).
+All rules are in `src/game/ops.ts`, `src/game/mountain.ts`, `src/game/terrain.ts`, and `src/game/career.ts`. Save format is version 4; older saves load with nothing new bought and full tanks.
+
+- **High mountain (Round 12):** lease it under Ground ($150,000) once you have the Valley quarry. Climb the lowboy road or the switchbacks to Summit Gold and Ice Copper, and sell at the Summit Mill. Watch for switchback **rockslides** — clearing one with a dozer or loader pays a **$1,800 road bonus**.
+- **Grades, feed piles, and brake heat (Round 13):** pits and switchbacks have real grades. Haul trucks tip feed piles at plants (`wash`, `sluice`, `mill`), where a loader or excavator feeds them in at full pay (or the yard feeder trickles them in at 80%). Heavy trucks build brake heat on steep loaded descents and cool fast at the **PASS SUMMIT** pull-out.
+- **Wear, seasons, story, and used lot (Round 14):** machines wear down with hard work and can be overhauled; seasons cycle Summer, Rain, and Winter; a 6-step job story pays bonuses; and the daily used machine lot sells worn machines cheap and takes trade-ins.

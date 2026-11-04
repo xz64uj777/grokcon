@@ -53,6 +53,11 @@ jobs:
           src/game/blast.test.ts
           src/game/lowboy.test.ts
           src/game/pass.test.ts
+          src/game/ops.test.ts
+          src/game/mountain.test.ts
+          src/game/r13.test.ts
+          src/game/r13fix.test.ts
+          src/game/r14.test.ts
 
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts
