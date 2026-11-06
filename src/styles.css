@@ -76,6 +76,13 @@
   .desk-only {
     display: none;
   }
+  .next-move-phone {
+    display: block;
+  }
+}
+
+.next-move-phone {
+  display: none;
 }
 
 /* Stick sizes. Cover screen / phone: thumb-sized. Unfolded inner screen: a bit
