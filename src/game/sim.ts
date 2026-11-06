@@ -136,7 +136,7 @@ export function faceOf(d: Deposit) {
   // Fresh ground is at the opening. The cut walks away from the gate as it is mined.
   const along = d.radius * (-0.85 + dug * 1.7);
   let x = d.x + rx * along;
-  let z = d.z + rz * along;
+  const z = d.z + rz * along;
   // The valley quarry is cut into the west cliff. A dug face must stay on the
   // open side of that wall, or the crew drives through the gap and gets stuck behind it.
   if (areaOf(d.x) === "river" && x < X0 - 76) x = X0 - 76;
@@ -878,9 +878,8 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
 function driveFace(vein: Deposit) {
   const cut = faceOf(vein);
   let x = cut.x;
-  let z = cut.z;
+  const z = areaOf(vein.x) === "ridge" ? Math.max(cut.z, -46) : cut.z;
   if (areaOf(vein.x) === "ridge") {
-    z = Math.max(z, -46);
     // Gold Creek sits beyond the west wall. Keeping its approach inside the
     // pit sends crews straight into that wall and bypasses routeTo's west road.
     if (vein.id !== "gold") x = Math.max(-48, Math.min(36, x));

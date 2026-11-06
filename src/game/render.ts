@@ -368,7 +368,7 @@ export function createWorld(host: HTMLElement): World {
     let beaconMat: THREE.MeshStandardMaterial | null = null;
     let conveyor: THREE.Object3D | null = null;
     let stickArm: THREE.Object3D | null = null;
-    let deckPivot: THREE.Group | null = null;
+    const deckPivot: THREE.Group | null = null;
     let hitch: THREE.Group | null = null;
     const rigBeams: THREE.SpotLight[] = [];
     let glow: THREE.PointLight | null = null;
