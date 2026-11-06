@@ -232,3 +232,25 @@ test("a hired lowboy drives to the selected map without loading first", () => {
   assert.match(rig.status, /High mountain/);
   assert.ok(rig.z > 50, `did not leave the yard, z=${rig.z.toFixed(1)}`);
 });
+
+test("Gold Creek jobs route around the west wall when assigned or sluice-preferred", () => {
+  for (const assigned of [true, false]) {
+    const s = freshGame("Gold route");
+    s.cash = 1e6;
+    s.claims.push(3);
+    s.sluice = true;
+    s.preferSluice = true;
+    s.watching = true;
+    assert.equal(buyVehicle(s, "loader"), "");
+    const loader = s.vehicles.at(-1)!;
+    loader.x = -10;
+    loader.z = 38;
+    loader.yaw = 0;
+    if (assigned) loader.workClaim = 3;
+    assert.equal(toggleCrew(s, s.vehicles.length - 1), "");
+
+    for (let i = 0; i < 30 * 10; i++) step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+
+    assert.ok(loader.x < -62, `${assigned ? "assigned" : "sluice-preferred"} crew stopped at x=${loader.x.toFixed(1)}: ${loader.status}`);
+  }
+});
