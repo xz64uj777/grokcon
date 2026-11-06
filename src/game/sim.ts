@@ -881,7 +881,9 @@ function driveFace(vein: Deposit) {
   let z = cut.z;
   if (areaOf(vein.x) === "ridge") {
     z = Math.max(z, -46);
-    x = Math.max(-48, Math.min(36, x));
+    // Gold Creek sits beyond the west wall. Keeping its approach inside the
+    // pit sends crews straight into that wall and bypasses routeTo's west road.
+    if (vein.id !== "gold") x = Math.max(-48, Math.min(36, x));
   } else if (vein.id === "quarry") {
     x = Math.max(x, X0 - 76);
   } else if (vein.id === "east-rim") {
