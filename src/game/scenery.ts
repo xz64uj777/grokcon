@@ -407,7 +407,7 @@ export function buildBackdrop(scene: THREE.Scene, track: Track, cx = 0, withSky 
     const h = 14 + r() * 26;
     const sx = 40 + r() * 40;
     const sz = 30 + r() * 30;
-    let hx = cx + Math.cos(a) * d;
+    const hx = cx + Math.cos(a) * d;
     let hz = Math.sin(a) * d;
     // Hemisphere scale is the footprint. Push a hill off the marked road, or drop it.
     for (let n = 0; n < 8 && hillBlocksRoad(hx, hz, sx, sz); n++) hz += sx * 0.85;

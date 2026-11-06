@@ -110,7 +110,7 @@ describe("fifth wheel", () => {
   it("keeps the trailer straight when the tractor drives straight", () => {
     let x = 0;
     let z = 0;
-    let yaw = 0;
+    const yaw = 0;
     let trailerYaw = 0;
     let axleX: number | undefined;
     let axleZ: number | undefined;
