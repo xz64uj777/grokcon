@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleDollarSign, Gauge, Mountain, Pickaxe, TrendingDown, TrendingUp, Minus, Users, Volume2, VolumeX, X } from "lucide-react";
 import type { GameApi, UpgradeKind, ViewModel } from "@/game/types";
+import { usDist } from "@/game/catalog";
+import { BLAST_RADIUS } from "@/game/mining";
 
 export function MineScreen() {
   const worldRef = useRef<HTMLDivElement>(null);
@@ -654,7 +656,7 @@ export function MineScreen() {
                   <article className="border-b border-border py-4">
                     <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">Blasting</h2>
                     <p className="mt-2 text-sm leading-relaxed text-muted">
-                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts. Each face can be blasted once a day. The drill rig stays on the face. You can drive off as soon as it starts. Get every machine 22 m back before the charges go. You have about 26 seconds.
+                      Pull up to a face and press Blast. Each blast costs a flat $750, paid when drilling starts. Each face can be blasted once a day. The drill rig stays on the face. You can drive off as soon as it starts. Get every machine {usDist(BLAST_RADIUS)} back before the charges go. You have about 26 seconds.
                     </p>
                   </article>
                 )}

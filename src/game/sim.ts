@@ -17,6 +17,7 @@ import {
   START_CASH,
   VEHICLE_ORDER,
   formatMoney,
+  usDist,
   inPit,
   boundsFor,
   tierInfo,
@@ -317,7 +318,7 @@ function fillContract(state: GameState, ore: OreId, tons: number) {
   state.lifetime += bonus;
   state.contractSeq += 1;
   state.contract = rollContract(state.contractSeq, state.claims, state);
-  log(state, `Contract filled. Bonus ${formatMoney(bonus)}. Next: ${state.contract.need} t ${ORES[state.contract.ore].name}.`);
+  log(state, `Contract filled. Bonus ${formatMoney(bonus)}. Next: ${state.contract.need} tons ${ORES[state.contract.ore].name}.`);
   return bonus;
 }
 
@@ -1477,7 +1478,7 @@ function performAction(
       v.busy = true;
       if (player) {
         state.tutorial.dumped = true;
-        log(state, `Tipped ${tons.toFixed(1)} t of ${ORES[ore].name.toLowerCase()} on the ${pad.name.toLowerCase()} feed pile. The yard feeder trickles it in; a loader or excavator feeds it much faster.`);
+        log(state, `Tipped ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()} on the ${pad.name.toLowerCase()} feed pile. The yard feeder trickles it in; a loader or excavator feeds it much faster.`);
       }
       return null;
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
@@ -1502,7 +1503,7 @@ function performAction(
         if (plant) plant.busy = true;
       }
       const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
-      if (player && pad.kind === "mill") log(state, `Summit mill paid ${formatMoney(net)} for ${sold.toFixed(1)} t of ${ORES[soldOre].name.toLowerCase()}.`);
+      if (player && pad.kind === "mill") log(state, `Summit mill paid ${formatMoney(net)} for ${sold.toFixed(1)} tons of ${ORES[soldOre].name.toLowerCase()}.`);
       const pure = soldOre === "dirt" ? "" : ` ${Math.round(purity * 100)}%`;
       return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${oreName} ${sold.toFixed(1)}t${pure}${extra}`, player };
     }
@@ -1599,7 +1600,7 @@ function performAction(
         });
         if (player) {
           state.tutorial.loaded = true;
-          v.status = output === "dirt" && vein.ore !== "dirt" ? `Stripped ${bite.toFixed(1)} t of dirt off the top` : `Broke ${bite.toFixed(1)} t of ${ORES[output].name}`;
+          v.status = output === "dirt" && vein.ore !== "dirt" ? `Stripped ${bite.toFixed(1)} tons of dirt off the top` : `Broke ${bite.toFixed(1)} tons of ${ORES[output].name}`;
         }
       }
       return null;
@@ -1910,8 +1911,8 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
     const msg = flooded
       ? `The bridge is flooded. ${Ops.bridgeClock(state)}. Work this bank until it opens.`
       : v.defId === "lowboy"
-        ? `Bridge limit ${BRIDGE.limit} t. The lowboy weighs ${tons.toFixed(0)} t with the deck loaded. The deck counts on the scale — take the north road.`
-        : `Bridge limit ${BRIDGE.limit} t. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} t loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} t or less.`;
+        ? `Bridge limit ${BRIDGE.limit} tons. The lowboy weighs ${tons.toFixed(0)} tons with the deck loaded. The deck counts on the scale — take the north road.`
+        : `Bridge limit ${BRIDGE.limit} tons. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} tons loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} tons or less.`;
     if (index === state.active) log(state, msg);
   }
 }
@@ -2036,9 +2037,9 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32, 
   v.cargo -= move;
   if (v.cargo <= 0.08) emptyCargo(v);
   v.busy = true;
-  const msg = `Loaded ${move.toFixed(1)} t of ${ORES[ore].name} into the ${DEFS[truck.defId].name}.`;
+  const msg = `Loaded ${move.toFixed(1)} tons of ${ORES[ore].name} into the ${DEFS[truck.defId].name}.`;
   v.status = msg;
-  truck.status = `Bed ${truck.cargo.toFixed(1)} t ${ORES[truck.cargoOre ?? ore].name}`;
+  truck.status = `Bed ${truck.cargo.toFixed(1)} tons ${ORES[truck.cargoOre ?? ore].name}`;
   return msg;
 }
 
@@ -2083,7 +2084,7 @@ function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
     if (b.t >= DRILL_SECONDS) {
       b.phase = "fuse";
       b.t = FUSE_SECONDS;
-      log(state, `Charges set in ${d.sign}. ${FUSE_SECONDS} seconds. Get every machine back ${BLAST_RADIUS} m.`);
+      log(state, `Charges set in ${d.sign}. ${FUSE_SECONDS} seconds. Get every machine back ${usDist(BLAST_RADIUS)}.`);
     }
     return;
   }
@@ -2113,8 +2114,8 @@ function updateBlast(state: GameState, dt: number, blasts: StepFX["blasts"]) {
   blasts.push({ x: f.x, z: f.z });
   state.blast = null;
   log(state, hurt > 0
-    ? `BOOM. ${loose.toFixed(0)} t of loose ${ORES[d.ore].name.toLowerCase()}. ${hurt} machine${hurt > 1 ? "s were" : " was"} too close and needs repair.`
-    : `BOOM. ${loose.toFixed(0)} t of loose ${ORES[d.ore].name.toLowerCase()} is ready to scoop.`);
+    ? `BOOM. ${loose.toFixed(0)} tons of loose ${ORES[d.ore].name.toLowerCase()}. ${hurt} machine${hurt > 1 ? "s were" : " was"} too close and needs repair.`
+    : `BOOM. ${loose.toFixed(0)} tons of loose ${ORES[d.ore].name.toLowerCase()} is ready to scoop.`);
 }
 
 export function rainNow(state: GameState) {
@@ -2573,7 +2574,7 @@ export function drillTestHole(state: GameState) {
   if (!d) return "Pull up to a face first.";
   if (d.tested) return `${d.sign} is already tested.`;
   if (!ownsClaim(state, d.claim)) return "Lease the ground first.";
-  if (!spend(state, TEST_HOLE_COST, `Test hole in ${d.sign}: seam ${Math.round(d.grade * 100)}% clean, ${d.overburden.toFixed(0)} t of dirt on top${d.hard ? ", hard rock" : ""}.`)) return "Not enough cash.";
+  if (!spend(state, TEST_HOLE_COST, `Test hole in ${d.sign}: seam ${Math.round(d.grade * 100)}% clean, ${d.overburden.toFixed(0)} tons of dirt on top${d.hard ? ", hard rock" : ""}.`)) return "Not enough cash.";
   d.tested = true;
   return "";
 }
@@ -3026,8 +3027,8 @@ function cargoLine(state: GameState, v: VehicleState) {
   }
   const st = vehicleStats(v);
   if (st.capacity <= 0) return "No bed";
-  if (v.cargo < 0.05 || !v.cargoOre) return `Empty · ${st.capacity.toFixed(1)} t`;
-  return `${ORES[v.cargoOre].name} ${v.cargo.toFixed(1)} / ${st.capacity.toFixed(1)} t`;
+  if (v.cargo < 0.05 || !v.cargoOre) return `Empty · ${st.capacity.toFixed(1)} tons`;
+  return `${ORES[v.cargoOre].name} ${v.cargo.toFixed(1)} / ${st.capacity.toFixed(1)} tons`;
 }
 
 function objective(state: GameState) {
@@ -3168,7 +3169,7 @@ function faceLabel(state: GameState, v: VehicleState) {
   const wall = d.stress > 0.5 ? " · WALL STEEP" : "";
   const hard = d.hard ? " · hard rock" : "";
   if (!d.tested) return `${d.sign} · bench ${d.bench} · not tested${hard}${wall}`;
-  return `${d.sign} · seam ${Math.round(d.grade * 100)}% · ${d.overburden.toFixed(0)} t dirt on top · bench ${d.bench}${hard}${wall}`;
+  return `${d.sign} · seam ${Math.round(d.grade * 100)}% · ${d.overburden.toFixed(0)} tons dirt on top · bench ${d.bench}${hard}${wall}`;
 }
 
 function priceRows(state: GameState, here: AreaId): HudModel["prices"] {
@@ -3198,7 +3199,7 @@ function blastLabel(state: GameState) {
       : `Charging the holes… ${Math.max(0, DRILL_SECONDS - b.t).toFixed(1)} s. Get back.`;
   const v = state.vehicles[state.active];
   const far = v ? distTo(v.x, v.z, b.x, b.z) : 99;
-  return `BLAST IN ${Math.ceil(b.t)} · you are ${far.toFixed(0)} m away${far < BLAST_RADIUS ? ` · GET BACK ${BLAST_RADIUS} m!` : " · safe"}`;
+  return `BLAST IN ${Math.ceil(b.t)} · you are ${usDist(far)}${far < BLAST_RADIUS ? ` · GET BACK ${usDist(BLAST_RADIUS)}!` : " · safe"}`;
 }
 
 export function buildHud(state: GameState, hadSave: boolean, excDrive = false): HudModel {
@@ -3303,7 +3304,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     : `New outfit. Claim truck and ${formatMoney(START_CASH)} in the box.`;
   const contract = state.contract;
   const contractLabel = contract
-    ? `Contract: ${ORES[contract.ore].name} ${Math.min(contract.delivered, contract.need).toFixed(1)}/${contract.need} t · ${formatMoney(contract.bonus)} bonus`
+    ? `Contract: ${ORES[contract.ore].name} ${Math.min(contract.delivered, contract.need).toFixed(1)}/${contract.need} tons · ${formatMoney(contract.bonus)} bonus`
     : "";
   return {
     company: state.company,
@@ -3354,7 +3355,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       if (!ownsClaim(state, d.claim) || d.tons < 1) return "";
       if (!canBlastToday(d.lastBlastDay, state.market.day)) return `${d.sign} already blasted today · next blast tomorrow`;
       if (state.explosives > 0) return `Blast ${d.sign} · free practice charge (${state.explosives} left)`;
-      return `Blast ${d.sign} · ${formatMoney(blastPrice())} for ~${blastYield(d.tons).toFixed(0)} t loose`;
+      return `Blast ${d.sign} · ${formatMoney(blastPrice())} for ~${blastYield(d.tons).toFixed(0)} tons loose`;
     })(),
     canTest: !!v && (() => {
       const d = faceNearPlayer(state, v);
@@ -3393,8 +3394,8 @@ function areaHud(state: GameState) {
   if (v && area === "river" && Math.abs(v.x - BRIDGE.x) < BRIDGE.halfLength + 14 && Math.abs(v.z - BRIDGE.z) < 14) {
     const t = crossingWeight(state, v);
     bridgeLabel = t <= BRIDGE.limit
-      ? `Bridge ${BRIDGE.limit} t limit · you weigh ${t.toFixed(0)} t · OK`
-      : `Bridge ${BRIDGE.limit} t limit · you weigh ${t.toFixed(0)} t · TOO HEAVY`;
+      ? `Bridge ${BRIDGE.limit} ton limit · you weigh ${t.toFixed(0)} tons · OK`
+      : `Bridge ${BRIDGE.limit} ton limit · you weigh ${t.toFixed(0)} tons · TOO HEAVY`;
   }
   const onRoad = !!v && onHaulRoad(v.x, v.z);
   const onMountain = !!v && onMountainRoad(v.x, v.z);
@@ -3403,14 +3404,14 @@ function areaHud(state: GameState) {
     ? ""
     : onMountain
       ? v.x < MOUNTAIN_GATE_X
-        ? `${Math.max(0, Math.round(MOUNTAIN_GATE_X - v.x))} m to the summit gate`
+        ? `${usDist(Math.max(0, MOUNTAIN_GATE_X - v.x))} to the summit gate`
         : v.x < X1 - 70
-          ? `${Math.max(0, Math.round(X1 - 50 - v.x))} m to the quarry road`
+          ? `${usDist(Math.max(0, X1 - 50 - v.x))} to the quarry road`
           : "Quarry road · south to the faces"
       : onRoad
         ? area === "river"
-          ? `${Math.max(0, Math.round(v.x))} m back to Ridge pit`
-          : `${Math.max(0, Math.round(VALLEY_GATE_X - v.x))} m to River Valley`
+          ? `${usDist(Math.max(0, v.x))} back to Ridge pit`
+          : `${usDist(Math.max(0, VALLEY_GATE_X - v.x))} to River Valley`
         : "";
   const routeLabel =
     mountainOpen(state) && area !== "mountain" && !onMountain

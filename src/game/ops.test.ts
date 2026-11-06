@@ -107,11 +107,12 @@ test("R8/R9 hired crew keeps working in the dark, and stops when the tank is emp
   s.active = 0;
   assert.match(opsAction(s, "fuel"), /Tank filled/);
   assert.equal(O.ops(s).fuel[v.uid], 1);
-  assert.equal(s.cash, 1000 - (100 * O.PRICES.diesel + O.PRICES.callout));
+  assert.equal(s.cash, 1000 - Math.round(O.tankGallons(v) * O.PRICES.diesel + O.PRICES.callout));
 });
 
 test("the yard pump sells gas and diesel cheaper than a delivery", () => {
-  assert.ok(O.PRICES.gas < O.PRICES.dieselPump);
+  assert.equal(O.fuelKind("skid"), "diesel");
+  assert.equal(O.fuelKind("pickup"), "gas");
   assert.ok(O.PRICES.dieselPump < O.PRICES.diesel);
   const s = freshGame("Pump");
   s.cash = 5000;
@@ -124,7 +125,7 @@ test("the yard pump sells gas and diesel cheaper than a delivery", () => {
   const filled = O.ops(s).fuel[v.uid] - 0.5;
   assert.ok(filled > 0.4, `only filled ${filled}`);
   const spent = 5000 - s.cash;
-  assert.ok(Math.abs(spent - filled * O.tankLitres(v) * O.PRICES.gas) < 0.05, `spent ${spent}`);
+  assert.ok(Math.abs(spent - filled * O.tankGallons(v) * O.PRICES.gas) < 0.05, `spent ${spent}`);
   assert.equal(v.status, "At the gas pump");
 });
 

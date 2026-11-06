@@ -889,16 +889,32 @@ export function createWorld(host: HTMLElement): World {
   scene.add(lightRig);
   const lampMat = track(new THREE.MeshBasicMaterial({ color: 0xfff6df }));
   const lampGeo = track(new THREE.BoxGeometry(0.42, 0.26, 0.14));
+  const glowCanvas = document.createElement("canvas");
+  glowCanvas.width = 128;
+  glowCanvas.height = 128;
+  {
+    const g = glowCanvas.getContext("2d");
+    if (g) {
+      const grad = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+      grad.addColorStop(0, "rgba(255,246,214,0.9)");
+      grad.addColorStop(0.4, "rgba(255,228,160,0.28)");
+      grad.addColorStop(1, "rgba(255,220,140,0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 128, 128);
+    }
+  }
+  const glowTex = track(new THREE.CanvasTexture(glowCanvas));
   const beamMat = track(new THREE.MeshBasicMaterial({
+    map: glowTex,
     color: 0xfff3c4,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
     fog: true,
   }));
-  const beamGeo = track(new THREE.ConeGeometry(1.5, 10, 14, 1, true));
+  const beamGeo = track(new THREE.PlaneGeometry(1, 1));
   function mountLamps(parent: THREE.Object3D, y: number, z: number, half: number) {
     for (const x of [-half, half]) {
       const lamp = new THREE.Mesh(lampGeo, lampMat);
@@ -906,20 +922,23 @@ export function createWorld(host: HTMLElement): World {
       lamp.castShadow = false;
       parent.add(lamp);
     }
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.rotation.x = -Math.PI / 2;
-    beam.position.set(0, y - 0.25, z - 5.1);
-    beam.frustumCulled = false;
-    beam.renderOrder = 2;
-    parent.add(beam);
+    // A flat wash on the ground ahead, not a cone sticking out of the nose.
+    const pool = new THREE.Mesh(beamGeo, beamMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(0, 0.25, z - 3.4);
+    pool.scale.set(2.4, 6.2, 1);
+    pool.frustumCulled = false;
+    pool.renderOrder = 2;
+    parent.add(pool);
   }
-  function downBeam(parent: THREE.Object3D, y: number, z: number) {
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.rotation.x = Math.PI;
-    beam.position.set(0, y - 5, z);
-    beam.frustumCulled = false;
-    beam.renderOrder = 2;
-    parent.add(beam);
+  function downBeam(parent: THREE.Object3D, _y: number, z: number) {
+    const pool = new THREE.Mesh(beamGeo, beamMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(0, 0.2, z);
+    pool.scale.set(14, 14, 1);
+    pool.frustumCulled = false;
+    pool.renderOrder = 2;
+    parent.add(pool);
   }
   /** Portable light plant: trailer, mast, and a pool of light that comes on at night. */
   const towerLights: THREE.PointLight[] = [];
@@ -956,7 +975,7 @@ export function createWorld(host: HTMLElement): World {
   function applyNight(state: GameState) {
     if (!onRound(8)) return;
     const k = nightness(state.seconds);
-    beamMat.opacity = 0.4 + k * 0.35;
+    beamMat.opacity = k * 0.7;
     for (const glow of towerLights) glow.intensity = 40 + k * 110;
     drillLight.intensity = drillRig.visible ? k * 55 : 0;
     if (k <= 0) {

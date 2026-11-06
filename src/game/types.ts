@@ -247,7 +247,7 @@ export type HudModel = {
   /** Which area the active machine is in. */
   area: "ridge" | "river" | "mountain";
   areaName: string;
-  /** Distance readout while on the north road, e.g. "824 m to River Valley". */
+  /** Distance readout while on the north road, e.g. "0.5 mi to River Valley". */
   passLabel: string;
   /** Where the mountain quarry road is, once that lease is open. */
   routeLabel: string;

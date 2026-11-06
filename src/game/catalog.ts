@@ -724,6 +724,16 @@ export function formatMoney(n: number) {
   return `${sign}$${abs.toLocaleString("en-US")}`;
 }
 
+/** World distances are metres. Players see feet, or miles once it is a haul. */
+export function usDist(meters: number) {
+  const ft = Math.max(0, meters) * 3.2808399;
+  if (ft >= 1500) {
+    const mi = ft / 5280;
+    return `${mi >= 10 ? Math.round(mi) : mi.toFixed(1)} mi`;
+  }
+  return `${Math.round(ft)} ft`;
+}
+
 export function tierInfo(lifetime: number) {
   let idx = 0;
   for (let i = 0; i < TIERS.length; i++) {

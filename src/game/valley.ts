@@ -109,7 +109,7 @@ export function buildValley(
     pier.position.set(BRIDGE.x + side * (RIVER.halfWidth - 1), BRIDGE_TOP / 2 - 0.05, BRIDGE.z);
     scene.add(pier);
   }
-  const limit = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(`BRIDGE  ${BRIDGE.limit} T LIMIT`, "#e26a2c"), transparent: true, depthWrite: false, fog: false })));
+  const limit = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(`BRIDGE  ${BRIDGE.limit} TON LIMIT`, "#e26a2c"), transparent: true, depthWrite: false, fog: false })));
   // Hung over the bridge entry so it stays inside a narrow folded screen.
   limit.position.set(BRIDGE.x + BRIDGE.halfLength, 5.2, BRIDGE.z);
   limit.scale.set(4.6, 2, 1);
