@@ -3,6 +3,7 @@ import { CircleDollarSign, Gauge, Mountain, Pickaxe, TrendingDown, TrendingUp, M
 import type { GameApi, UpgradeKind, ViewModel } from "@/game/types";
 import { usDist } from "@/game/catalog";
 import { BLAST_RADIUS } from "@/game/mining";
+import { crewExplanation } from "@/game/crew-help";
 
 export function MineScreen() {
   const worldRef = useRef<HTMLDivElement>(null);
@@ -209,6 +210,7 @@ export function MineScreen() {
                 </div>
               </div>
               <div className="desk-only pointer-events-auto max-w-sm border border-border bg-surface px-3 py-2">
+                <p className="text-[10px] uppercase tracking-widest text-cash">Good next move</p>
                 <p className="font-display text-lg uppercase leading-tight tracking-wide text-fg">{hud.objective}</p>
                 {hud.contractLabel && <p className="mt-1 text-sm text-cash">{hud.contractLabel}</p>}
                 <p className="mt-1 text-sm text-muted">{hud.shift}</p>
@@ -337,6 +339,10 @@ export function MineScreen() {
                 <div className="h-full bg-primary" style={{ width: `${Math.round(hud.cargoFrac * 100)}%` }} />
               </div>
               <p className="hud-hint mt-1 text-xs leading-snug text-muted">{hud.hint}</p>
+              <div className="next-move-phone mt-2 border-t border-border pt-2">
+                <p className="text-[10px] uppercase tracking-widest text-cash">Good next move</p>
+                <p className="text-xs leading-snug text-fg">{hud.objective}</p>
+              </div>
               {hud.log[0] && <p className="hud-hint mt-0.5 line-clamp-2 text-xs leading-snug text-cash">{hud.log[0]}</p>}
               {hud.blastInfo && (
                 <p className={`mt-1 border px-2 py-0.5 text-xs ${hud.canBlast ? "border-red-500 text-red-200" : "border-border text-muted"}`}>{hud.blastInfo}</p>
@@ -727,7 +733,9 @@ export function MineScreen() {
                   </p>
                 )}
                 {panel === "crew" &&
-                  hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).map((c) => (
+                  hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).map((c) => {
+                    const explanation = crewExplanation(c);
+                    return (
                     <article key={c.index} className="border-b border-border py-4">
                       <div className="flex items-baseline justify-between gap-3">
                         <h2 className="font-display text-2xl uppercase leading-none tracking-wide text-fg">{c.name}</h2>
@@ -735,6 +743,7 @@ export function MineScreen() {
                       </div>
                       {c.where && <p className="mt-1 text-sm text-muted">{c.where}</p>}
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
+                      {explanation && <p className="mt-1 text-sm leading-relaxed text-cash">{explanation}</p>}
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
                         {c.sources[0]?.value.startsWith("map:") ? "Haul to" : "Work source"}
@@ -804,7 +813,8 @@ export function MineScreen() {
                         ))}
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
               </div>
               {hud.log.length > 0 && (
                 <ul className="border-t border-border px-4 py-3 text-sm text-muted">
