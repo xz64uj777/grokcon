@@ -120,6 +120,8 @@ export type GameState = {
   preferSluice: boolean;
   /** Maximum hired machines that automatically feed a plant stockpile. */
   feedLimit: 1 | 2 | "all";
+  /** Maximum hired trucks in an automatic delivery approach to one plant. */
+  truckLimit: 1 | 2 | "all";
   /** River Valley wash plant bought. */
   washPlant: boolean;
   /** How soaked the ground is, 0 (dry) to 1 (soaked). Rain itself comes from the market seed. */
@@ -224,6 +226,7 @@ export type HudModel = {
   sluice: boolean;
   preferSluice: boolean;
   feedLimit: 1 | 2 | "all";
+  truckLimit: 1 | 2 | "all";
   log: string[];
   machines: MachineCard[];
   crew: CrewCard[];
@@ -305,8 +308,10 @@ export type GameApi = {
   buyGround: (id: number) => void;
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
+  setCrewDuty: (on: boolean) => void;
   assignSource: (index: number, source: string | null) => void;
   setFeedLimit: (limit: 1 | 2 | "all") => void;
+  setTruckLimit: (limit: 1 | 2 | "all") => void;
   setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;
   sell: (index: number) => void;

@@ -29,6 +29,7 @@ import {
   startBlast,
   step,
   toggleCrew,
+  setCrewDuty as setCrewDutyState,
   toggleDeck,
   valleyOpen,
   mountainOpen,
@@ -196,6 +197,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       saveGame(books());
       push();
     },
+    setCrewDuty(on) {
+      setCrewDutyState(state, on);
+      saveGame(books());
+      push();
+    },
     assignSource(index, source) {
       const v = state.vehicles[index];
       if (!v || (index !== state.active && !v.operator)) return;
@@ -230,6 +236,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     setFeedLimit(limit) {
       state.feedLimit = limit;
+      saveGame(books());
+      push();
+    },
+    setTruckLimit(limit) {
+      state.truckLimit = limit;
       saveGame(books());
       push();
     },

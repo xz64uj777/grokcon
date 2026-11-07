@@ -729,26 +729,60 @@ export function MineScreen() {
                   ))}
                 {panel === "crew" && (
                   <section className="border-b border-border py-4">
-                    <h2 className="font-display text-xl uppercase tracking-wide text-fg">Plant stockpile crew</h2>
-                    <p className="mt-1 text-sm leading-relaxed text-muted">
-                      Choose how many hired loaders, excavators, or skid steers head to material dumped at a plant.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Plant stockpile crew size">
-                      {([
-                        { value: 1, label: "1 machine" },
-                        { value: 2, label: "2 machines" },
-                        { value: "all", label: "All" },
-                      ] as const).map((choice) => (
-                        <button
-                          key={choice.value}
-                          type="button"
-                          aria-pressed={hud.feedLimit === choice.value}
-                          className={`h-11 border px-3 font-display text-lg uppercase tracking-wide ${hud.feedLimit === choice.value ? "border-primary bg-primary text-primary-fg" : "border-border text-fg"}`}
-                          onClick={() => apiRef.current?.setFeedLimit(choice.value)}
-                        >
-                          {choice.label}
-                        </button>
-                      ))}
+                    <h2 className="font-display text-xl uppercase tracking-wide text-fg">Automation settings</h2>
+                    <div className="mt-3 border-t border-border pt-3">
+                      <h3 className="font-display text-lg uppercase tracking-wide text-fg">Crew shift</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-muted">Pause or resume hired operators everywhere. This does not hire or fire anyone.</p>
+                      <button
+                        type="button"
+                        disabled={!hud.crew.some((c) => c.hired)}
+                        className="mt-2 h-11 bg-primary px-3 font-display text-lg uppercase tracking-wide text-primary-fg disabled:opacity-40"
+                        onClick={() => apiRef.current?.setCrewDuty(!hud.crew.some((c) => c.hired && c.operator))}
+                      >
+                        {hud.crew.some((c) => c.hired && c.operator) ? "Pause all operators" : "Resume all operators"}
+                      </button>
+                    </div>
+                    <div className="mt-3 border-t border-border pt-3">
+                      <h3 className="font-display text-lg uppercase tracking-wide text-fg">Plant stockpile feeders</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-muted">Choose how many hired loaders, excavators, or skid steers work material dumped at a plant.</p>
+                      <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Plant stockpile feeder limit">
+                        {([
+                          { value: 1, label: "1 machine" },
+                          { value: 2, label: "2 machines" },
+                          { value: "all", label: "All" },
+                        ] as const).map((choice) => (
+                          <button
+                            key={choice.value}
+                            type="button"
+                            aria-pressed={hud.feedLimit === choice.value}
+                            className={`h-11 border px-3 font-display text-lg uppercase tracking-wide ${hud.feedLimit === choice.value ? "border-primary bg-primary text-primary-fg" : "border-border text-fg"}`}
+                            onClick={() => apiRef.current?.setFeedLimit(choice.value)}
+                          >
+                            {choice.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-3 border-t border-border pt-3">
+                      <h3 className="font-display text-lg uppercase tracking-wide text-fg">Plant truck deliveries</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-muted">Limit how many hired, loaded dump trucks approach each plant at once. Trucks already delivering finish their trip.</p>
+                      <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Plant truck delivery limit">
+                        {([
+                          { value: 1, label: "1 truck" },
+                          { value: 2, label: "2 trucks" },
+                          { value: "all", label: "All" },
+                        ] as const).map((choice) => (
+                          <button
+                            key={choice.value}
+                            type="button"
+                            aria-pressed={hud.truckLimit === choice.value}
+                            className={`h-11 border px-3 font-display text-lg uppercase tracking-wide ${hud.truckLimit === choice.value ? "border-primary bg-primary text-primary-fg" : "border-border text-fg"}`}
+                            onClick={() => apiRef.current?.setTruckLimit(choice.value)}
+                          >
+                            {choice.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </section>
                 )}
@@ -760,6 +794,7 @@ export function MineScreen() {
                 {panel === "crew" &&
                   hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).map((c) => {
                     const explanation = crewExplanation(c);
+                    const lowboyAssignment = c.sources[0]?.value.startsWith("map:") ?? false;
                     return (
                     <article key={c.index} className="border-b border-border py-4">
                       <div className="flex items-baseline justify-between gap-3">
@@ -771,19 +806,24 @@ export function MineScreen() {
                       {explanation && <p className="mt-1 text-sm leading-relaxed text-cash">{explanation}</p>}
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
-                        {c.sources[0]?.value.startsWith("map:") ? "Haul to" : "Work source"}
+                        {lowboyAssignment ? "Haul to" : "Work source"}
                         <select
                           className="h-11 border border-border bg-surface px-3 text-fg"
                           value={c.workSource}
                           disabled={!c.operator && !c.active}
                           onChange={(e) => apiRef.current?.assignSource(c.index, e.target.value === "any" ? null : e.target.value)}
                         >
-                          <option value="any">{c.sources[0]?.value.startsWith("map:") ? "No haul" : "Any leased source"}</option>
+                          <option value="any">{lowboyAssignment ? "No haul" : "Any leased source"}</option>
                           {c.sources.map((g) => (
                             <option key={g.value} value={g.value}>{g.label}</option>
                           ))}
                         </select>
                       </label>
+                      <p className="mt-1 text-xs leading-relaxed text-muted">
+                        {lowboyAssignment
+                          ? "On duty, the lowboy picks up parked, empty machines assigned to this map, if they fit its deck."
+                          : "This choice affects only this machine. Any leased source lets it choose a suitable job; select a lease or face to keep it focused."}
+                      </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"
