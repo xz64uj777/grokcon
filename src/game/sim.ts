@@ -1025,6 +1025,13 @@ function lowboyDrive(state: GameState, v: VehicleState): Control {
   return seek(v, aim.x, aim.z, 6);
 }
 
+function fuelPoint(v: VehicleState, bay: { x: number; z: number }) {
+  // On the high mountain road, follow the gravel down to camp instead of cutting across the slope.
+  if (v.x < MOUNTAIN_GATE_X || v.z < 70) return bay;
+  if (v.x < X1 - 48) return { x: Math.min(v.x + 90, X1 - 40), z: 96 };
+  return { x: X1 - 36, z: 58 };
+}
+
 function aiControl(state: GameState, index: number): Control {
   const v = state.vehicles[index];
   const def = DEFS[v.defId];
@@ -1044,12 +1051,13 @@ function aiControl(state: GameState, index: number): Control {
   }
   const pumps = Ops.fuelAim(state, v);
   if (pumps) {
-    if (distTo(v.x, v.z, pumps.x, pumps.z) < 1) {
+    const aim = fuelPoint(v, pumps);
+    if (distTo(v.x, v.z, aim.x, aim.z) < 1) {
       v.status = Ops.fuelKind(v.defId) === "gas" ? "At the gas pump" : "At the diesel pump";
       return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
     v.status = "Heading to the fuel pumps";
-    return seek(v, pumps.x, pumps.z, 4);
+    return seek(v, aim.x, aim.z, 4);
   }
   if (v.defId === "light") {
     v.status = Ops.nightness(state.seconds) > 0.35 ? "Lights on" : "Light plant parked";
@@ -1838,15 +1846,16 @@ function resolveCircle(state: GameState, v: VehicleState, radius: number) {
   }
   if (aboard(v)) return;
   if (onMountainRoad(v.x, v.z) && !mountainOpen(state)) {
-    v.x = X0 + 70;
-    v.z = Math.max(90, Math.min(104, v.z));
+    v.x = X0 + 40;
+    v.z = 40;
     v.speed = 0;
     v.status = "Lease the High mountain to open this road";
     return;
   }
-  if (onMountainRoad(v.x, v.z) && v.defId !== "lowboy") {
-    v.x = X0 + 70;
-    v.z = 64;
+  if (onMountainRoad(v.x, v.z) && v.defId !== "lowboy" && v.x < MOUNTAIN_GATE_X) {
+    // The old spot was inside the valley camp shed, so the claim truck sat there backing off a wall.
+    v.x = X0 + 40;
+    v.z = 40;
     v.speed = 0;
     v.status = "The mountain road is for the lowboy";
     return;

@@ -303,10 +303,13 @@ export const PUMP_REACH = 7;
 /** Where a low tank should drive. Null if it does not need fuel. The point is the bay, or the machine itself when it is already under the canopy. */
 export function fuelAim(state: GameState, v: VehicleState): { x: number; z: number } | null {
   if (!on(9) || tankGallons(v) <= 0) return null;
-  if ((ops(state).fuel[v.uid] ?? 1) > 0.34) return null;
   const bay = FUEL_BAYS.find((b) => b.area === areaOf(v.x));
   if (!bay) return null;
-  if (Math.hypot(v.x - bay.x, v.z - bay.z) <= PUMP_REACH) return { x: v.x, z: v.z };
+  const f = ops(state).fuel[v.uid] ?? 1;
+  const at = Math.hypot(v.x - bay.x, v.z - bay.z) <= PUMP_REACH;
+  // Sit under the canopy until the tank is full. Leaving at a third is how a truck turned around and died on the grade.
+  if (at) return f > 0.9 ? null : { x: v.x, z: v.z };
+  if (f > 0.34) return null;
   return { x: bay.x, z: bay.z };
 }
 /** A full tank lasts about one and a half game days of steady work. */
@@ -441,7 +444,20 @@ export function tick(
         }
       }
       if (o.fuel[v.uid] <= 0 && player && state.cash < refuelCost(state, v)) rescue(state, v, yard(v));
-      if (o.fuel[v.uid] <= 0) stop = "Out of fuel";
+      if (o.fuel[v.uid] <= 0 && !player && areaOf(v.x) === "mountain") {
+        const bay = FUEL_BAYS.find((b) => b.area === "mountain");
+        const cost = Math.round(tankGallons(v) * pumpPrice(v.defId));
+        if (bay && state.cash >= cost) {
+          state.cash -= cost;
+          o.upkeep += cost;
+          o.fuel[v.uid] = 1;
+          v.x = bay.x;
+          v.z = bay.z;
+          v.speed = 0;
+          v.status = "Towed to the fuel pumps";
+          say(state, `${v.defId === "pickup" ? "Claim truck" : "A machine"} ran dry on the mountain and was towed to the pumps.`);
+        } else stop = "Out of fuel";
+      } else if (o.fuel[v.uid] <= 0) stop = "Out of fuel";
     }
     if (!o.wear) o.wear = {};
     if (!o.broke) o.broke = [];

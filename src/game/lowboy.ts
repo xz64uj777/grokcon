@@ -130,7 +130,8 @@ export function blockRoadGate(defId: string, x: number, z: number) {
   if (inBox({ x, z }, RIDGE_SPUR) && z > 64) return true;
   if (inBox({ x, z }, VALLEY_SPUR) && z > 70) return true;
   if (inBox({ x, z }, HAUL_ROAD)) return true;
-  if (onMountainRoad(x, z)) return true;
+  // Valley approach only. Once a machine is on the high mountain it has to be able to reach the camp pumps.
+  if (onMountainRoad(x, z) && x < MOUNTAIN_GATE_X) return true;
   return false;
 }
 

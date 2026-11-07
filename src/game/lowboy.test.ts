@@ -61,7 +61,8 @@ describe("north road", () => {
     assert.equal(blockRoadGate("truck", 400, 96), true);
     assert.equal(blockRoadGate("lowboy", 400, 96), false);
     assert.equal(blockRoadGate("pickup", 0, 50), false);
-    assert.equal(blockRoadGate("skid", 1600, 96), true);
+    assert.equal(blockRoadGate("skid", 1600, 96), false);
+    assert.equal(blockRoadGate("pickup", X0 + 90, 96), true);
     assert.equal(blockRoadGate("lowboy", 1600, 96), false);
   });
 

@@ -6,6 +6,7 @@ import { boundsFor, CLAIMS, PADS } from "@/game/catalog";
 import { buyClaim, buyVehicle, freshGame, groundFactor, haulMachine, haulTarget, currentArea, step, buildHud, ensureLowboy, toggleCrew } from "@/game/sim";
 import { X0 } from "@/game/river";
 import { bookWorth, readSaveText } from "@/game/save";
+import * as O from "@/game/ops";
 
 function withSeededRandom<T>(seed: number, run: () => T): T {
   const originalRandom = Math.random;
@@ -267,4 +268,30 @@ test("Gold Creek jobs route around the west wall when assigned or sluice-preferr
 
     assert.ok(loader.x < -62, `${assigned ? "assigned" : "sluice-preferred"} crew stopped at x=${loader.x.toFixed(1)}: ${loader.status}`);
   }
+});
+
+test("a claim truck on the mountain road can reach the camp pumps", () => {
+  const s = freshGame("Fuel");
+  s.cash = 8000;
+  s.claims.push(4, 5, 6, 8);
+  s.watching = true;
+  s.active = 1;
+  const v = s.vehicles[0];
+  toggleCrew(s, 0);
+  v.x = 1700;
+  v.z = 96;
+  v.yaw = Math.PI / 2;
+  O.ops(s).fuel[v.uid] = 0.2;
+  const bay = O.FUEL_BAYS.find((b) => b.area === "mountain")!;
+  let arrived = false;
+  for (let i = 0; i < 30 * 80; i++) {
+    step(s, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+    if (v.x < 1200) break;
+    if (Math.hypot(v.x - bay.x, v.z - bay.z) < 8 && (O.ops(s).fuel[v.uid] ?? 0) > 0.5) {
+      arrived = true;
+      break;
+    }
+  }
+  assert.ok(arrived, `never fueled: x=${v.x.toFixed(0)} z=${v.z.toFixed(0)} ${v.status} fuel=${(O.ops(s).fuel[v.uid] ?? 0).toFixed(2)}`);
+  assert.ok(v.x > 1500, "got kicked back to the valley");
 });
