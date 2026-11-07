@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, setCrewDuty, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -70,6 +70,81 @@ test("plant stockpile crew limit survives a save and load", () => {
   s.feedLimit = 1;
   saveGame(s, true);
   assert.equal(readSaveText(currentSaveText()!)?.feedLimit, 1);
+});
+
+test("plant truck limit dispatches only one, two, or all hired full trucks to the drop", () => {
+  for (const [limit, expected] of [[1, 1], [2, 2], ["all", 2]] as const) {
+    const s = freshGame("T");
+    s.cash = 1e6;
+    s.sluice = true;
+    s.preferSluice = true;
+    s.watching = true;
+    s.truckLimit = limit;
+    const pad = PADS.find((p) => p.kind === "sluice")!;
+    for (const [n, kind] of (["truck", "heavy"] as const).entries()) {
+      buyVehicle(s, kind);
+      const v = s.vehicles[s.vehicles.length - 1];
+      v.hired = true;
+      v.operator = true;
+      v.cargo = 100;
+      v.cargoOre = "gold";
+      v.cargoPurity = 1;
+      v.x = pad.x + 45 + n * 4;
+      v.z = pad.z + 35;
+    }
+    step(s, idle, 1 / 60, true);
+    const trucks = s.vehicles.filter((v) => v.defId === "truck" || v.defId === "heavy");
+    assert.equal(trucks.filter((v) => v.status === `Hauling to ${pad.name}`).length, expected, `truck limit ${limit}`);
+    assert.equal(trucks.filter((v) => v.status === `Waiting for a clear drop spot at ${pad.name}`).length, 2 - expected, `queued trucks at limit ${limit}: ${trucks.map((v) => `${v.defId}=${v.status}`).join(", ")}`);
+    if (limit === 1) {
+      const delivering = trucks.find((v) => v.status === `Hauling to ${pad.name}`)!;
+      const queued = trucks.find((v) => v.status === `Waiting for a clear drop spot at ${pad.name}`)!;
+      delivering.unstick = 1;
+      step(s, idle, 1 / 60, true);
+      assert.equal(delivering.status, "Backing off a wall");
+      assert.equal(queued.status, `Waiting for a clear drop spot at ${pad.name}`, "a temporary back-up does not release the slot");
+      delivering.unstick = 0;
+      const queuedPosition = { x: queued.x, z: queued.z };
+      queued.x = pad.x;
+      queued.z = pad.z;
+      step(s, idle, 1 / 60, true);
+      assert.equal(queued.status, `Waiting for a clear drop spot at ${pad.name}`);
+      assert.equal(queued.cargo, 100);
+      queued.x = queuedPosition.x;
+      queued.z = queuedPosition.z;
+      delivering.x = pad.x;
+      delivering.z = pad.z;
+      step(s, idle, 1 / 60, true);
+      assert.equal(delivering.cargo, 0, "the truck with the active slot unloads");
+      step(s, idle, 1 / 60, true);
+      assert.equal(queued.status, `Hauling to ${pad.name}`, "a queued truck takes the freed slot");
+    }
+  }
+});
+
+test("global crew pause and resume affects hired operators only and saves the truck limit", () => {
+  const s = freshGame("T");
+  s.cash = 1e6;
+  s.claims.push(5);
+  s.truckLimit = 1;
+  buyVehicle(s, "truck");
+  const truck = s.vehicles[s.vehicles.length - 1];
+  truck.hired = true;
+  truck.operator = true;
+  truck.workClaim = 5;
+  setCrewDuty(s, false);
+  assert.equal(truck.hired, true);
+  assert.equal(truck.operator, false);
+  assert.equal(truck.workClaim, 5);
+  setCrewDuty(s, true);
+  assert.equal(truck.hired, true);
+  assert.equal(truck.operator, true);
+  assert.equal(s.vehicles[0].hired, false);
+  assert.equal(s.vehicles[0].operator, false);
+  saveGame(s, true);
+  const loaded = readSaveText(currentSaveText()!)!;
+  assert.equal(loaded.truckLimit, 1);
+  assert.equal(loaded.vehicles.find((v) => v.defId === "truck")?.operator, true);
 });
 
 test("skid steer feeding earns for the whole pile, not $20", () => {

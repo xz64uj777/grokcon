@@ -45,6 +45,7 @@ function sanitize(raw: unknown): GameState | null {
   state.sluice = o.sluice === true;
   state.preferSluice = o.preferSluice !== false;
   if (o.feedLimit === 1 || o.feedLimit === 2 || o.feedLimit === "all") state.feedLimit = o.feedLimit;
+  if (o.truckLimit === 1 || o.truckLimit === 2 || o.truckLimit === "all") state.truckLimit = o.truckLimit;
   // Version 3 (River Valley): new fields default to "not bought yet" and dry ground.
   state.washPlant = o.washPlant === true;
   state.wet = num(o.wet, 0, 0, 1);

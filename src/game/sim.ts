@@ -339,6 +339,7 @@ export function freshGame(company: string): GameState {
     sluice: false,
     preferSluice: true,
     feedLimit: 2,
+    truckLimit: 2,
     washPlant: false,
     wet: 0,
     muted: false,
@@ -723,6 +724,27 @@ export function plannedPad(state: GameState, index: number) {
   return bestPad(state, v.cargoOre, v.x, v.z, v)?.kind ?? null;
 }
 
+/** Keep only the chosen number of hired AI dump trucks on a plant approach at once. */
+function truckHasDropSlot(state: GameState, index: number, pad: ReturnType<typeof livePads>[number]) {
+  const limit = state.truckLimit;
+  if (limit === "all" || (index === state.active && !state.watching)) return true;
+  const current = state.vehicles[index];
+  const hauling = (v: VehicleState) =>
+    v.status === `Hauling to ${pad.name}` ||
+    v.status === `Dumping at ${pad.name}` ||
+    (v.status === "Backing off a wall" && v.cargo >= vehicleStats(v).capacity * 0.9);
+  if (hauling(current)) return true;
+  let busy = 0;
+  state.vehicles.forEach((v, otherIndex) => {
+    if (otherIndex === index || otherIndex === state.active && !state.watching) return;
+    if ((v.defId !== "truck" && v.defId !== "heavy") || !v.operator || v.cargo <= 0.35 || !v.cargoOre) return;
+    if (!hauling(v)) return;
+    const otherPad = bestPad(state, v.cargoOre, v.x, v.z, v);
+    if (otherPad?.id === pad.id) busy++;
+  });
+  return busy < limit;
+}
+
 function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
   const pinned = facePin(state, v);
   if (pinned && (!ore || pinned.ore === ore)) return pinned;
@@ -1035,6 +1057,7 @@ function aiControl(state: GameState, index: number): Control {
   let target: { x: number; z: number } | null = null;
   let arrive = 6;
   let label = "Looking for work";
+  let queuedPad: string | null = null;
 
   const feeding = v.unstick > 0 ? null : feedJob(state, v);
   if (feeding) return feeding;
@@ -1093,6 +1116,10 @@ function aiControl(state: GameState, index: number): Control {
     const pad = nearestPad(state, v.x, v.z);
     const planned = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (pad && planned && pad.id === planned.id && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) > 0) {
+      if (def.receives && !truckHasDropSlot(state, index, planned)) {
+        v.status = `Waiting for a clear drop spot at ${pad.name}`;
+        return { throttle: 0, steer: 0, action: false, brake: 1 };
+      }
       v.status = `Dumping at ${pad.name}`;
       return { throttle: 0, steer: 0, action: true, brake: 1 };
     }
@@ -1114,10 +1141,20 @@ function aiControl(state: GameState, index: number): Control {
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (!pad) return;
+    if (def.receives && !truckHasDropSlot(state, index, pad)) {
+      queuedPad = pad.name;
+      return;
+    }
     if (loadsTrucks && benchBetween(v.x, v.z, pad.x, pad.z)) return;
     target = pad;
     arrive = Math.max(5, pad.r * 0.62);
     label = `Hauling to ${pad.name}`;
+  };
+
+  const waitForDropSlot = () => {
+    if (!queuedPad) return null;
+    v.status = `Waiting for a clear drop spot at ${queuedPad}`;
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
   };
 
   const waitingTruckRaw = def.id === "loader" && v.cargo > 0.35 ? nearestHauler(state, v, full ? 480 : 28, true) : null;
@@ -1218,7 +1255,11 @@ function aiControl(state: GameState, index: number): Control {
     }
   } else if (def.receives) {
     const bedFull = cap > 0 && v.cargo >= cap * 0.9;
-    if (bedFull) haulTarget();
+    if (bedFull) {
+      haulTarget();
+      const waiting = waitForDropSlot();
+      if (waiting) return waiting;
+    }
     if (!target) {
       let digger: VehicleState | null = null;
       let diggerD = Infinity;
@@ -1236,7 +1277,11 @@ function aiControl(state: GameState, index: number): Control {
       }
       if (digger) {
         const wrongRock = v.cargo > 1 && !!v.cargoOre && !!digger.cargoOre && digger.cargoOre !== "dirt" && digger.cargoOre !== v.cargoOre;
-        if (wrongRock) haulTarget();
+        if (wrongRock) {
+          haulTarget();
+          const waiting = waitForDropSlot();
+          if (waiting) return waiting;
+        }
         const leave = target as { x: number; z: number } | null;
         if (wrongRock && leave) {
           v.status = label;
@@ -1252,6 +1297,8 @@ function aiControl(state: GameState, index: number): Control {
       }
       if (v.cargo > 0.25 && v.cargoOre) {
         haulTarget();
+        const waiting = waitForDropSlot();
+        if (waiting) return waiting;
         const pad = target as { x: number; z: number } | null;
         if (pad) {
           v.status = label;
@@ -2997,6 +3044,17 @@ export function toggleCrew(state: GameState, index: number) {
   return "";
 }
 
+/** Change the on-duty state of hired operators without hiring or firing anyone. */
+export function setCrewDuty(state: GameState, on: boolean) {
+  let changed = false;
+  for (const v of state.vehicles) {
+    if (!v.hired || v.operator === on) continue;
+    v.operator = on;
+    changed = true;
+  }
+  if (changed) log(state, on ? "All hired operators are back on duty." : "All hired operators are paused.");
+}
+
 export function sellVehicle(state: GameState, index: number) {
   if (state.vehicles.length <= 1) return "Keep one machine on the yard.";
   const v = state.vehicles[index];
@@ -3346,6 +3404,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     sluice: state.sluice,
     preferSluice: state.preferSluice,
     feedLimit: state.feedLimit,
+    truckLimit: state.truckLimit,
     log: state.log.slice(0, 4),
     machines,
     crew,
