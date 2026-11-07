@@ -221,6 +221,30 @@ describe("valley crew", () => {
     assert.ok(spin < 5, `spun in place, ${spin.toFixed(1)} rad`);
   });
 
+  it("keeps a dozer's small Deep Copper dirt bites until they form a pile", () => {
+    const state = freshGame("Deep Copper");
+    state.claims = [1, 4];
+    state.watching = true;
+    const copper = state.deposits.find((d) => d.id === "deep-copper");
+    assert.ok(copper);
+    const v = state.vehicles[0];
+    v.defId = "dozer";
+    v.tool = homeTool("dozer");
+    v.hired = true;
+    v.operator = true;
+    v.workClaim = 4;
+    const face = faceOf(copper);
+    v.x = face.x;
+    v.z = face.z;
+    v.yaw = face.yaw;
+
+    for (let i = 0; i < 60 * 30; i++) step(state, ZERO, 1 / 60, true);
+
+    assert.ok(copper.overburden < 40, "the dozer should strip the Deep Copper face");
+    const dirt = state.deposits.find((d) => d.kind === "pile" && d.ore === "dirt" && d.claim === 4);
+    assert.ok(dirt && dirt.tons >= 0.2, "small dirt bites should accumulate into a visible pile");
+  });
+
   it("sells river gold at the wash plant instead of parking on it", () => {
     const state = freshGame("Wash");
     state.claims = [1, 4, 5];

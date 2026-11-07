@@ -7,6 +7,20 @@ import { buyClaim, buyVehicle, freshGame, groundFactor, haulMachine, haulTarget,
 import { X0 } from "@/game/river";
 import { bookWorth, readSaveText } from "@/game/save";
 
+function withSeededRandom<T>(seed: number, run: () => T): T {
+  const originalRandom = Math.random;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  try {
+    return run();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
 test("mountain is its own area with its own bounds, lease and mill", () => {
   assert.equal(areaOf(X1), "mountain");
   assert.equal(areaOf(1000), "river");
@@ -31,7 +45,7 @@ test("switchback walls each leave one gap, alternating sides", () => {
   assert.equal(benchAt(-50), 3);
 });
 
-test("a dump truck takes the last gap up to summit gold instead of sitting on the wall", () => {
+test("a dump truck takes the last gap up to summit gold instead of sitting on the wall", () => withSeededRandom(1, () => {
   const s = freshGame("Gap");
   s.cash = 1e6;
   s.claims.push(4, 5, 6, 8);
@@ -58,7 +72,7 @@ test("a dump truck takes the last gap up to summit gold instead of sitting on th
   }
   assert.ok(truck.z < last.z - 6, `truck still on the wall at z=${(truck.z - last.z).toFixed(1)} x=${(truck.x - X1).toFixed(1)} ${truck.status}`);
   assert.ok(stuck < 90, `backed off the wall for ${(stuck / 30).toFixed(1)}s`);
-});
+}));
 
 test("cold slows machines a bit, snow a bit more", () => {
   assert.ok(coldFactor(0) < 1 && coldFactor(0) > 0.8);

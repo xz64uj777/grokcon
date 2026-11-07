@@ -42,6 +42,36 @@ for (const kind of ["excavator", "loader"] as const) {
   });
 }
 
+test("plant stockpile crew limit dispatches only one, two, or all eligible operators", () => {
+  for (const [limit, expected] of [[1, 1], [2, 2], ["all", 3]] as const) {
+    const s = freshGame("T");
+    s.cash = 1e6;
+    s.claims.push(5);
+    s.watching = true;
+    s.feedLimit = limit;
+    const pad = wash();
+    for (const kind of ["skid", "loader", "excavator"] as const) {
+      buyVehicle(s, kind);
+      const m = s.vehicles[s.vehicles.length - 1];
+      m.hired = true;
+      m.operator = true;
+      m.x = pad.x + 30;
+      m.z = pad.z + 10;
+    }
+    addFeedPile(s, pad, "gold", 10, 1);
+    step(s, idle, 1 / 60, true);
+    const headed = s.vehicles.filter((v) => v.status === "Heading to feed the plant").length;
+    assert.equal(headed, expected, `feed limit ${limit}`);
+  }
+});
+
+test("plant stockpile crew limit survives a save and load", () => {
+  const s = freshGame("T");
+  s.feedLimit = 1;
+  saveGame(s, true);
+  assert.equal(readSaveText(currentSaveText()!)?.feedLimit, 1);
+});
+
 test("skid steer feeding earns for the whole pile, not $20", () => {
   const s = freshGame("T");
   s.cash = 1e6;

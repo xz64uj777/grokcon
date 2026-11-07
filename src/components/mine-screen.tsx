@@ -727,6 +727,31 @@ export function MineScreen() {
                       )}
                     </article>
                   ))}
+                {panel === "crew" && (
+                  <section className="border-b border-border py-4">
+                    <h2 className="font-display text-xl uppercase tracking-wide text-fg">Plant stockpile crew</h2>
+                    <p className="mt-1 text-sm leading-relaxed text-muted">
+                      Choose how many hired loaders, excavators, or skid steers head to material dumped at a plant.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Plant stockpile crew size">
+                      {([
+                        { value: 1, label: "1 machine" },
+                        { value: 2, label: "2 machines" },
+                        { value: "all", label: "All" },
+                      ] as const).map((choice) => (
+                        <button
+                          key={choice.value}
+                          type="button"
+                          aria-pressed={hud.feedLimit === choice.value}
+                          className={`h-11 border px-3 font-display text-lg uppercase tracking-wide ${hud.feedLimit === choice.value ? "border-primary bg-primary text-primary-fg" : "border-border text-fg"}`}
+                          onClick={() => apiRef.current?.setFeedLimit(choice.value)}
+                        >
+                          {choice.label}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 {panel === "crew" && hud.crew.filter((c) => c.area === (hud.valleyOpen ? crewArea : "ridge")).length === 0 && (
                   <p className="py-4 text-sm text-muted">
                     {crewArea === "mountain" ? "No machines on the mountain. Haul one up on the lowboy." : crewArea === "river" ? "No machines in River Valley. Haul one over on the lowboy." : "No machines at Ridge pit."}
