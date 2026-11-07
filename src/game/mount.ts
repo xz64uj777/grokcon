@@ -228,6 +228,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       saveGame(books());
       push();
     },
+    setFeedLimit(limit) {
+      state.feedLimit = limit;
+      saveGame(books());
+      push();
+    },
     setHaulSluice(on) {
       state.preferSluice = on && state.sluice;
       state.log.unshift(on ? "Copper and gold haul to the sluice." : "Crew may sell at the crusher.");

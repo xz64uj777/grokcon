@@ -118,6 +118,8 @@ export type GameState = {
   claims: number[];
   sluice: boolean;
   preferSluice: boolean;
+  /** Maximum hired machines that automatically feed a plant stockpile. */
+  feedLimit: 1 | 2 | "all";
   /** River Valley wash plant bought. */
   washPlant: boolean;
   /** How soaked the ground is, 0 (dry) to 1 (soaked). Rain itself comes from the market seed. */
@@ -221,6 +223,7 @@ export type HudModel = {
   muted: boolean;
   sluice: boolean;
   preferSluice: boolean;
+  feedLimit: 1 | 2 | "all";
   log: string[];
   machines: MachineCard[];
   crew: CrewCard[];
@@ -303,6 +306,7 @@ export type GameApi = {
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
   assignSource: (index: number, source: string | null) => void;
+  setFeedLimit: (limit: 1 | 2 | "all") => void;
   setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;
   sell: (index: number) => void;
@@ -334,4 +338,3 @@ export type GameApi = {
   /** Ripper shank depth from the drag control, 0..1. */
   setRipper: (depth: number) => void;
 };
-

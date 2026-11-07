@@ -338,6 +338,7 @@ export function freshGame(company: string): GameState {
     claims: [1],
     sluice: false,
     preferSluice: true,
+    feedLimit: 2,
     washPlant: false,
     wet: 0,
     muted: false,
@@ -482,6 +483,16 @@ export function homeClaim(area: AreaId) {
 
 /** Machines that can feed a plant's pile, in tons per second. */
 export const FEED_RATES: Partial<Record<VehicleId, number>> = { excavator: 1.8, loader: 1.4, skid: 0.5 };
+function feedCrewFor(state: GameState, pile: Deposit) {
+  const candidates = state.vehicles
+    .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
+    .filter(({ v, index, rate }) =>
+      !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) &&
+      !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid),
+    )
+    .sort((a, b) => distTo(a.v.x, a.v.z, pile.x, pile.z) - distTo(b.v.x, b.v.z, pile.x, pile.z));
+  return candidates.slice(0, state.feedLimit === "all" ? candidates.length : state.feedLimit);
+}
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 export const YARD_FEED_RATE = 0.1;
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
@@ -527,12 +538,13 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
     const pad = PADS.find((p) => feedId(p.id) === d.id);
     if (!pad) continue;
     const unit = unitPrice(d.ore, pad.kind, state.sluice, state.market) * purityFactor(d.ore, d.purity ?? 1) * Ops.saleMult(state, d.ore, pad.kind);
+    const crew = new Set(feedCrewFor(state, d).map(({ index }) => index));
     const feeders: { rate: number; keep: number; player: boolean }[] = [];
     state.vehicles.forEach((v, i) => {
       const rate = FEED_RATES[v.defId];
       if (!rate || !sameArea(v, d) || distTo(v.x, v.z, d.x, d.z) > FEED_REACH || Math.abs(v.speed) > 1.5) return;
       const player = i === state.active && !state.watching;
-      if (player ? !playerAction : !v.operator) return;
+      if (player ? !playerAction : !crew.has(i)) return;
       v.busy = true;
       v.status = `Feeding the ${pad.name.toLowerCase()}`;
       feeders.push({ rate, keep: player ? 1 : CREW_KEEP, player });
@@ -572,10 +584,12 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
 /** Crew loader/excavator job: go feed the nearest plant pile in this area. */
 function feedJob(state: GameState, v: VehicleState): Control | null {
   if (!FEED_RATES[v.defId] || v.cargo > 0.25) return null;
+  const index = state.vehicles.indexOf(v);
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
     if (!d.id.startsWith("feed-") || d.tons <= 0.01 || !sameArea(v, d) || otherBank(v.x, d.x)) continue;
+    if (!feedCrewFor(state, d).some((candidate) => candidate.index === index)) continue;
     const dist = distTo(v.x, v.z, d.x, d.z);
     if (dist < bestD) {
       bestD = dist;
@@ -1990,7 +2004,9 @@ function regen(state: GameState, dt: number) {
   for (let i = state.deposits.length - 1; i >= 0; i--) {
     const d = state.deposits[i];
     if (d.regen > 0 && d.tons < d.max) d.tons = Math.min(d.max, d.tons + d.regen * dt);
-    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.2) {
+    // A dozer creates small bites every frame. Keep a fresh sub-0.2 t pile so
+    // the next bite can merge into it; remove only piles that were emptied.
+    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.2 && d.max >= 0.2) {
       if (d.id === "slide-gap") {
         state.cash += ROAD_CLEAR_BONUS;
         state.lifetime += ROAD_CLEAR_BONUS;
@@ -3329,6 +3345,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     muted: state.muted,
     sluice: state.sluice,
     preferSluice: state.preferSluice,
+    feedLimit: state.feedLimit,
     log: state.log.slice(0, 4),
     machines,
     crew,
