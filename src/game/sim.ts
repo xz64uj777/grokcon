@@ -1125,6 +1125,28 @@ function slideJob(state: GameState, v: VehicleState): Control | null {
   return seek(v, slide.x, slide.z, 5);
 }
 
+/** What is actually against the nose. A slow turn in the open is not a wall. */
+function noseBlocked(state: GameState, v: VehicleState): "" | "wall" | "pile" {
+  const fx = -Math.sin(v.yaw);
+  const fz = -Math.cos(v.yaw);
+  const r = vehicleStats(v).radius;
+  const ax = v.x + fx * r * 0.85;
+  const az = v.z + fz * r * 0.85;
+  for (const b of BLOCKS) {
+    if (b.kind === "water") continue;
+    if (Math.abs(ax - b.x) <= b.sx / 2 + 0.35 && Math.abs(az - b.z) <= b.sz / 2 + 0.35) return "wall";
+  }
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.tons < 0.4 || d.id.startsWith("feed-")) continue;
+    const foot = pileFootprint(d.tons);
+    const dx = ax - d.x;
+    const dz = az - d.z;
+    const n = (dx * dx) / (foot.rx * foot.rx) + (dz * dz) / (foot.rz * foot.rz);
+    if (n < 0.9) return "pile";
+  }
+  return "";
+}
+
 function aiControl(state: GameState, index: number): Control {
   const v = state.vehicles[index];
   const def = DEFS[v.defId];
@@ -1139,7 +1161,8 @@ function aiControl(state: GameState, index: number): Control {
   const feeding = v.unstick > 0 ? null : feedJob(state, v);
   if (feeding) return feeding;
   if (v.unstick > 0) {
-    v.status = "Backing off a wall";
+    const hit = noseBlocked(state, v);
+    v.status = hit === "wall" ? "Backing off a wall" : hit === "pile" ? "Backing off a pile" : "Backing up";
     return { throttle: -0.65, steer: v.bias, action: false, brake: 0 };
   }
   const pumps = Ops.fuelAim(state, v);
@@ -2595,17 +2618,16 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     const v = state.vehicles[i];
     if (v.operator && (state.watching || i !== state.active)) {
       const c = controls[i];
-      const spinning = Math.abs(c.steer) > 0.75 && Math.abs(c.throttle) < 0.15 && Math.abs(v.speed) < 0.8;
-      const jammed = machineAhead(state, v);
-      const tight = !!jammed && jammed.gap < 2 && c.throttle > 0;
-      // A crawl with the throttle open counts too. The old bar was so high that an
-      // excavator pinned on a face never backed off, so it sat full and did nothing.
-      if ((c.throttle > 0.18 && Math.abs(v.speed) < 0.35) || spinning || (tight && Math.abs(v.speed) < 0.8)) v.stuck += tight ? dt * 2 : dt;
+      const hit = noseBlocked(state, v);
+      const boxed = machineAhead(state, v);
+      // Turning in the open, or crawling beside another machine, is not a wall.
+      const trying = c.throttle > 0.4 && Math.abs(v.speed) < 0.3 && !c.action;
+      if (trying && (hit || (boxed && boxed.gap < 0))) v.stuck += dt;
       else v.stuck = 0;
       if (v.stuck > 1.1) {
         v.stuck = 0;
         v.unstick = 1.5;
-        v.bias = jammed ? (jammed.side >= 0 ? 0.9 : -0.9) : Math.random() < 0.5 ? 1 : -1;
+        v.bias = boxed ? (boxed.side >= 0 ? 0.9 : -0.9) : Math.random() < 0.5 ? 1 : -1;
       }
     }
     if (v.unstick > 0) v.unstick = Math.max(0, v.unstick - dt);

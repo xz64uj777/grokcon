@@ -281,3 +281,20 @@ test("a light plant can be bought again and stays parked", () => {
   for (let i = 0; i < 90; i++) step(s, idle, 1 / 30, false);
   assert.ok(Math.hypot(plant.x - 12, plant.z - 40) < 1.5, `${plant.x.toFixed(1)} ${plant.z.toFixed(1)} ${plant.status}`);
 });
+
+test("turning in the open yard is not called a wall", () => {
+  const s = freshGame("Open");
+  s.watching = true;
+  const v = s.vehicles[0];
+  v.x = 0;
+  v.z = 40;
+  v.yaw = Math.PI;
+  v.operator = true;
+  v.hired = true;
+  let wall = 0;
+  for (let i = 0; i < 30 * 5; i++) {
+    step(s, idle, 1 / 30, false);
+    if (v.status === "Backing off a wall" || v.unstick > 0) wall++;
+  }
+  assert.equal(wall, 0);
+});
