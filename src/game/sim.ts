@@ -426,6 +426,7 @@ function nearestPad(state: GameState, x: number, z: number) {
 function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
   const head = lineFor(state, v)[0];
   if (head && sameArea(head, v)) {
+    if (!bayReady.has(head)) return null;
     const room = vehicleStats(head).capacity - head.cargo;
     if (room >= 0.4) return distTo(v.x, v.z, head.x, head.z) <= maxDist ? head : null;
   }
@@ -1011,28 +1012,75 @@ function truckTired(state: GameState, v: VehicleState, cap: number) {
 
 function pinHome(state: GameState, v: VehicleState) {
   const prev = truckHome.get(v);
-  if (prev && state.deposits.some((d) => d.id === prev.id && d.tons > 0.4)) return prev;
+  if (prev && state.deposits.some((d) => d.id === prev.id && d.tons > 1.5)) return prev;
+  const origin = v;
   let pile: Deposit | null = null;
-  let bestD = 55;
+  let best = 80;
   for (const d of state.deposits) {
-    if (d.kind !== "pile" || d.tons < 1 || d.id.startsWith("feed-")) continue;
+    if (d.id.startsWith("feed-") || d.tons < (d.kind === "vein" ? 2 : 8)) continue;
+    if (d.kind !== "pile" && d.kind !== "vein") continue;
     if (!sameArea(d, v) || !ownsClaim(state, d.claim)) continue;
-    const dist = distTo(v.x, v.z, d.x, d.z);
-    if (dist < bestD) {
-      bestD = dist;
+    const dist = distTo(origin.x, origin.z, d.x, d.z) - (d.kind === "vein" ? 12 : 0);
+    if (dist < best) {
+      best = dist;
       pile = d;
     }
   }
   if (!pile) return prev ?? null;
   let ang = pileAng.get(pile.id);
   if (ang == null) {
-    ang = Math.atan2(v.z - pile.z, v.x - pile.x);
-    if (!Number.isFinite(ang)) ang = 0.6;
+    ang = Math.PI / 2;
+    const choices = [Math.PI / 2, 0.4, 2.4, 0, Math.PI, -Math.PI / 2];
+    for (const a of choices) {
+      if (!pointBlocked(pile.x + Math.cos(a) * 22, pile.z + Math.sin(a) * 22, 3.2)) {
+        ang = a;
+        break;
+      }
+    }
     pileAng.set(pile.id, ang);
   }
   const home = { id: pile.id, x: pile.x, z: pile.z, ang };
   truckHome.set(v, home);
   return home;
+}
+
+function bayPose(home: { x: number; z: number; ang: number }, place: number) {
+  const back = 20 + place * 16;
+  const x = home.x + Math.cos(home.ang) * back;
+  const z = home.z + Math.sin(home.ang) * back;
+  const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
+  const fx = -Math.sin(yaw);
+  const fz = -Math.cos(yaw);
+  return { x, z, yaw, stageX: x + fx * 16, stageZ: z + fz * 16 };
+}
+
+const bayReady = new WeakSet<VehicleState>();
+const bayCommit = new WeakSet<VehicleState>();
+
+/** Drive to the open end, turn to face out, then back straight in. Pulling away is then a straight shot. */
+function enterBay(v: VehicleState, bay: { x: number; z: number; yaw: number; stageX: number; stageZ: number }, place: number): Control {
+  const fx = -Math.sin(bay.yaw);
+  const fz = -Math.cos(bay.yaw);
+  const along = (v.x - bay.x) * fx + (v.z - bay.z) * fz;
+  const err = Math.atan2(Math.sin(bay.yaw - v.yaw), Math.cos(bay.yaw - v.yaw));
+  const label = place === 0 ? "In the load bay" : `In line (${place + 1})`;
+  // along > 0 means the truck is on the exit side of the slot. Get well past it before turning around.
+  if (along > 10) bayCommit.add(v);
+  if (!bayCommit.has(v)) {
+    v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
+    return seek(v, bay.stageX, bay.stageZ, 3.5);
+  }
+  if (Math.abs(err) > 0.3) {
+    v.status = "Turning to back in";
+    return { throttle: 0, steer: clamp(err * 1.6, -1, 1), action: false, brake: 0.85 };
+  }
+  if (along > 2.4) {
+    v.status = place === 0 ? "Backing into the bay" : `In line (${place + 1})`;
+    return { throttle: -0.32, steer: clamp(-err * 0.6, -1, 1), action: false, brake: 0 };
+  }
+  bayReady.add(v);
+  v.status = label;
+  return { throttle: 0, steer: 0, action: false, brake: 1 };
 }
 
 function goingToWash(state: GameState, t: VehicleState) {
@@ -1217,10 +1265,12 @@ function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   if (holding && hit.gap > -0.2) return c;
   if (c.throttle < 0.12 || hit.gap > 2.4) return c;
   const away = hit.side >= 0 ? 0.9 : -0.9;
-  if (hit.gap < 0) {
+  const pullingOut = (v.defId === "truck" || v.defId === "heavy") && (dumpAnyway.has(v) || v.cargo >= vehicleStats(v).capacity * 0.85);
+  if (hit.gap < 0 && !pullingOut) {
     v.status = "Making room";
     return { throttle: -0.5, steer: away, action: false, brake: 0 };
   }
+  if (pullingOut) return { ...c, steer: clamp(c.steer + away, -1, 1), throttle: Math.max(c.throttle, 0.45) };
   return { ...c, steer: clamp(c.steer + away * 0.45, -1, 1), throttle: Math.max(0.2, Math.min(c.throttle, 0.7)) };
 }
 
@@ -1642,6 +1692,7 @@ function aiControl(state: GameState, index: number): Control {
     if (leave && v.cargoOre) {
       lineTicket.delete(v);
       truckPartner.delete(v);
+      bayReady.delete(v);
       dumpAnyway.add(v);
       truckStand.delete(v);
       const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
@@ -1665,15 +1716,8 @@ function aiControl(state: GameState, index: number): Control {
         const digger = diggerForTruck(state, v);
         const line = digger ? lineFor(state, digger) : [v];
         const place = Math.max(0, line.findIndex((t) => t === v));
-        const dist = TRUCK_PARK + place * 16;
-        const spot = { x: home.x + Math.cos(home.ang) * dist, z: home.z + Math.sin(home.ang) * dist };
         noteTruckWait(state, v);
-        if (distTo(v.x, v.z, spot.x, spot.z) > 4) {
-          v.status = place === 0 ? "Back to the pile" : `In line (${place + 1})`;
-          return seek(v, spot.x, spot.z, 3.2);
-        }
-        v.status = place === 0 ? "Waiting at the pile" : `In line (${place + 1})`;
-        return { throttle: 0, steer: 0, action: false, brake: 1 };
+        return enterBay(v, bayPose(home, place), place);
       }
       let stand = truckStand.get(v);
       if (!stand) {
@@ -2554,6 +2598,7 @@ function pourIntoTrucks(state: GameState) {
     const head = lineFor(state, v)[0];
     const reach = v.defId === "excavator" ? 16 : 22;
     if (head) {
+      if (!bayReady.has(head)) return;
       if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
       return;
     }

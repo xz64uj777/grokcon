@@ -362,7 +362,7 @@ test("a dump truck stays parked and leaves when a near-full bed waits too long",
   let parked = false;
   for (let i = 0; i < 30 * 12 && !parked; i++) {
     step(s, idle, 1 / 30, false);
-    parked = truck.status === "Waiting at the pile" || truck.status === "Waiting to load";
+    parked = truck.status === "In the load bay" || truck.status === "Waiting at the pile" || truck.status === "Waiting to load";
   }
   assert.equal(parked, true, truck.status);
   const gap = Math.hypot(truck.x - loader.x, truck.z - loader.z);
