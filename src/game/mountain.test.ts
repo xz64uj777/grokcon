@@ -140,19 +140,18 @@ test("fix: summit mill pays near sluice price for gold, even with the sluice pre
   t.x = 2052; t.z = 50; t.cargo = 7; t.cargoOre = "gold"; t.cargoPurity = 0.95; t.tool.lift = 0.9;
   const c0 = s.cash;
   for (let i = 0; i < 90; i++) step(s, { throttle: 0, steer: 0, action: true }, 1 / 30, true);
-  // The truck tips a feed pile at the mill (no pay yet)...
+  // The truck is paid when it dumps. Feeding the pile later must not pay again.
   assert.equal(t.cargo < 0.05, true);
-  assert.ok(s.cash - c0 < 200, `${s.cash - c0}`); // only the slow yard feeder so far
+  assert.ok(s.cash - c0 > 1000, `dump paid ${s.cash - c0}`);
   const pile = s.deposits.find((d) => d.kind === "pile" && d.ore === "gold" && Math.hypot(d.x - 2052, d.z - 50) < 12);
   assert.ok(pile && pile.tons > 6);
-  // ...and a loader feeding it in gets paid near the sluice price.
   buyVehicle(s, "loader");
   const l = s.vehicles[s.vehicles.length - 1];
   s.active = s.vehicles.length - 1;
   l.x = pile!.x; l.z = pile!.z;
   const c1 = s.cash;
   for (let i = 0; i < 400; i++) step(s, { throttle: 0, steer: 0, action: true }, 1 / 30, true);
-  assert.ok(s.cash - c1 > 1000, `paid ${s.cash - c1}`);
+  assert.ok(s.cash - c1 < 200, `fed an already-paid pile for ${s.cash - c1}`);
 });
 
 test("fix: a truck driving along a bench wall slides instead of sticking", () => {

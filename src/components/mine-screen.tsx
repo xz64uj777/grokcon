@@ -702,7 +702,7 @@ export function MineScreen() {
                           className="mt-3 h-11 px-4 font-display text-lg uppercase tracking-wide bg-primary text-primary-fg disabled:opacity-40"
                           onClick={() => apiRef.current?.buy(m.id)}
                         >
-                          Buy
+                          Buy{m.priceLabel.startsWith("Another") ? " another" : ""}
                         </button>
                       )}
                     </article>

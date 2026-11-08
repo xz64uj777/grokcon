@@ -527,6 +527,8 @@ export function addFeedPile(state: GameState, pad: { id: string; x: number; z: n
 }
 
 const feedAcc = new Map<string, number>();
+/** Tons already paid when a truck dumped them. The feeder still clears the pile, but does not pay twice. */
+const feedPaid = new WeakMap<Deposit, number>();
 /**
  * Feed plant piles. Machines parked at the pile feed at their rate (the player only while
  * holding the work button); with nobody there the plant's yard feeder trickles it in.
@@ -553,13 +555,30 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
     let paid = 0;
     let tons = 0;
     let byPlayer = false;
+    let prepaid = feedPaid.get(d) ?? 0;
     for (const f of feeders) {
-      const t = Math.min(d.tons, f.rate * dt);
-      if (t <= 0) break;
+      let room = f.rate * dt;
+      if (prepaid > 0 && d.tons > 0) {
+        const done = Math.min(d.tons, prepaid, room);
+        d.tons -= done;
+        prepaid -= done;
+        room -= done;
+      }
+      const t = Math.min(d.tons, room);
+      if (t <= 0) continue;
       d.tons -= t;
       tons += t;
       paid += t * unit * f.keep;
       byPlayer ||= f.player;
+    }
+    if (prepaid <= 0) feedPaid.delete(d);
+    else feedPaid.set(d, prepaid);
+    const done = d.tons <= 1e-3;
+    if (done) {
+      state.deposits = state.deposits.filter((o) => o !== d);
+      feedAcc.delete(d.id);
+      feedPaid.delete(d);
+      if (tons > 0) log(state, `${pad.name} feed pile is fed in.`);
     }
     if (tons <= 0) continue;
     recordSale(state.market, pad.kind, d.ore, tons);
@@ -568,16 +587,10 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
     state.lifetime += paid;
     Ops.onSale(state, paid, tons);
     const acc = (feedAcc.get(d.id) ?? 0) + paid;
-    const done = d.tons <= 1e-3;
     if (acc >= 250 || done) {
       sales.push({ x: d.x, z: d.z, text: `+${formatMoney(acc)} fed`, player: byPlayer });
       feedAcc.set(d.id, 0);
     } else feedAcc.set(d.id, acc);
-    if (done) {
-      state.deposits = state.deposits.filter((o) => o !== d);
-      feedAcc.delete(d.id);
-      log(state, `${pad.name} feed pile is fed in.`);
-    }
   }
 }
 
@@ -927,21 +940,13 @@ function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   if (!hit) return c;
   const holding = c.throttle === 0 && c.brake > 0.5;
   if (holding && hit.gap > 0.25) return c;
+  if (hit.gap > 1.15) return c;
   const away = hit.side >= 0 ? 0.9 : -0.9;
-  if (hit.gap < 0.7) {
+  if (hit.gap < 0) {
     v.status = "Making room";
     return { throttle: -0.5, steer: away, action: false, brake: 0 };
   }
-  if (c.throttle > 0.05 && hit.gap < 5.5) {
-    v.status = "Making room";
-    return {
-      throttle: Math.min(c.throttle, hit.gap < 2.6 ? 0.12 : 0.4),
-      steer: clamp(c.steer * 0.35 + away * 0.8, -1, 1),
-      action: false,
-      brake: 0,
-    };
-  }
-  return c;
+  return { ...c, steer: clamp(c.steer + away * 0.45, -1, 1), throttle: Math.max(0.2, Math.min(c.throttle, 0.7)) };
 }
 
 /** A face the crew can actually drive onto. The ridge back wall is solid, so a cut walked into it is pulled back out. */
@@ -1593,17 +1598,35 @@ function performAction(
         v.status = where;
       }
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
-      // Haul trucks tip into a feed pile at the plant. A loader or excavator feeds it in, and that pays.
+      // The check is paid on the dump. The pile is only what's left for the plant to chew through.
       const tons = v.cargo;
       const ore = v.cargoOre;
-      addFeedPile(state, pad, ore, tons, v.cargoPurity ?? 1);
+      const purityIn = v.cargoPurity ?? 1;
+      const hopper = state.deposits.find((d) => d.id === feedId(pad.id));
+      const sidePile = !!hopper && hopper.ore !== ore && hopper.tons > 0.05;
+      addFeedPile(state, pad, ore, tons, purityIn);
       emptyCargo(v);
       v.busy = true;
-      if (player) {
-        state.tutorial.dumped = true;
-        log(state, `Tipped ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()} on the ${pad.name.toLowerCase()} feed pile. The yard feeder trickles it in; a loader or excavator feeds it much faster.`);
+      if (player) state.tutorial.dumped = true;
+      if (sidePile) {
+        if (player) log(state, `Hopper is full of something else. ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()} dropped beside the ${pad.name.toLowerCase()}.`);
+        return null;
       }
-      return null;
+      const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
+      const purity = purityFactor(ore, purityIn);
+      const gross = tons * unit * purity * Ops.saleMult(state, ore, pad.kind);
+      const net = gross * (player ? 1 : CREW_KEEP);
+      Ops.onSale(state, net, tons);
+      const bonus = fillContract(state, ore, tons);
+      recordSale(state.market, pad.kind, ore, tons);
+      state.cash += net;
+      state.lifetime += net;
+      const id = feedId(pad.id);
+      const pile = state.deposits.find((d) => d.id === id);
+      if (pile) feedPaid.set(pile, (feedPaid.get(pile) ?? 0) + tons);
+      const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
+      if (player) log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}.`);
+      return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${ORES[ore].name} ${tons.toFixed(1)}t${extra}`, player };
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
       const unit = unitPrice(v.cargoOre, pad.kind, state.sluice, state.market);
       const sold = v.cargo;
@@ -3385,7 +3408,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       id,
       name: def.name,
       blurb,
-      priceLabel: owned ? "Owned" : formatMoney(price),
+      priceLabel: owned ? "Owned" : count > 0 ? `Another ${formatMoney(price)}` : formatMoney(price),
       owned,
       affordable: !owned && state.cash >= price,
       kind: "vehicle" as const,
