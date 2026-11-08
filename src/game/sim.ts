@@ -975,7 +975,11 @@ function diggerForTruck(state: GameState, v: VehicleState) {
 const truckStand = new WeakMap<VehicleState, { x: number; z: number }>();
 const truckWait = new WeakMap<VehicleState, { since: number; cargo: number }>();
 const dumpAnyway = new WeakSet<VehicleState>();
-const TRUCK_PARK = 12;
+const truckHome = new WeakMap<VehicleState, { id: string; x: number; z: number; ang: number }>();
+const pileAng = new Map<string, number>();
+const plantTicket = new WeakMap<VehicleState, number>();
+let plantNo = 1;
+const TRUCK_PARK = 28;
 const TRUCK_NEAR = 0.6;
 const TRUCK_PATIENCE = 35;
 
@@ -1003,6 +1007,59 @@ function truckTired(state: GameState, v: VehicleState, cap: number) {
   if (cap <= 0 || v.cargo < cap * TRUCK_NEAR) return false;
   const w = truckWait.get(v);
   return !!w && state.seconds - w.since > TRUCK_PATIENCE;
+}
+
+function pinHome(state: GameState, v: VehicleState) {
+  const prev = truckHome.get(v);
+  if (prev && state.deposits.some((d) => d.id === prev.id && d.tons > 0.4)) return prev;
+  let pile: Deposit | null = null;
+  let bestD = 55;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.tons < 1 || d.id.startsWith("feed-")) continue;
+    if (!sameArea(d, v) || !ownsClaim(state, d.claim)) continue;
+    const dist = distTo(v.x, v.z, d.x, d.z);
+    if (dist < bestD) {
+      bestD = dist;
+      pile = d;
+    }
+  }
+  if (!pile) return prev ?? null;
+  let ang = pileAng.get(pile.id);
+  if (ang == null) {
+    ang = Math.atan2(v.z - pile.z, v.x - pile.x);
+    if (!Number.isFinite(ang)) ang = 0.6;
+    pileAng.set(pile.id, ang);
+  }
+  const home = { id: pile.id, x: pile.x, z: pile.z, ang };
+  truckHome.set(v, home);
+  return home;
+}
+
+function goingToWash(state: GameState, t: VehicleState) {
+  if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
+  if (!(t.operator || t === state.vehicles[state.active])) return false;
+  const cap = vehicleStats(t).capacity;
+  return cap <= 0 || t.cargo >= cap * 0.9 || dumpAnyway.has(t) || distTo(t.x, t.z, WASH_PLANT.x, WASH_PLANT.z) < 80;
+}
+
+function plantLine(state: GameState) {
+  const list = state.vehicles.filter((t) => goingToWash(state, t));
+  for (const t of list) if (!plantTicket.has(t)) plantTicket.set(t, plantNo++);
+  list.sort((a, b) => (plantTicket.get(a) ?? 0) - (plantTicket.get(b) ?? 0));
+  return list;
+}
+
+/** Only the first machine pulls onto the wash plant. The rest wait in a line to the east. */
+function plantQueue(state: GameState, v: VehicleState, pad: { kind: string; x: number; z: number; r: number } | null): Control | null {
+  if (!pad || pad.kind !== "wash" || !goingToWash(state, v)) return null;
+  if (!plantTicket.has(v)) plantTicket.set(v, plantNo++);
+  const place = plantLine(state).findIndex((t) => t === v);
+  if (place <= 0) return null;
+  const back = pad.r + 14 + (place - 1) * 16;
+  const spot = { x: pad.x + back, z: pad.z };
+  v.status = `Wash line (${place + 1})`;
+  if (distTo(v.x, v.z, spot.x, spot.z) < 3.4) return { throttle: 0, steer: 0, action: false, brake: 1 };
+  return seek(v, spot.x, spot.z, 3);
 }
 
 /** A mountain bench wall is still between these two points. */
@@ -1433,10 +1490,14 @@ function aiControl(state: GameState, index: number): Control {
     return seek(v, digger.x - (dx / dist) * 14, digger.z - (dz / dist) * 14, 6);
   }
 
+  if (v.cargo < 0.25) plantTicket.delete(v);
+
   if (v.cargoOre && v.cargo > 0.35) {
     const pad = nearestPad(state, v.x, v.z);
     const planned = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (pad && planned && pad.id === planned.id && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) > 0) {
+      const held = plantQueue(state, v, pad);
+      if (held) return held;
       v.status = `Dumping at ${pad.name}`;
       return { throttle: 0, steer: 0, action: true, brake: 1 };
     }
@@ -1588,6 +1649,8 @@ function aiControl(state: GameState, index: number): Control {
         target = pad;
         arrive = Math.min(6, Math.max(5, pad.r * 0.62));
         v.status = v.cargo < cap * 0.9 ? "Hauling a short load" : `Hauling to ${pad.name}`;
+        const held = plantQueue(state, v, pad);
+        if (held) return held;
         const here = nearestPad(state, v.x, v.z);
         if (here && here.id === pad.id) {
           v.status = `Dumping at ${pad.name}`;
@@ -1597,17 +1660,19 @@ function aiControl(state: GameState, index: number): Control {
       }
     }
     if (!target) {
-      const digger = diggerForTruck(state, v);
-      if (digger) {
-        const line = lineFor(state, digger);
+      const home = pinHome(state, v);
+      if (home) {
+        const digger = diggerForTruck(state, v);
+        const line = digger ? lineFor(state, digger) : [v];
         const place = Math.max(0, line.findIndex((t) => t === v));
-        const spot = queuePoint(digger, place);
+        const dist = TRUCK_PARK + place * 16;
+        const spot = { x: home.x + Math.cos(home.ang) * dist, z: home.z + Math.sin(home.ang) * dist };
         noteTruckWait(state, v);
-        if (distTo(v.x, v.z, spot.x, spot.z) > 3.5) {
-          v.status = place === 0 ? "Pulling up to load" : `In line (${place + 1})`;
-          return seek(v, spot.x, spot.z, 2.8);
+        if (distTo(v.x, v.z, spot.x, spot.z) > 4) {
+          v.status = place === 0 ? "Back to the pile" : `In line (${place + 1})`;
+          return seek(v, spot.x, spot.z, 3.2);
         }
-        v.status = place === 0 ? "Waiting to load" : `In line (${place + 1})`;
+        v.status = place === 0 ? "Waiting at the pile" : `In line (${place + 1})`;
         return { throttle: 0, steer: 0, action: false, brake: 1 };
       }
       let stand = truckStand.get(v);
@@ -1717,9 +1782,15 @@ function aiControl(state: GameState, index: number): Control {
       (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash" && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
       (!!pad && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     if (pad && !wrongPlant) {
+      const held = plantQueue(state, v, pad);
+      if (held) return held;
       v.status = `Dumping at ${pad.name}`;
       return { throttle: 0, steer: 0, action: true, brake: 1 };
     }
+  }
+  if (target && "kind" in target) {
+    const held = plantQueue(state, v, target as { kind: string; x: number; z: number; r: number });
+    if (held) return held;
   }
   if (!target) return { ...ZERO };
   return seek(v, target.x, target.z, arrive);
@@ -1844,7 +1915,7 @@ function performAction(
               : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
-    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
+    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind) && (player || pad.kind !== "wash" || plantLine(state)[0] === v)) {
       // The check is paid on the dump. The pile is only what's left for the plant to chew through.
       const tons = v.cargo;
       const ore = v.cargoOre;
