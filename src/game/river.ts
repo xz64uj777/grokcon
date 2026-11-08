@@ -63,7 +63,7 @@ export const WASH_PLANT = {
   x: X0 + 58,
   z: 18,
   r: 9,
-  blurb: "Trommel and jig on the east bank. River silver pays out here.",
+  blurb: "River Valley only. Washes silver, gold gravel, and overburden. The ridge sluice is a separate purchase.",
 };
 
 /** Machine weights in tonnes, empty. Cargo is added on top. */

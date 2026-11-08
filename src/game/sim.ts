@@ -682,7 +682,7 @@ function dirtToSluice(state: GameState, ore: OreId, x?: number) {
   return true;
 }
 
-/** River silver only pays properly at the wash plant, so hold it for there once it's built. */
+/** River silver, gold gravel, and overburden pay at the wash plant once it is built. Ridge dirt stays on the sluice. */
 function prefersWash(state: GameState, ore: OreId, x: number) {
   return state.washPlant && areaOf(x) === "river" && ORES[ore].wash > ORES[ore].crusher;
 }
@@ -1535,11 +1535,15 @@ function performAction(
     const excavatorHand = manual && kind === "excavator";
     if (!excavatorHand && (holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
       if (player && holdForSluice) {
-        const where = pad?.kind === "wash"
-          ? "Wash plant only takes silver and gold gravel"
-          : v.cargoOre === "dirt"
-            ? "Overburden goes to the sluice"
-            : `${ORES[v.cargoOre].name} pays at the sluice`;
+        const where = prefersWash(state, v.cargoOre, v.x)
+          ? v.cargoOre === "dirt"
+            ? "Overburden goes to the wash plant"
+            : "This pays at the wash plant"
+          : pad?.kind === "wash"
+            ? "Wash plant only takes silver, gold gravel, and overburden"
+            : v.cargoOre === "dirt"
+              ? "Overburden goes to the sluice"
+              : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
@@ -3173,6 +3177,11 @@ function hint(state: GameState) {
   if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
   const extra = def.id === "excavator" ? 2.2 : 0;
   const pad = nearestPad(state, v.x, v.z);
+  if (v.cargoOre && prefersWash(state, v.cargoOre, v.x) && v.cargo > 0.08) {
+    if (pad?.kind === "wash") return "Hold DIG. The wash plant pays for this load.";
+    if (v.cargoOre === "dirt") return "Overburden goes to the wash plant. It pays more than the rail.";
+    return `${ORES[v.cargoOre].name} pays at the wash plant.`;
+  }
   if (v.cargoOre && (prefersSluice(state, v.cargoOre, v.x) || dirtToSluice(state, v.cargoOre, v.x)) && v.cargo > 0.08) {
     if (pad?.kind === "sluice") return "Hold DIG. The sluice pays for this load.";
     if (v.cargoOre === "dirt") return "Overburden goes to the sluice, west of the yard. It pays more than reclaim.";

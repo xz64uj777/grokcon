@@ -181,16 +181,25 @@ describe("rain", () => {
 });
 
 describe("river crew", () => {
-  it("sells east-bank dirt at the rail, not the west barge", () => {
+  it("sells river dirt at the wash plant once it is bought, and at the rail before that", () => {
     const s = freshGame("Dirt");
+    s.cash = 1e6;
     s.claims = [1, 4, 5];
-    s.washPlant = true;
     const v = s.vehicles[0];
     v.x = X0 + 40;
     v.z = 20;
     v.cargoOre = "dirt";
     v.cargo = 2;
     assert.equal(plannedPad(s, 0), "loadout");
+    s.washPlant = true;
+    assert.equal(plannedPad(s, 0), "wash");
+    buyVehicle(s, "truck");
+    const truck = s.vehicles[s.vehicles.length - 1];
+    truck.x = WEST_BARGE.x - 16;
+    truck.z = WEST_BARGE.z;
+    truck.cargoOre = "dirt";
+    truck.cargo = 8;
+    assert.equal(plannedPad(s, s.vehicles.indexOf(truck)), "wash");
   });
 
   it("a hired skid and excavator dig the river bars instead of sitting", () => {
