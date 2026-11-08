@@ -298,3 +298,41 @@ test("turning in the open yard is not called a wall", () => {
   }
   assert.equal(wall, 0);
 });
+
+test("a loader fills from the edge of a pile and the truck waits beside it", () => {
+  const s = freshGame("Edge");
+  s.cash = 1e6;
+  s.watching = true;
+  const pile = s.deposits.find((d) => d.kind === "pile" && d.ore === "iron" && d.tons > 2);
+  assert.ok(pile);
+  buyVehicle(s, "loader");
+  buyVehicle(s, "truck");
+  const loader = s.vehicles.find((v) => v.defId === "loader")!;
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  loader.x = pile!.x + 7;
+  loader.z = pile!.z;
+  loader.yaw = Math.PI / 2;
+  truck.x = pile!.x + 7;
+  truck.z = pile!.z + 14;
+  truck.yaw = 0;
+  for (const m of [loader, truck]) {
+    m.hired = true;
+    m.operator = true;
+  }
+  s.active = 0;
+  let moved = 0;
+  for (let i = 0; i < 30 * 10; i++) {
+    step(s, idle, 1 / 30, false);
+    moved = Math.max(moved, loader.cargo, truck.cargo);
+  }
+  assert.ok(moved > 0.4, `nothing scooped, loader ${loader.cargo.toFixed(2)} ${loader.status} truck ${truck.cargo.toFixed(2)}`);
+  const gap = Math.hypot(truck.x - loader.x, truck.z - loader.z);
+  assert.ok(gap > 5, `truck on the loader, gap ${gap.toFixed(1)} ${truck.status}`);
+  if (truck.status === "Waiting to load") {
+    const tx = truck.x;
+    const tz = truck.z;
+    loader.x += 1.5;
+    for (let i = 0; i < 30 * 3; i++) step(s, idle, 1 / 30, false);
+    assert.ok(Math.hypot(truck.x - tx, truck.z - tz) < 8, `truck chased a small move`);
+  }
+});

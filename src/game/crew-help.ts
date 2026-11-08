@@ -14,6 +14,7 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status.startsWith("Backing off ")) return "Backing away from the face is part of the dozer's normal push cycle; it should push again shortly.";
   if (crew.status === "Backed out of the west cliff") return "The west wall blocked its route, so it was moved back to safe ground.";
   if (crew.status === "Needs a payloader") return "A loader or excavator needs to bring material to this truck.";
+  if (crew.status === "Waiting to load" || crew.status === "Waiting off the pile" || crew.status.startsWith("Waiting beside")) return "The truck is parked off to the side. It stays there until the loader has a bucketful.";
   if (crew.status.startsWith("Waiting on the ")) return "It is waiting for another machine to work nearby or come closer.";
   if (crew.status === "No material at assigned source") return "This source has no material to work right now. Choose another source in the crew settings.";
   if (crew.status === "No face in reach") return "There is no mineable face nearby. Check the selected source and map.";

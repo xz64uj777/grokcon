@@ -768,6 +768,67 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
   return best;
 }
 
+function slotOf(v: VehicleState) {
+  let n = 0;
+  for (let i = 0; i < v.uid.length; i++) n = (n + v.uid.charCodeAt(i) * (i + 1)) % 8;
+  return n;
+}
+
+/** A spot on the near edge of a pile, locked so the machine does not orbit it. */
+const approachLatch = new WeakMap<VehicleState, { id: string; x: number; z: number }>();
+
+function pileApproach(v: VehicleState, pile: Deposit) {
+  const prev = approachLatch.get(v);
+  if (prev && prev.id === pile.id && distTo(v.x, v.z, pile.x, pile.z) < 22) return { x: prev.x, z: prev.z };
+  const foot = pileFootprint(Math.max(pile.tons, 0.4));
+  const dx = v.x - pile.x;
+  const dz = v.z - pile.z;
+  const ang = Math.atan2(dz, dx) + ((slotOf(v) % 5) - 2) * 0.38;
+  const rx = foot.rx + 2.2;
+  const rz = foot.rz + 2.2;
+  const spot = { id: pile.id, x: pile.x + Math.cos(ang) * rx, z: pile.z + Math.sin(ang) * rz };
+  approachLatch.set(v, spot);
+  return spot;
+}
+
+function pileInReach(state: GameState, v: VehicleState) {
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.id.startsWith("feed-") || d.tons < 0.2) continue;
+    if (!acceptsJob(state, v, d)) continue;
+    const foot = pileFootprint(d.tons);
+    const dx = v.x - d.x;
+    const dz = v.z - d.z;
+    const rx = foot.rx + 4.4;
+    const rz = foot.rz + 4.4;
+    if ((dx * dx) / (rx * rx) + (dz * dz) / (rz * rz) >= 1) continue;
+    const dist = Math.hypot(dx, dz);
+    if (dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+
+/** Side spot for a truck. Small shuffles of the loader do not move it. */
+const parkLatch = new WeakMap<VehicleState, { key: string; x: number; z: number }>();
+
+function besideMachine(v: VehicleState, other: VehicleState) {
+  const fx = -Math.sin(other.yaw);
+  const fz = -Math.cos(other.yaw);
+  const slot = slotOf(v);
+  const side = slot % 2 === 0 ? 1 : -1;
+  const along = (slot % 3) - 1;
+  const x = other.x + -fz * side * 8 + fx * along * 4.5;
+  const z = other.z + fx * side * 8 + fz * along * 4.5;
+  const prev = parkLatch.get(v);
+  if (prev && prev.key === other.uid && distTo(prev.x, prev.z, x, z) < 6) return { x: prev.x, z: prev.z };
+  parkLatch.set(v, { key: other.uid, x, z });
+  return { x, z };
+}
+
 function bestPile(state: GameState, v: VehicleState) {
   let best: Deposit | null = null;
   let score = -1;
@@ -939,8 +1000,9 @@ function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   const hit = machineAhead(state, v);
   if (!hit) return c;
   const holding = c.throttle === 0 && c.brake > 0.5;
-  if (holding && hit.gap > 0.25) return c;
-  if (hit.gap > 1.15) return c;
+  // A truck waiting beside a loader should ignore that loader's small shifts.
+  if (holding && hit.gap > -0.2) return c;
+  if (c.throttle < 0.12 || hit.gap > 2.4) return c;
   const away = hit.side >= 0 ? 0.9 : -0.9;
   if (hit.gap < 0) {
     v.status = "Making room";
@@ -1336,8 +1398,13 @@ function aiControl(state: GameState, index: number): Control {
     else {
       const pile = bestPile(state, v);
       if (pile) {
+        const spot = pileApproach(v, pile);
+        if (distTo(v.x, v.z, spot.x, spot.z) < 2.4 && Math.abs(v.speed) < 1.1 && pileInReach(state, v)) {
+          v.status = `Scooping ${ORES[pile.ore].name}`;
+          return { throttle: 0, steer: 0, action: true, brake: 1 };
+        }
         v.status = `Scooping ${ORES[pile.ore].name}`;
-        return seek(v, pile.x, pile.z, Math.max(3.5, pile.radius * 0.72));
+        return seek(v, spot.x, spot.z, 2.4);
       }
       v.status = "Face is dug out";
       return { ...ZERO };
@@ -1368,13 +1435,13 @@ function aiControl(state: GameState, index: number): Control {
           v.status = label;
           return seek(v, leave.x, leave.z, arrive);
         }
-        const blocked = benchBetween(v.x, v.z, digger.x, digger.z);
-        if (!blocked && diggerD < 8) {
-          v.status = "Under the bucket";
+        const spot = besideMachine(v, digger);
+        if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
+          v.status = "Waiting to load";
           return { throttle: 0, steer: 0, action: false, brake: 1 };
         }
-        v.status = `Pulling up to the ${DEFS[digger.defId].name}`;
-        return seek(v, digger.x, digger.z, 6);
+        v.status = `Pulling up beside the ${DEFS[digger.defId].name}`;
+        return seek(v, spot.x, spot.z, 2.8);
       }
       if (v.cargo > 0.25 && v.cargoOre) {
         haulTarget();
@@ -1401,14 +1468,29 @@ function aiControl(state: GameState, index: number): Control {
             park = o;
           }
         }
-        if (park && parkD > 10) {
+        if (park && parkD > 12) {
+          const spot = besideMachine(v, park);
+          if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
+            v.status = `Waiting beside the ${DEFS[park.defId].name}`;
+            return { throttle: 0, steer: 0, action: false, brake: 1 };
+          }
           v.status = `Waiting on the ${DEFS[park.defId].name}`;
-          return seek(v, park.x, park.z, 9);
+          return seek(v, spot.x, spot.z, 3);
         }
       }
       v.status = "Needs a payloader";
       const pile = bestPile(state, v);
-      if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) return seek(v, pile.x, pile.z, Math.max(4, pile.radius * 0.5));
+      if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) {
+        const spot = pileApproach(v, pile);
+        const ox = pile.x + (spot.x - pile.x) * 1.55;
+        const oz = pile.z + (spot.z - pile.z) * 1.55;
+        if (distTo(v.x, v.z, ox, oz) < 3.2) {
+          v.status = "Waiting off the pile";
+          return { throttle: 0, steer: 0, action: false, brake: 1 };
+        }
+        v.status = "Waiting off the pile";
+        return seek(v, ox, oz, 2.6);
+      }
       return { ...ZERO };
     }
   } else if (waitingTruck) {
@@ -1438,13 +1520,13 @@ function aiControl(state: GameState, index: number): Control {
     const washPile = pile != null && prefersSluice(state, pile.ore);
     const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD && (!washVein || washPile);
     if (takePile && pile) {
-      const held = workHere(v, pile.x, pile.z, pile.radius * 0.9);
-      if (held) {
+      const spot = pileApproach(v, pile);
+      if (distTo(v.x, v.z, spot.x, spot.z) < 2.4 && Math.abs(v.speed) < 1.1 && pileInReach(state, v)) {
         v.status = `Scooping ${ORES[pile.ore].name}`;
-        return held;
+        return { throttle: 0, steer: 0, action: true, brake: 1 };
       }
-      target = pile;
-      arrive = Math.max(3.5, pile.radius * 0.72);
+      target = spot;
+      arrive = 2.4;
       label = pile.id === "starter" ? "Scooping the gate pile" : `Scooping ${ORES[pile.ore].name}`;
     } else if (vein) {
       if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
@@ -1784,7 +1866,7 @@ function performAction(
       if (player) v.status = "Lower the bucket and curl it to scoop";
       return null;
     }
-    const pile = closestDeposit(state, v.x, v.z, "pile", 0, v);
+    const pile = pileInReach(state, v);
     const spot = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
     const cut = spot ? faceOf(spot) : null;
     const faceNear = spot && cut && distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
