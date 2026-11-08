@@ -1,0 +1,53 @@
+name: Android app
+
+# Same Ridge Ore game, installed as a fullscreen Android app.
+# This is still the web renderer. It is not a Unity or Unreal build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the game for the app
+        run: RIDGE_BASE=./ npx vite build --config vite.static.config.ts
+
+      - name: Use index.html as the app entry
+        run: cp dist-static/static.html dist-static/index.html
+
+      - name: Add the Android shell
+        run: |
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          npx cap add android
+
+      - name: Build the debug APK
+        run: cd android && chmod +x ./gradlew && ./gradlew assembleDebug
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ridge-ore
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14

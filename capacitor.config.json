@@ -1,0 +1,8 @@
+{
+  "appId": "com.ridgeore.pit",
+  "appName": "Ridge Ore",
+  "webDir": "dist-static",
+  "android": {
+    "allowMixedContent": false
+  }
+}
