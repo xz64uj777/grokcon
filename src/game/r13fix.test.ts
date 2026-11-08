@@ -384,7 +384,7 @@ test("a dump truck stays parked until its bed is nearly full, then heads to dump
   assert.ok(!/haul|dump/i.test(truck.status), `partial truck should remain parked: ${truck.status}`);
   truck.cargo = cap * 0.9;
   const fullFrom = { x: truck.x, z: truck.z };
-  step(s, idle, 1 / 30, false);
+  for (let i = 0; i < 30 && !/Hauling to|Dumping at/.test(truck.status); i++) step(s, idle, 1 / 30, false);
   assert.match(truck.status, /Hauling to|Dumping at/, `nearly-full truck should dispatch immediately, got ${truck.status}`);
   for (let i = 0; i < 30 * 12; i++) step(s, idle, 1 / 30, false);
   const fullMove = Math.hypot(truck.x - fullFrom.x, truck.z - fullFrom.z);

@@ -25,6 +25,20 @@ import {
   stepWet,
 } from "./river.ts";
 
+function withSeededRandom<T>(seed: number, run: () => T): T {
+  const originalRandom = Math.random;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  try {
+    return run();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
 describe("areas", () => {
   it("splits the world into the ridge and the valley", () => {
     assert.equal(areaOf(0), "ridge");
@@ -202,7 +216,7 @@ describe("river crew", () => {
     assert.equal(plannedPad(s, s.vehicles.indexOf(truck)), "wash");
   });
 
-  it("a hired skid and excavator dig the river bars instead of sitting", () => {
+  it("a hired skid and excavator dig the river bars instead of sitting", () => withSeededRandom(1, () => {
     const s = freshGame("Crew");
     s.cash = 1e6;
     s.claims = [1, 4, 5, 6, 7];
@@ -230,7 +244,7 @@ describe("river crew", () => {
       }
     }
     assert.ok(dug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
-  });
+  }));
 
   it("fills the dump and the heavy from the river bars instead of selling the bucket at the wash", () => {
     const s = freshGame("Fill");
