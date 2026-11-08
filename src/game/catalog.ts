@@ -86,7 +86,7 @@ export const ORES: Record<
   OreId,
   { name: string; crusher: number; reclaim: number; sluice: number; wash: number; color: number }
 > = {
-  dirt: { name: "Dirt", crusher: 22, reclaim: 52, sluice: 52, wash: 0, color: 0x8d7044 },
+  dirt: { name: "Dirt", crusher: 22, reclaim: 52, sluice: 80, wash: 0, color: 0x8d7044 },
   iron: { name: "Iron", crusher: 74, reclaim: 28, sluice: 74, wash: 0, color: 0xa85a3e },
   copper: { name: "Copper", crusher: 160, reclaim: 55, sluice: 190, wash: 0, color: 0x2f8f78 },
   gold: { name: "Gold gravel", crusher: 140, reclaim: 48, sluice: 300, wash: 300, color: 0xd4a84a },

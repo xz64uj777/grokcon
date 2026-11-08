@@ -675,7 +675,7 @@ function prefersSluice(state: GameState, ore: OreId, x?: number) {
   return state.sluice && state.preferSluice && ORES[ore].sluice > ORES[ore].crusher;
 }
 
-/** Overburden on the ridge goes to the sluice once you own it. Same pay as the reclaim buyer. */
+/** Overburden on the ridge goes to the sluice once you own it. Washing it pays more than the fill buyer. */
 function dirtToSluice(state: GameState, ore: OreId, x?: number) {
   if (ore !== "dirt" || !state.sluice || !state.preferSluice) return false;
   if (x !== undefined && areaOf(x) !== "ridge") return false;
@@ -707,6 +707,7 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: Vehicle
     if (v && !canReach(v, pad.x)) continue;
     const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
     if (unit <= 0) continue;
+    if (pad.kind === "sluice" && ore === "dirt" && !dirtToSluice(state, ore, x)) continue;
     if (pad.kind === "wash" && prefersWash(state, ore, x)) return pad;
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
@@ -3174,7 +3175,7 @@ function hint(state: GameState) {
   const pad = nearestPad(state, v.x, v.z);
   if (v.cargoOre && (prefersSluice(state, v.cargoOre, v.x) || dirtToSluice(state, v.cargoOre, v.x)) && v.cargo > 0.08) {
     if (pad?.kind === "sluice") return "Hold DIG. The sluice pays for this load.";
-    if (v.cargoOre === "dirt") return "Overburden goes to the sluice, west of the yard. Reclaim pays the same, but the plant takes it.";
+    if (v.cargoOre === "dirt") return "Overburden goes to the sluice, west of the yard. It pays more than reclaim.";
     return `${ORES[v.cargoOre].name} pays at the sluice, west of the yard. The crusher will not buy it.`;
   }
   if (v.cargo > 0.08 && pad) return `Hold DIG to sell at the ${pad.name.toLowerCase()}.`;

@@ -65,7 +65,7 @@ test("plant stockpile crew limit dispatches only one, two, or all eligible opera
   }
 });
 
-test("ridge overburden hauls to the sluice and still pays the reclaim rate", () => {
+test("ridge overburden hauls to the sluice and pays more than reclaim", () => {
   const s = freshGame("Dirt");
   s.sluice = true;
   s.preferSluice = true;
@@ -77,7 +77,7 @@ test("ridge overburden hauls to the sluice and still pays the reclaim rate", () 
   t.z = 36;
   s.active = s.vehicles.indexOf(t);
   assert.equal(plannedPad(s, s.active), "sluice");
-  assert.equal(basePrice("dirt", "sluice", true), basePrice("dirt", "reclaim", true));
+  assert.ok(basePrice("dirt", "sluice", true) > basePrice("dirt", "reclaim", true));
   t.x = 44;
   t.z = 46;
   const cash = s.cash;
