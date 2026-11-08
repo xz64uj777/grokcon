@@ -39,7 +39,7 @@ function canvasTex(size: number, paint: (g: CanvasRenderingContext2D, r: () => n
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat, repeat);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -56,16 +56,28 @@ function speckle(g: CanvasRenderingContext2D, r: () => number, size: number, bas
 }
 
 export function dirtTexture() {
-  return canvasTex(256, (g, r) => {
-    speckle(g, r, 256, "#7a6450", ["#6a5442", "#8a735c", "#735d48", "#94806a"], 2600, 1.6);
-    // soft blotches so the tiling doesn't read as a grid
-    for (let i = 0; i < 18; i++) {
-      g.fillStyle = `rgba(${r() < 0.5 ? "60,44,32" : "150,128,100"},0.08)`;
+  return canvasTex(512, (g, r) => {
+    g.fillStyle = "#6e5b49";
+    g.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 36; i++) {
+      g.fillStyle = r() < 0.5 ? "rgba(86,64,48,0.4)" : "rgba(150,126,98,0.28)";
       g.beginPath();
-      g.arc(r() * 256, r() * 256, 18 + r() * 40, 0, Math.PI * 2);
+      g.ellipse(r() * 512, r() * 512, 28 + r() * 80, 16 + r() * 46, r() * Math.PI, 0, Math.PI * 2);
       g.fill();
     }
-  }, 30, 11);
+    for (let i = 0; i < 520; i++) {
+      const tone = 70 + Math.floor(r() * 70);
+      g.fillStyle = `rgb(${tone + 18},${tone},${tone - 12})`;
+      const rad = 1.4 + r() * 4.2;
+      g.beginPath();
+      g.ellipse(r() * 512, r() * 512, rad, rad * (0.55 + r() * 0.45), r() * Math.PI, 0, Math.PI * 2);
+      g.fill();
+    }
+    for (let i = 0; i < 1400; i++) {
+      g.fillStyle = r() < 0.5 ? "rgba(40,30,22,0.35)" : "rgba(180,160,130,0.22)";
+      g.fillRect(r() * 512, r() * 512, 1 + r() * 1.5, 1 + r() * 1.5);
+    }
+  }, 14, 11);
 }
 
 export function gravelTexture() {
@@ -435,9 +447,9 @@ export function buildBackdrop(scene: THREE.Scene, track: Track, cx = 0, withSky 
   const sky = new THREE.SphereGeometry(300, 24, 12);
   const pos = sky.attributes.position as THREE.BufferAttribute;
   const cols = new Float32Array(pos.count * 3);
-  const top = new THREE.Color(0x7fa6c8);
-  const mid = new THREE.Color(0xe9c7a4);
-  const low = new THREE.Color(0xd9a27c);
+  const top = new THREE.Color(0x6ea4d4);
+  const mid = new THREE.Color(0xf2d3ae);
+  const low = new THREE.Color(0xc47a52);
   const c = new THREE.Color();
   for (let k = 0; k < pos.count; k++) {
     const t = pos.getY(k) / 300;

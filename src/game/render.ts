@@ -2,6 +2,7 @@ import { FUEL_BAYS, nightness, on as onRound } from "@/game/ops";
 import { BORE_SECONDS, DRILL_SECONDS } from "@/game/mining";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
@@ -82,23 +83,27 @@ export function createWorld(host: HTMLElement): World {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
   const quality = qualityTier();
+  renderer.shadowMap.type = quality.rich ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.setClearColor(0xe2bd9a, 1);
 
   const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+  scene.environmentIntensity = 0.42;
   scene.background = new THREE.Color(0xe2bd9a);
   // Warm dusty haze; the hills sit inside it so they fade out softly.
-  scene.fog = new THREE.Fog(0xdcb594, 80, 260);
+  scene.fog = new THREE.Fog(0xdcb594, 130, 400);
 
   const camera = new THREE.PerspectiveCamera(55, 1, 0.2, 420);
   camera.position.set(30, 24, 70);
 
-  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x5a4434, 1.6);
+  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x5a4434, 1.25);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffcf9e, 2.6);
+  const sun = new THREE.DirectionalLight(0xffcf9e, 2.35);
   sun.position.set(48, 72, 26);
   sun.castShadow = true;
   sun.shadow.mapSize.set(quality.shadowMap, quality.shadowMap);
@@ -171,6 +176,7 @@ export function createWorld(host: HTMLElement): World {
   }
 
   const groundTex = track(dirtTexture());
+  groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   buildPitWalls(scene, track);
   const roadMat = std(0x6d6458, { roughness: 1 });
   const haulRoad = new THREE.Mesh(
@@ -321,6 +327,8 @@ export function createWorld(host: HTMLElement): World {
   buildPuddles(scene, track);
   buildScatter(scene, track, ROADS, quality.rich);
   const sky = buildBackdrop(scene, track) as THREE.Mesh;
+  const skyColor = new THREE.Color();
+  const nightSky = new THREE.Color(0x121a2e);
 
   const wheelGeo = track(new THREE.CylinderGeometry(0.46, 0.46, 0.38, 12));
   const hubGeo = track(new THREE.CylinderGeometry(0.16, 0.16, 0.42, 8));
@@ -987,14 +995,17 @@ export function createWorld(host: HTMLElement): World {
     beamMat.opacity = k * 0.7;
     for (const glow of towerLights) glow.intensity = 40 + k * 110;
     drillLight.intensity = drillRig.visible ? k * 55 : 0;
+    const skyMat = sky.material as THREE.MeshBasicMaterial;
     if (k <= 0) {
       lightRig.intensity = 0;
+      skyMat.color.set(0xffffff);
       return;
     }
     hemi.intensity *= 1 - k * 0.78;
     sun.intensity *= 1 - k * 0.9;
     (scene.background as THREE.Color).lerp(nightBg, k * 0.85);
     (scene.fog as THREE.Fog).color.lerp(nightBg, k * 0.85);
+    skyMat.color.copy(skyColor.set(0xffffff).lerp(nightSky, k * 0.92));
     const v = state.vehicles[state.active];
     const lit = state.ops?.lights;
     lightRig.distance = lit ? 70 : 34;
@@ -1075,12 +1086,12 @@ export function createWorld(host: HTMLElement): World {
   }
   function updateWeather(intensity: number, dt: number) {
     const k = Math.max(0, Math.min(1, intensity));
-    hemi.intensity = 1.6 - k * 0.55;
-    sun.intensity = 2.6 - k * 1.7;
+    hemi.intensity = 1.25 - k * 0.45;
+    sun.intensity = 2.35 - k * 1.5;
     const fog = scene.fog as THREE.Fog;
     fog.color.copy(dryFog).lerp(wetFog, k);
-    fog.near = 80 - k * 45;
-    fog.far = 260 - k * 120;
+    fog.near = 130 - k * 55;
+    fog.far = 400 - k * 150;
     (scene.background as THREE.Color).copy(tmpColor.copy(dryBg).lerp(wetBg, k));
     rain.visible = k > 0.02;
     if (!rain.visible) return;
