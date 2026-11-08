@@ -336,3 +336,45 @@ test("a loader fills from the edge of a pile and the truck waits beside it", () 
     assert.ok(Math.hypot(truck.x - tx, truck.z - tz) < 8, `truck chased a small move`);
   }
 });
+
+test("a dump truck stays parked and leaves when a near-full bed waits too long", () => {
+  const s = freshGame("Park");
+  s.cash = 1e6;
+  s.watching = true;
+  const pile = s.deposits.find((d) => d.id === "starter")!;
+  buyVehicle(s, "loader");
+  buyVehicle(s, "truck");
+  const loader = s.vehicles.find((v) => v.defId === "loader")!;
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  loader.x = pile.x;
+  loader.z = pile.z + 4;
+  loader.yaw = 0;
+  truck.x = pile.x - 18;
+  truck.z = pile.z - 6;
+  truck.yaw = Math.PI / 2;
+  truck.cargo = 14;
+  truck.cargoOre = "iron";
+  for (const m of [loader, truck]) {
+    m.hired = true;
+    m.operator = true;
+  }
+  s.active = 0;
+  let parked = false;
+  for (let i = 0; i < 30 * 12 && !parked; i++) {
+    step(s, idle, 1 / 30, false);
+    parked = truck.status === "Waiting to load";
+  }
+  assert.equal(parked, true, truck.status);
+  const gap = Math.hypot(truck.x - loader.x, truck.z - loader.z);
+  assert.ok(gap > 8, `too close, gap ${gap.toFixed(1)}`);
+  const tx = truck.x;
+  const tz = truck.z;
+  loader.x += 5;
+  for (let i = 0; i < 30 * 3; i++) step(s, idle, 1 / 30, false);
+  assert.ok(Math.hypot(truck.x - tx, truck.z - tz) < 3, `left the spot early, ${truck.status}`);
+  s.seconds += 40;
+  const leftFrom = { x: truck.x, z: truck.z };
+  for (let i = 0; i < 30 * 4; i++) step(s, idle, 1 / 30, false);
+  const hauled = Math.hypot(truck.x - leftFrom.x, truck.z - leftFrom.z);
+  assert.ok(hauled > 6 || truck.cargo < 1, `still waiting with ${truck.cargo.toFixed(1)}t ${truck.status} moved ${hauled.toFixed(1)}`);
+});

@@ -437,7 +437,12 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
     // A heavy haul will not cross the river, so don't send a digger after one on the other bank.
     if (o.defId === "heavy" && otherBank(v.x, o.x)) continue;
     const d = distTo(v.x, v.z, o.x, o.z);
-    const score = d + (otherBank(v.x, o.x) ? 80 : 0);
+    let score = d + (otherBank(v.x, o.x) ? 80 : 0);
+    for (const other of state.vehicles) {
+      if (other === v || (other.defId !== "loader" && other.defId !== "excavator") || !other.operator) continue;
+      if (other.cargo < 0.2) continue;
+      if (distTo(other.x, other.z, o.x, o.z) + 5 < d) score += 50;
+    }
     if (score <= bestD) {
       bestD = score;
       best = o;
@@ -759,7 +764,8 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (!sameArea(d, v)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000) + washScore(state, d.ore);
+    const busy = crewNear(state, v, d.x, d.z, 16);
+    const s = (unit * Math.min(d.tons, 50)) / (d0 + 10) + (d0 < 40 ? 1000 : 0) + (d.ore === "dirt" ? 0 : 2000) + washScore(state, d.ore) - busy * 2400;
     if (s > score) {
       score = s;
       best = d;
@@ -829,9 +835,26 @@ function besideMachine(v: VehicleState, other: VehicleState) {
   return { x, z };
 }
 
+/** Other working machines already on this spot. Each crew member should pick a different one. */
+function crewNear(state: GameState, v: VehicleState, x: number, z: number, reach: number) {
+  let n = 0;
+  for (const o of state.vehicles) {
+    if (o === v || !o.operator) continue;
+    const od = DEFS[o.defId];
+    if (od.dig <= 0 && od.scoop <= 0 && od.push <= 0) continue;
+    if (distTo(o.x, o.z, x, z) < reach) n++;
+  }
+  return n;
+}
+
+const pileJob = new WeakMap<VehicleState, string>();
+const truckPartner = new WeakMap<VehicleState, string>();
+
 function bestPile(state: GameState, v: VehicleState) {
   let best: Deposit | null = null;
   let score = -1;
+  let prev: Deposit | null = null;
+  let prevScore = -1;
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.tons < 0.4 || d.id.startsWith("feed-")) continue;
     if (!ownsClaim(state, d.claim)) continue;
@@ -840,13 +863,84 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!sameArea(d, v)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore);
+    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) - crewNear(state, v, d.x, d.z, 14) * 2200;
+    if (d.id === pileJob.get(v)) {
+      prev = d;
+      prevScore = s;
+    }
     if (s > score) {
       score = s;
       best = d;
     }
   }
+  if (prev && prev.tons > 0.8 && prevScore + 1600 >= score) best = prev;
+  if (best) pileJob.set(v, best.id);
   return best;
+}
+
+/** One truck per digger. A second truck waits at a pile instead of stacking on the same machine. */
+function diggerForTruck(state: GameState, v: VehicleState) {
+  const open = (o: VehicleState) =>
+    (o.defId === "loader" || o.defId === "excavator") &&
+    (o.operator || o === state.vehicles[state.active]) &&
+    !(v.defId === "heavy" && otherBank(v.x, o.x));
+  const taken = (digger: VehicleState) =>
+    state.vehicles.some((t) => {
+      if (t === v || !DEFS[t.defId].receives) return false;
+      if (!(t.operator || t === state.vehicles[state.active])) return false;
+      if (t.cargo >= vehicleStats(t).capacity * 0.9) return false;
+      return truckPartner.get(t) === digger.uid && distTo(t.x, t.z, digger.x, digger.z) < 48;
+    });
+  const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
+  if (prev && !taken(prev) && distTo(v.x, v.z, prev.x, prev.z) < 100) return prev;
+  let best: VehicleState | null = null;
+  let bestD = Infinity;
+  for (const o of state.vehicles) {
+    if (!open(o)) continue;
+    if (taken(o)) continue;
+    const d = distTo(v.x, v.z, o.x, o.z);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  if (best) truckPartner.set(v, best.uid);
+  else truckPartner.delete(v);
+  return best;
+}
+
+/** World point a truck parks at. Set once. It does not follow the loader after that. */
+const truckStand = new WeakMap<VehicleState, { x: number; z: number }>();
+const truckWait = new WeakMap<VehicleState, { since: number; cargo: number }>();
+const dumpAnyway = new WeakSet<VehicleState>();
+const TRUCK_PARK = 12;
+const TRUCK_NEAR = 0.6;
+const TRUCK_PATIENCE = 35;
+
+function placeTruck(v: VehicleState, digger: VehicleState) {
+  const fx = -Math.sin(digger.yaw);
+  const fz = -Math.cos(digger.yaw);
+  const side = slotOf(v) % 2 === 0 ? 1 : -1;
+  const along = ((slotOf(v) % 3) - 1) * 5;
+  return { x: digger.x - fz * side * TRUCK_PARK + fx * along, z: digger.z + fx * side * TRUCK_PARK + fz * along };
+}
+
+function noteTruckWait(state: GameState, v: VehicleState) {
+  const w = truckWait.get(v);
+  if (!w) {
+    truckWait.set(v, { since: state.seconds, cargo: v.cargo });
+    return;
+  }
+  if (v.cargo > w.cargo + 0.35) {
+    w.since = state.seconds;
+    w.cargo = v.cargo;
+  }
+}
+
+function truckTired(state: GameState, v: VehicleState, cap: number) {
+  if (cap <= 0 || v.cargo < cap * TRUCK_NEAR) return false;
+  const w = truckWait.get(v);
+  return !!w && state.seconds - w.since > TRUCK_PATIENCE;
 }
 
 /** A mountain bench wall is still between these two points. */
@@ -1410,87 +1504,54 @@ function aiControl(state: GameState, index: number): Control {
       return { ...ZERO };
     }
   } else if (def.receives) {
-    const bedFull = cap > 0 && v.cargo >= cap * 0.9;
-    if (bedFull) haulTarget();
+    if (v.cargo < 0.15) dumpAnyway.delete(v);
+    const leave = cap > 0 && v.cargo > 0.4 && (v.cargo >= cap * 0.9 || truckTired(state, v, cap));
+    if (leave && v.cargoOre) {
+      dumpAnyway.add(v);
+      truckStand.delete(v);
+      const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
+      if (pad) {
+        target = pad;
+        arrive = Math.min(6, Math.max(5, pad.r * 0.62));
+        v.status = v.cargo < cap * 0.9 ? "Hauling a short load" : `Hauling to ${pad.name}`;
+        const here = nearestPad(state, v.x, v.z);
+        if (here && here.id === pad.id) {
+          v.status = `Dumping at ${pad.name}`;
+          return { throttle: 0, steer: 0, action: true, brake: 1 };
+        }
+        return seek(v, pad.x, pad.z, arrive);
+      }
+    }
     if (!target) {
-      let digger: VehicleState | null = null;
-      let diggerD = Infinity;
-      for (let i = 0; i < state.vehicles.length; i++) {
-        if (i === index) continue;
-        const o = state.vehicles[i];
-        if (!(o.operator || i === state.active)) continue;
-        if (o.defId !== "loader" && o.defId !== "excavator") continue;
-        if (v.defId === "heavy" && otherBank(v.x, o.x)) continue;
-        const d = distTo(v.x, v.z, o.x, o.z);
-        if (d < diggerD) {
-          diggerD = d;
-          digger = o;
+      const digger = diggerForTruck(state, v);
+      let stand = truckStand.get(v);
+      if (!stand && digger) {
+        stand = placeTruck(v, digger);
+        truckStand.set(v, stand);
+        truckWait.set(v, { since: state.seconds, cargo: v.cargo });
+      }
+      if (!stand) {
+        const pile = bestPile(state, v);
+        if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) {
+          const spot = pileApproach(v, pile);
+          const dx = spot.x - pile.x;
+          const dz = spot.z - pile.z;
+          const len = Math.hypot(dx, dz) || 1;
+          stand = { x: pile.x + (dx / len) * (len + 8), z: pile.z + (dz / len) * (len + 8) };
+          truckStand.set(v, stand);
+          truckWait.set(v, { since: state.seconds, cargo: v.cargo });
         }
       }
-      if (digger) {
-        const wrongRock = v.cargo > 1 && !!v.cargoOre && !!digger.cargoOre && digger.cargoOre !== "dirt" && digger.cargoOre !== v.cargoOre;
-        if (wrongRock) haulTarget();
-        const leave = target as { x: number; z: number } | null;
-        if (wrongRock && leave) {
-          v.status = label;
-          return seek(v, leave.x, leave.z, arrive);
+      if (stand) {
+        noteTruckWait(state, v);
+        if (distTo(v.x, v.z, stand.x, stand.z) > 3.5) {
+          v.status = "Pulling up to wait";
+          return seek(v, stand.x, stand.z, 2.8);
         }
-        const spot = besideMachine(v, digger);
-        if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
-          v.status = "Waiting to load";
-          return { throttle: 0, steer: 0, action: false, brake: 1 };
-        }
-        v.status = `Pulling up beside the ${DEFS[digger.defId].name}`;
-        return seek(v, spot.x, spot.z, 2.8);
-      }
-      if (v.cargo > 0.25 && v.cargoOre) {
-        haulTarget();
-        const pad = target as { x: number; z: number } | null;
-        if (pad) {
-          v.status = label;
-          return seek(v, pad.x, pad.z, arrive);
-        }
-      }
-      if (v.cargo < 0.2) {
-        let park: VehicleState | null = null;
-        let parkD = Infinity;
-        for (let i = 0; i < state.vehicles.length; i++) {
-          if (i === index) continue;
-          const o = state.vehicles[i];
-          if (!(o.operator || i === state.active)) continue;
-          if (!sameArea(o, v)) continue;
-          if (v.defId === "heavy" && otherBank(v.x, o.x)) continue;
-          const od = DEFS[o.defId];
-          if (od.dig <= 0 && od.push <= 0 && o.defId !== "loader") continue;
-          const d = distTo(v.x, v.z, o.x, o.z);
-          if (d < parkD) {
-            parkD = d;
-            park = o;
-          }
-        }
-        if (park && parkD > 12) {
-          const spot = besideMachine(v, park);
-          if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
-            v.status = `Waiting beside the ${DEFS[park.defId].name}`;
-            return { throttle: 0, steer: 0, action: false, brake: 1 };
-          }
-          v.status = `Waiting on the ${DEFS[park.defId].name}`;
-          return seek(v, spot.x, spot.z, 3);
-        }
+        v.status = "Waiting to load";
+        return { throttle: 0, steer: 0, action: false, brake: 1 };
       }
       v.status = "Needs a payloader";
-      const pile = bestPile(state, v);
-      if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) {
-        const spot = pileApproach(v, pile);
-        const ox = pile.x + (spot.x - pile.x) * 1.55;
-        const oz = pile.z + (spot.z - pile.z) * 1.55;
-        if (distTo(v.x, v.z, ox, oz) < 3.2) {
-          v.status = "Waiting off the pile";
-          return { throttle: 0, steer: 0, action: false, brake: 1 };
-        }
-        v.status = "Waiting off the pile";
-        return seek(v, ox, oz, 2.6);
-      }
       return { ...ZERO };
     }
   } else if (waitingTruck) {
@@ -1685,7 +1746,7 @@ function performAction(
         (dirtToSluice(state, v.cargoOre, v.x) && pad.kind !== "sluice") ||
         (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
-    const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9;
+    const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9 && !dumpAnyway.has(v);
     const reclaimWaste = precious && pad?.kind === "reclaim";
     // A hand-worked excavator dumps where the bucket is, not where the tracks are.
     const excavatorHand = manual && kind === "excavator";
