@@ -14,6 +14,7 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status.startsWith("Backing off ")) return "Backing away from the face is part of the dozer's normal push cycle; it should push again shortly.";
   if (crew.status === "Backed out of the west cliff") return "The west wall blocked its route, so it was moved back to safe ground.";
   if (crew.status === "Needs a payloader") return "A loader or excavator needs to bring material to this truck.";
+  if (crew.status === "Waiting for a ready dump truck") return "The loader is holding its material here until its assigned truck is backed into the bay.";
   if (crew.status === "Waiting to load" || crew.status === "Waiting off the pile" || crew.status.startsWith("Waiting beside")) return "The truck is parked off to the side and stays there until the bed is loaded.";
   if (crew.status.startsWith("In line")) return "This truck is waiting its turn. It stays back until the one ahead is loaded.";
   if (crew.status.startsWith("Wash line")) return "Waiting its turn at the wash plant. Only one machine dumps at a time.";

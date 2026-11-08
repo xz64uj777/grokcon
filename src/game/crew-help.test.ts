@@ -16,6 +16,7 @@ test("crew explanations tell players how to respond to common blockers", () => {
   assert.match(crewExplanation(crew("Making room")) ?? "", /go around/);
   assert.match(crewExplanation(crew("Backing off Deep Copper")) ?? "", /normal push cycle/);
   assert.match(crewExplanation(crew("Needs a payloader")) ?? "", /loader or excavator/);
+  assert.match(crewExplanation(crew("Waiting for a ready dump truck")) ?? "", /assigned truck is backed into the bay/);
   assert.match(crewExplanation(crew("Waiting on the Excavator")) ?? "", /waiting for another machine/);
   assert.match(crewExplanation(crew("No material at assigned source")) ?? "", /Choose another source/);
   assert.match(crewExplanation(crew("Bridge flooded")) ?? "", /Wait for it to reopen/);

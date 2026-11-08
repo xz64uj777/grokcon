@@ -425,36 +425,13 @@ function nearestPad(state: GameState, x: number, z: number) {
 
 function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
   const head = lineFor(state, v)[0];
-  if (head && sameArea(head, v)) {
-    if (!bayReady.has(head)) return null;
-    const room = vehicleStats(head).capacity - head.cargo;
-    if (room >= 0.4) return distTo(v.x, v.z, head.x, head.z) <= maxDist ? head : null;
-  }
-  let best: VehicleState | null = null;
-  let bestD = maxDist;
-  for (const o of state.vehicles) {
-    if (o === v) continue;
-    if (!DEFS[o.defId].receives) continue;
-    if (!sameArea(o, v)) continue;
-    if (operatedOnly && !o.operator && state.vehicles[state.active] !== o) continue;
-    const room = vehicleStats(o).capacity - o.cargo;
-    if (room < 0.4) continue;
-    if (o.cargo > 0.15 && o.cargoOre && v.cargoOre && o.cargoOre !== v.cargoOre) continue;
-    // A heavy haul will not cross the river, so don't send a digger after one on the other bank.
-    if (o.defId === "heavy" && otherBank(v.x, o.x)) continue;
-    const d = distTo(v.x, v.z, o.x, o.z);
-    let score = d + (otherBank(v.x, o.x) ? 80 : 0);
-    for (const other of state.vehicles) {
-      if (other === v || (other.defId !== "loader" && other.defId !== "excavator") || !other.operator) continue;
-      if (other.cargo < 0.2) continue;
-      if (distTo(other.x, other.z, o.x, o.z) + 5 < d) score += 50;
-    }
-    if (score <= bestD) {
-      bestD = score;
-      best = o;
-    }
-  }
-  return best;
+  // No opportunistic fallback: following any nearby truck breaks the loading
+  // queue and makes loaders chase trucks that are arriving, queued, or leaving.
+  if (!head || !sameArea(head, v) || !bayReady.has(head)) return null;
+  if (operatedOnly && !head.operator && state.vehicles[state.active] !== head) return null;
+  const room = vehicleStats(head).capacity - head.cargo;
+  if (room < 0.4 || (head.cargoOre && v.cargoOre && head.cargoOre !== v.cargoOre)) return null;
+  return distTo(v.x, v.z, head.x, head.z) <= maxDist ? head : null;
 }
 
 function closestDeposit(
@@ -908,9 +885,9 @@ function stockSpot(v: VehicleState, source: { x: number; z: number }) {
   return spot;
 }
 
-function truckLeaving(state: GameState, t: VehicleState) {
+function truckLeaving(t: VehicleState) {
   const cap = vehicleStats(t).capacity;
-  return cap > 0 && t.cargo > 0.4 && (t.cargo >= cap * 0.9 || truckTired(state, t, cap));
+  return cap > 0 && t.cargo >= cap * 0.9;
 }
 
 function lineFor(state: GameState, digger: VehicleState) {
@@ -920,7 +897,7 @@ function lineFor(state: GameState, digger: VehicleState) {
     if (truckPartner.get(t) !== digger.uid) return false;
     if (!sameArea(t, digger)) return false;
     if (t.defId === "heavy" && otherBank(t.x, digger.x)) return false;
-    if (truckLeaving(state, t)) return false;
+    if (truckLeaving(t)) return false;
     return true;
   });
   for (const t of list) if (!lineTicket.has(t)) lineTicket.set(t, lineNo++);
@@ -939,22 +916,13 @@ function loadPoint(digger: VehicleState) {
   return spot;
 }
 
-function queuePoint(digger: VehicleState, index: number) {
-  const head = loadPoint(digger);
-  if (index <= 0) return head;
-  const dx = head.x - digger.x;
-  const dz = head.z - digger.z;
-  const len = Math.hypot(dx, dz) || 1;
-  return { x: head.x + (dx / len) * 13 * index, z: head.z + (dz / len) * 13 * index };
-}
-
 function diggerForTruck(state: GameState, v: VehicleState) {
   const open = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "excavator") &&
     (o.operator || o === state.vehicles[state.active]) &&
     !(v.defId === "heavy" && otherBank(v.x, o.x));
   const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
-  if (prev && !truckLeaving(state, v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
+  if (prev && !truckLeaving(v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
   let best: VehicleState | null = null;
   let bestS = Infinity;
   for (const o of state.vehicles) {
@@ -972,95 +940,35 @@ function diggerForTruck(state: GameState, v: VehicleState) {
   return best;
 }
 
-/** World point a truck parks at. Set once. It does not follow the loader after that. */
-const truckStand = new WeakMap<VehicleState, { x: number; z: number }>();
-const truckWait = new WeakMap<VehicleState, { since: number; cargo: number }>();
 const dumpAnyway = new WeakSet<VehicleState>();
-const truckHome = new WeakMap<VehicleState, { id: string; x: number; z: number; ang: number }>();
-const pileAng = new Map<string, number>();
+/** Fixed loading bay assigned per truck: it stays put while the loader works. */
+const truckBayHome = new WeakMap<VehicleState, { diggerUid: string; x: number; z: number; ang: number }>();
 const plantTicket = new WeakMap<VehicleState, number>();
 let plantNo = 1;
 const TRUCK_PARK = 28;
-const TRUCK_NEAR = 0.6;
-const TRUCK_PATIENCE = 35;
-
-function placeTruck(v: VehicleState, digger: VehicleState) {
-  const fx = -Math.sin(digger.yaw);
-  const fz = -Math.cos(digger.yaw);
-  const side = slotOf(v) % 2 === 0 ? 1 : -1;
-  const along = ((slotOf(v) % 3) - 1) * 5;
-  return { x: digger.x - fz * side * TRUCK_PARK + fx * along, z: digger.z + fx * side * TRUCK_PARK + fz * along };
-}
-
-function noteTruckWait(state: GameState, v: VehicleState) {
-  const w = truckWait.get(v);
-  if (!w) {
-    truckWait.set(v, { since: state.seconds, cargo: v.cargo });
-    return;
-  }
-  if (v.cargo > w.cargo + 0.35) {
-    w.since = state.seconds;
-    w.cargo = v.cargo;
-  }
-}
-
-function truckTired(state: GameState, v: VehicleState, cap: number) {
-  if (cap <= 0 || v.cargo < cap * TRUCK_NEAR) return false;
-  const w = truckWait.get(v);
-  return !!w && state.seconds - w.since > TRUCK_PATIENCE;
-}
-
-function pinHome(state: GameState, v: VehicleState) {
-  const prev = truckHome.get(v);
-  if (prev && state.deposits.some((d) => d.id === prev.id && d.tons > 1.5)) return prev;
-  const origin = v;
-  let pile: Deposit | null = null;
-  let best = 80;
-  for (const d of state.deposits) {
-    if (d.id.startsWith("feed-") || d.tons < (d.kind === "vein" ? 2 : 8)) continue;
-    if (d.kind !== "pile" && d.kind !== "vein") continue;
-    if (!sameArea(d, v) || !ownsClaim(state, d.claim)) continue;
-    const dist = distTo(origin.x, origin.z, d.x, d.z) - (d.kind === "vein" ? 12 : 0);
-    if (dist < best) {
-      best = dist;
-      pile = d;
-    }
-  }
-  if (!pile) return prev ?? null;
-  let ang = pileAng.get(pile.id);
-  if (ang == null) {
-    const toward = Math.atan2(GATE.z - pile.z, GATE.x - pile.x);
-    ang = pile.x < -70 ? toward : Math.PI / 2;
-    const choices = pile.x < -70 ? [toward, 0, toward + 0.4, Math.PI / 2] : [Math.PI / 2, 0, toward, -Math.PI / 2];
-    for (const a of choices) {
-      let clear = true;
-      for (const dist of [20, 36, 54]) {
-        const x = pile.x + Math.cos(a) * dist;
-        const z = pile.z + Math.sin(a) * dist;
-        if (pointBlocked(x, z, 3.4)) clear = false;
-        if (x > -58 && x < -22 && z > 3 && z < 14) clear = false;
-        if (Math.hypot(x + 22, z - 44) < 16) clear = false;
-      }
-      if (!clear) continue;
-      if (pile.x < -70 && Math.cos(a) < 0.2) continue;
-      ang = a;
-      break;
-    }
-    pileAng.set(pile.id, ang);
-  }
-  const home = { id: pile.id, x: pile.x, z: pile.z, ang };
-  truckHome.set(v, home);
-  return home;
-}
 
 function bayPose(home: { x: number; z: number; ang: number }, place: number) {
-  const back = 32 + place * 18;
+  const back = TRUCK_PARK + place * 13;
   const x = home.x + Math.cos(home.ang) * back;
   const z = home.z + Math.sin(home.ang) * back;
   const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
   return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18, homeX: home.x, homeZ: home.z };
+}
+
+function bayHomeForTruck(v: VehicleState, digger: VehicleState) {
+  const prev = truckBayHome.get(v);
+  if (prev?.diggerUid === digger.uid) return prev;
+  const point = loadPoint(digger);
+  const home = {
+    diggerUid: digger.uid,
+    x: digger.x,
+    z: digger.z,
+    ang: Math.atan2(point.z - digger.z, point.x - digger.x),
+  };
+  truckBayHome.set(v, home);
+  return home;
 }
 
 const bayReady = new WeakSet<VehicleState>();
@@ -1119,8 +1027,16 @@ function plantQueue(state: GameState, v: VehicleState, pad: { kind: string; x: n
   if (!plantTicket.has(v)) plantTicket.set(v, plantNo++);
   const place = plantLine(state).findIndex((t) => t === v);
   if (place <= 0) return null;
-  const back = pad.r + 14 + (place - 1) * 16;
-  const spot = { x: pad.x + back, z: pad.z };
+  // The east bank is narrow. Keep the queue inside the map and off the pad:
+  // first five slots run north, then the line snakes back south in a second lane.
+  const eastX = pad.x + pad.r + 14;
+  const laneX = eastX - 14;
+  const slot = place - 1;
+  const firstLaneSlots = 5;
+  const second = slot - firstLaneSlots;
+  const spot = slot < firstLaneSlots
+    ? { x: eastX, z: pad.z + slot * 12 }
+    : { x: laneX, z: second <= 3 ? pad.z + 48 - second * 12 : pad.z + 6 - (second - 4) * 12 };
   v.status = `Wash line (${place + 1})`;
   if (distTo(v.x, v.z, spot.x, spot.z) < 3.4) return { throttle: 0, steer: 0, action: false, brake: 1 };
   return seek(v, spot.x, spot.z, 3);
@@ -1582,10 +1498,11 @@ function aiControl(state: GameState, index: number): Control {
         target = truck;
         arrive = 7.5;
         label = `Loading ${DEFS[truck.defId].name}`;
-        return;
       }
-      // The truck is still on another bench. Hold the face. Meeting on the wall is what stuck the claim truck.
-      if (truck && areaOf(v.x) === "mountain") return;
+      // Loaders/excavators wait at the work area if their assigned truck is
+      // still arriving. They never abandon the face to chase a plant or a
+      // different truck; the truck moves into the fixed bay instead.
+      return;
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (!pad) return;
@@ -1646,7 +1563,13 @@ function aiControl(state: GameState, index: number): Control {
       v.status = "Making a pile for the loader";
       return seek(v, spot.x, spot.z, 2.6);
     }
-    if (full && v.cargoOre) haulTarget();
+    if (full && v.cargoOre) {
+      haulTarget();
+      if (!target) {
+        v.status = "Waiting for a ready dump truck";
+        return { throttle: 0, steer: 0, action: false, brake: 1 };
+      }
+    }
     const digHaul = target as { x: number; z: number } | null;
     if (digHaul) {
       v.status = label;
@@ -1681,6 +1604,10 @@ function aiControl(state: GameState, index: number): Control {
           v.status = `Hauling ${ORES[v.cargoOre].name}`;
           return seek(v, pad.x, pad.z, arrive);
         }
+        if (def.id === "loader" || def.id === "excavator") {
+          v.status = "Waiting for a ready dump truck";
+          return { throttle: 0, steer: 0, action: false, brake: 1 };
+        }
       }
       const cut = driveFace(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -1708,18 +1635,18 @@ function aiControl(state: GameState, index: number): Control {
     }
   } else if (def.receives) {
     if (v.cargo < 0.15) dumpAnyway.delete(v);
-    const leave = cap > 0 && v.cargo > 0.4 && (v.cargo >= cap * 0.9 || truckTired(state, v, cap));
+    const leave = cap > 0 && v.cargo >= cap * 0.9;
     if (leave && v.cargoOre) {
       lineTicket.delete(v);
       truckPartner.delete(v);
       bayReady.delete(v);
+      truckBayHome.delete(v);
       dumpAnyway.add(v);
-      truckStand.delete(v);
       const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
       if (pad) {
         target = pad;
         arrive = Math.min(6, Math.max(5, pad.r * 0.62));
-        v.status = v.cargo < cap * 0.9 ? "Hauling a short load" : `Hauling to ${pad.name}`;
+        v.status = `Hauling to ${pad.name}`;
         const held = plantQueue(state, v, pad);
         if (held) return held;
         const here = nearestPad(state, v.x, v.z);
@@ -1731,38 +1658,14 @@ function aiControl(state: GameState, index: number): Control {
       }
     }
     if (!target) {
-      const home = pinHome(state, v);
-      if (home) {
-        const digger = diggerForTruck(state, v);
-        const line = digger ? lineFor(state, digger) : [v];
+      const digger = diggerForTruck(state, v);
+      if (digger) {
+        const line = lineFor(state, digger);
         const place = Math.max(0, line.findIndex((t) => t === v));
-        noteTruckWait(state, v);
-        return enterBay(v, bayPose(home, place), place);
-      }
-      let stand = truckStand.get(v);
-      if (!stand) {
-        const pile = bestPile(state, v);
-        if (pile && !(v.defId === "heavy" && otherBank(v.x, pile.x))) {
-          const spot = pileApproach(v, pile);
-          const dx = spot.x - pile.x;
-          const dz = spot.z - pile.z;
-          const len = Math.hypot(dx, dz) || 1;
-          stand = { x: pile.x + (dx / len) * (len + 8), z: pile.z + (dz / len) * (len + 8) };
-          truckStand.set(v, stand);
-          truckWait.set(v, { since: state.seconds, cargo: v.cargo });
-        }
-      }
-      if (stand) {
-        noteTruckWait(state, v);
-        if (distTo(v.x, v.z, stand.x, stand.z) > 3.5) {
-          v.status = "Pulling up to wait";
-          return seek(v, stand.x, stand.z, 2.8);
-        }
-        v.status = "Waiting to load";
-        return { throttle: 0, steer: 0, action: false, brake: 1 };
+        return enterBay(v, bayPose(bayHomeForTruck(v, digger), place), place);
       }
       v.status = "Needs a payloader";
-      return { ...ZERO };
+      return { ...ZERO, brake: 1 };
     }
   } else if (waitingTruck) {
     if (distTo(v.x, v.z, waitingTruck.x, waitingTruck.z) < 8) {
@@ -1773,13 +1676,9 @@ function aiControl(state: GameState, index: number): Control {
     return seek(v, waitingTruck.x, waitingTruck.z, 6);
   } else if (has && full) {
     haulTarget();
-    if (!target && def.scoop > 0) {
-      const pile = bestPile(state, v);
-      if (pile) {
-        target = pile;
-        arrive = Math.max(3.5, pile.radius * 0.72);
-        label = "Staying on the pile";
-      }
+    if (!target) {
+      v.status = "Waiting for a ready dump truck";
+      return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
   } else if (def.dig > 0 || def.scoop > 0) {
     const vein = def.dig > 0 && !full ? bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null) : null;
@@ -1802,6 +1701,13 @@ function aiControl(state: GameState, index: number): Control {
     } else if (vein) {
       if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
         haulTarget();
+        if (!target) {
+          v.status = "Waiting for a ready dump truck";
+          return { throttle: 0, steer: 0, action: false, brake: 1 };
+        }
+        const truck = target as { x: number; z: number };
+        v.status = label;
+        return seek(v, truck.x, truck.z, arrive);
       } else {
       const cut = driveFace(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -2614,15 +2520,12 @@ function pourIntoTrucks(state: GameState) {
     if (v.defId !== "loader" && v.defId !== "excavator") return;
     // Hand-worked machines dump into the truck themselves.
     if (v.manual) return;
+    if (!v.operator && !(v === state.vehicles[state.active] && !state.watching)) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
     const head = lineFor(state, v)[0];
     const reach = v.defId === "excavator" ? 16 : 22;
-    if (head) {
-      if (!bayReady.has(head)) return;
-      if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
-      return;
-    }
-    loadTruck(state, index, reach);
+    if (!head || !bayReady.has(head)) return;
+    if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
   });
 }
 

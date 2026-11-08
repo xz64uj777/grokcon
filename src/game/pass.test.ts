@@ -364,7 +364,7 @@ describe("valley crew", () => {
     });
     cross("truck", X0 - 24, (v) => {
       v.cargoOre = "gold";
-      v.cargo = 12;
+      v.cargo = 20;
     });
   });
 
