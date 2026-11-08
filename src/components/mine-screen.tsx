@@ -731,7 +731,7 @@ export function MineScreen() {
                   <section className="border-b border-border py-4">
                     <h2 className="font-display text-xl uppercase tracking-wide text-fg">Plant stockpile crew</h2>
                     <p className="mt-1 text-sm leading-relaxed text-muted">
-                      Choose how many hired loaders, excavators, or skid steers head to material dumped at a plant.
+                      How many hired loaders, excavators, or skid steers feed a plant pile. The rest stay on the dig. A machine across the river is not counted.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Plant stockpile crew size">
                       {([

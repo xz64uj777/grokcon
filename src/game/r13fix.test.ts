@@ -72,6 +72,44 @@ test("plant stockpile crew limit survives a save and load", () => {
   assert.equal(readSaveText(currentSaveText()!)?.feedLimit, 1);
 });
 
+test("a closer machine on the other bank does not take a plant slot", () => {
+  const s = freshGame("Bank");
+  s.cash = 1e6;
+  s.claims.push(5);
+  s.watching = true;
+  s.feedLimit = 1;
+  const pad = wash();
+  buyVehicle(s, "skid");
+  const skid = s.vehicles[s.vehicles.length - 1];
+  skid.hired = true;
+  skid.operator = true;
+  skid.x = pad.x - 68;
+  skid.z = pad.z;
+  buyVehicle(s, "loader");
+  const loader = s.vehicles[s.vehicles.length - 1];
+  loader.hired = true;
+  loader.operator = true;
+  loader.x = pad.x + 90;
+  loader.z = pad.z;
+  addFeedPile(s, pad, "gold", 10, 1);
+  step(s, idle, 1 / 60, true);
+  assert.match(loader.status, /feed/i);
+  assert.doesNotMatch(skid.status, /feed/i);
+});
+
+test("an emptied dozer crumb is removed and a fresh one is kept", () => {
+  const s = freshGame("Crumbs");
+  const sample = s.deposits.find((d) => d.kind === "pile");
+  assert.ok(sample);
+  s.deposits.push({ ...sample, id: "crumb-empty", tons: 0, max: 0.08, regen: 0, x: 12, z: -24 });
+  s.deposits.push({ ...sample, id: "crumb-live", tons: 0.08, max: 0.08, regen: 0, x: 20, z: -24 });
+  s.deposits.push({ ...sample, id: "crumb-worked", tons: 0.05, max: 4, regen: 0, x: 28, z: -24 });
+  step(s, idle, 1 / 30, false);
+  assert.equal(s.deposits.some((d) => d.id === "crumb-empty"), false);
+  assert.equal(s.deposits.some((d) => d.id === "crumb-worked"), false);
+  assert.equal(s.deposits.some((d) => d.id === "crumb-live"), true);
+});
+
 test("skid steer feeding earns for the whole pile, not $20", () => {
   const s = freshGame("T");
   s.cash = 1e6;

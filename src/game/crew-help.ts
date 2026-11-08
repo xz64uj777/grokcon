@@ -17,5 +17,11 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status === "Looking for work") return "No suitable job is available here. Check that the right claim is leased and selected.";
   if (crew.status === "Bridge flooded") return "The bridge is temporarily closed by flooding. Wait for it to reopen.";
   if (crew.status === "Too heavy for the bridge") return "This machine is too heavy for the bridge. Use a lighter machine or another route.";
+  if (crew.status === "Heading to the fuel pumps" || crew.status === "At the gas pump" || crew.status === "At the diesel pump") return "It is filling at the yard pump, which is cheaper than a delivery.";
+  if (crew.status === "Towed to the fuel pumps") return "It ran dry on the mountain and was towed to the pumps.";
+  if (crew.status === "Out of fuel") return "The tank is empty. Fill it at a pump, or order a delivery if you are driving it.";
+  if (crew.status.startsWith("Hot brakes")) return "The brakes heated up on a steep loaded drop. It will slow down until they cool.";
+  if (crew.status === "Heading to the rockslide" || crew.status === "Clearing the rockslide") return "One idle dozer or loader is opening the switchback. Assigned faces stay on the dig.";
+  if (crew.status === "Heading to feed the plant" || crew.status.startsWith("Feeding the ")) return "It is one of the machines you sent to feed a plant. The rest stay on their job.";
   return null;
 }

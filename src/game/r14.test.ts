@@ -120,6 +120,30 @@ test("mountain switchback rockslide slows trucks and pays a bonus when cleared",
   assert.ok(s.cash >= c0 + ROAD_CLEAR_BONUS);
 });
 
+test("an idle dozer heads for a rockslide and a pinned excavator stays on the face", () => {
+  const s = freshGame("Road");
+  s.cash = 1e6;
+  s.claims.push(4, 5, 6, 8);
+  s.watching = true;
+  spawnRockslide(s, 2);
+  const slide = s.deposits.find((d) => d.id === "slide-gap")!;
+  buyVehicle(s, "dozer");
+  const dozer = s.vehicles[s.vehicles.length - 1];
+  dozer.x = slide.x;
+  dozer.z = slide.z + 24;
+  toggleCrew(s, s.vehicles.indexOf(dozer));
+  buyVehicle(s, "excavator");
+  const ex = s.vehicles[s.vehicles.length - 1];
+  const face = s.deposits.find((d) => d.id === "summit-gold")!;
+  ex.x = face.x;
+  ex.z = face.z + 6;
+  ex.workFace = "summit-gold";
+  toggleCrew(s, s.vehicles.indexOf(ex));
+  step(s, idle, 1 / 30, false);
+  assert.match(dozer.status, /rockslide/);
+  assert.doesNotMatch(ex.status, /rockslide/);
+});
+
 test("downhill brake heat builds on a steep grade and cools at the pass summit pull-out", () => {
   const s = freshGame("Brakes");
   s.cash = 100000;

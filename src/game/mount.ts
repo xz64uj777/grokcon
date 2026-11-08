@@ -230,6 +230,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     setFeedLimit(limit) {
       state.feedLimit = limit;
+      state.log.unshift(limit === "all" ? "Every free loader can feed a plant." : `${limit} ${limit === 1 ? "machine feeds" : "machines feed"} a plant. The rest stay on the dig.`);
+      if (state.log.length > 5) state.log.length = 5;
       saveGame(books());
       push();
     },

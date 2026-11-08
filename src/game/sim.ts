@@ -487,7 +487,7 @@ function feedCrewFor(state: GameState, pile: Deposit) {
   const candidates = state.vehicles
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
     .filter(({ v, index, rate }) =>
-      !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) &&
+      !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) && !otherBank(v.x, pile.x) &&
       !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid),
     )
     .sort((a, b) => distTo(a.v.x, a.v.z, pile.x, pile.z) - distTo(b.v.x, b.v.z, pile.x, pile.z));
@@ -756,7 +756,7 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!sameArea(d, v)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
-    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) + (d.id === "slide-gap" ? 2500 : 0);
+    const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore);
     if (s > score) {
       score = s;
       best = d;
@@ -1032,6 +1032,38 @@ function fuelPoint(v: VehicleState, bay: { x: number; z: number }) {
   return { x: X1 - 36, z: 58 };
 }
 
+/** The nearest idle dozer, or else loader, clears a rockslide. A pinned face stays on the dig. */
+function slideJob(state: GameState, v: VehicleState): Control | null {
+  if (v.defId !== "dozer" && v.defId !== "loader") return null;
+  if (v.cargo > 0.25 || facePin(state, v)) return null;
+  const slide = state.deposits.find((d) => d.id === "slide-gap" && d.tons > 0.2);
+  if (!slide || !sameArea(slide, v)) return null;
+  if (v.workClaim != null && v.workClaim !== slide.claim) return null;
+  let best = v;
+  let bestD = distTo(v.x, v.z, slide.x, slide.z);
+  for (const o of state.vehicles) {
+    if (o === v || !o.operator || facePin(state, o)) continue;
+    if (o.defId !== "dozer" && o.defId !== "loader") continue;
+    if (!sameArea(o, slide) || (o.workClaim != null && o.workClaim !== slide.claim)) continue;
+    if ((state.deck ?? []).includes(o.uid) || o.cargo > 0.25) continue;
+    const d = distTo(o.x, o.z, slide.x, slide.z);
+    const better = (o.defId === "dozer" && best.defId !== "dozer") || (o.defId === best.defId && d < bestD);
+    if (better) {
+      best = o;
+      bestD = d;
+    }
+  }
+  if (best !== v) return null;
+  if (bestD < 8) {
+    const desired = Math.atan2(-(slide.x - v.x), -(slide.z - v.z));
+    const diff = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
+    v.status = "Clearing the rockslide";
+    return { throttle: Math.abs(diff) > 0.5 ? 0.15 : 0.4, steer: clamp(diff, -1, 1), action: Math.abs(diff) < 0.6, brake: 0 };
+  }
+  v.status = "Heading to the rockslide";
+  return seek(v, slide.x, slide.z, 5);
+}
+
 function aiControl(state: GameState, index: number): Control {
   const v = state.vehicles[index];
   const def = DEFS[v.defId];
@@ -1063,6 +1095,8 @@ function aiControl(state: GameState, index: number): Control {
     v.status = Ops.nightness(state.seconds) > 0.35 ? "Lights on" : "Light plant parked";
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
+  const slide = slideJob(state, v);
+  if (slide) return slide;
   if (v.defId === "lowboy") return lowboyDrive(state, v);
 
   if (def.id === "crusher") {
@@ -2013,9 +2047,10 @@ function regen(state: GameState, dt: number) {
   for (let i = state.deposits.length - 1; i >= 0; i--) {
     const d = state.deposits[i];
     if (d.regen > 0 && d.tons < d.max) d.tons = Math.min(d.max, d.tons + d.regen * dt);
-    // A dozer creates small bites every frame. Keep a fresh sub-0.2 t pile so
-    // the next bite can merge into it; remove only piles that were emptied.
-    if (d.kind === "pile" && d.regen <= 0 && d.tons < 0.2 && d.max >= 0.2) {
+    // A dozer creates small bites every frame. Keep a fresh crumb so the next bite
+    // can merge into it. An emptied pile, even a small one, has to go or the yard fills with ghosts.
+    const emptied = d.tons <= 0.02 || (d.tons < 0.2 && d.max >= 0.2);
+    if (d.kind === "pile" && d.regen <= 0 && emptied) {
       if (d.id === "slide-gap") {
         state.cash += ROAD_CLEAR_BONUS;
         state.lifetime += ROAD_CLEAR_BONUS;
