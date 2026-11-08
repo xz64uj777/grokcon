@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -63,6 +63,34 @@ test("plant stockpile crew limit dispatches only one, two, or all eligible opera
     const headed = s.vehicles.filter((v) => v.status === "Heading to feed the plant").length;
     assert.equal(headed, expected, `feed limit ${limit}`);
   }
+});
+
+test("ridge overburden hauls to the sluice and still pays the reclaim rate", () => {
+  const s = freshGame("Dirt");
+  s.sluice = true;
+  s.preferSluice = true;
+  buyVehicle(s, "truck");
+  const t = s.vehicles[s.vehicles.length - 1];
+  t.cargo = 8;
+  t.cargoOre = "dirt";
+  t.x = 16;
+  t.z = 36;
+  s.active = s.vehicles.indexOf(t);
+  assert.equal(plannedPad(s, s.active), "sluice");
+  assert.equal(basePrice("dirt", "sluice", true), basePrice("dirt", "reclaim", true));
+  t.x = 44;
+  t.z = 46;
+  const cash = s.cash;
+  step(s, { throttle: 0, steer: 0, action: true }, 0.2, true);
+  assert.equal(s.cash, cash);
+  assert.match(t.status, /sluice/i);
+  s.preferSluice = false;
+  t.x = 16;
+  t.z = 36;
+  assert.equal(plannedPad(s, s.active), "reclaim");
+  s.sluice = false;
+  s.preferSluice = true;
+  assert.equal(plannedPad(s, s.active), "reclaim");
 });
 
 test("plant stockpile crew limit survives a save and load", () => {

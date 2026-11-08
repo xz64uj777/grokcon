@@ -237,7 +237,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     setHaulSluice(on) {
       state.preferSluice = on && state.sluice;
-      state.log.unshift(on ? "Copper and gold haul to the sluice." : "Crew may sell at the crusher.");
+      state.log.unshift(on ? "Copper, gold, and overburden haul to the sluice." : "Crew may sell at the crusher or reclaim.");
       if (state.log.length > 5) state.log.length = 5;
       saveGame(books());
       push();

@@ -263,8 +263,7 @@ export function basePrice(ore: OreId, pad: PadKind, sluice: boolean) {
   if (pad === "reclaim") return ore === "dirt" ? o.reclaim : Math.round(o.crusher * 0.4);
   if (pad === "sluice") {
     if (!sluice) return 0;
-    if (ore === "gold") return o.sluice;
-    if (ore === "copper") return o.sluice;
+    if (ore === "gold" || ore === "copper" || ore === "dirt") return o.sluice;
     return o.crusher;
   }
   return o.crusher;
@@ -670,8 +669,17 @@ function addPile(state: GameState, ore: OreId, tons: number, x: number, z: numbe
 
 function prefersSluice(state: GameState, ore: OreId, x?: number) {
   // The sluice is at the ridge. Away from it, sell where you are.
+  // Dirt is topsoil. It can run through the sluice, but it must not outrank a real face.
+  if (ore === "dirt") return false;
   if (x !== undefined && areaOf(x) !== "ridge") return false;
   return state.sluice && state.preferSluice && ORES[ore].sluice > ORES[ore].crusher;
+}
+
+/** Overburden on the ridge goes to the sluice once you own it. Same pay as the reclaim buyer. */
+function dirtToSluice(state: GameState, ore: OreId, x?: number) {
+  if (ore !== "dirt" || !state.sluice || !state.preferSluice) return false;
+  if (x !== undefined && areaOf(x) !== "ridge") return false;
+  return true;
 }
 
 /** River silver only pays properly at the wash plant, so hold it for there once it's built. */
@@ -680,7 +688,7 @@ function prefersWash(state: GameState, ore: OreId, x: number) {
 }
 
 function washScore(state: GameState, ore: OreId) {
-  if (!state.sluice || !state.preferSluice) return 0;
+  if (ore === "dirt" || !state.sluice || !state.preferSluice) return 0;
   return Math.max(0, ORES[ore].sluice - ORES[ore].crusher) * 40;
 }
 
@@ -702,7 +710,7 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: Vehicle
     if (pad.kind === "wash" && prefersWash(state, ore, x)) return pad;
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
-    if (pad.kind === "sluice" && prefersSluice(state, ore)) return pad;
+    if (pad.kind === "sluice" && (prefersSluice(state, ore) || dirtToSluice(state, ore, x))) return pad;
     // A bridge crossing is a price choice, not a long haul. Metres must not
     // talk a dump truck into the cheaper barge.
     const d = distTo(x, z, pad.x, pad.z);
@@ -1406,6 +1414,7 @@ function aiControl(state: GameState, index: number): Control {
     const pad = nearestPad(state, v.x, v.z);
     const wrongPlant =
       (prefersSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
+      (dirtToSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
       (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash" && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
       (!!pad && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     if (pad && !wrongPlant) {
@@ -1516,6 +1525,7 @@ function performAction(
       !!pad &&
       !washStop &&
       ((prefersSluice(state, v.cargoOre, v.x) && pad.kind !== "sluice") ||
+        (dirtToSluice(state, v.cargoOre, v.x) && pad.kind !== "sluice") ||
         (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9;
@@ -1524,7 +1534,11 @@ function performAction(
     const excavatorHand = manual && kind === "excavator";
     if (!excavatorHand && (holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
       if (player && holdForSluice) {
-        const where = pad?.kind === "wash" ? "Wash plant only takes silver and gold gravel" : `${ORES[v.cargoOre].name} pays at the sluice`;
+        const where = pad?.kind === "wash"
+          ? "Wash plant only takes silver and gold gravel"
+          : v.cargoOre === "dirt"
+            ? "Overburden goes to the sluice"
+            : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
     } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
@@ -1743,7 +1757,9 @@ function performAction(
     }
   }
 
-  if (player && v.cargo > 0.04 && v.cargoOre) v.status = `${ORES[v.cargoOre].name} stays in the bucket`;
+  if (player && v.cargo > 0.04 && v.cargoOre && !v.status.includes("sluice") && !v.status.startsWith("Wash plant")) {
+    v.status = `${ORES[v.cargoOre].name} stays in the bucket`;
+  }
   return null;
 }
 
@@ -3156,8 +3172,9 @@ function hint(state: GameState) {
   if (v.status === "Unleased ground" || v.status.startsWith("Dump ")) return v.status + ".";
   const extra = def.id === "excavator" ? 2.2 : 0;
   const pad = nearestPad(state, v.x, v.z);
-  if (v.cargoOre && prefersSluice(state, v.cargoOre, v.x) && v.cargo > 0.08) {
+  if (v.cargoOre && (prefersSluice(state, v.cargoOre, v.x) || dirtToSluice(state, v.cargoOre, v.x)) && v.cargo > 0.08) {
     if (pad?.kind === "sluice") return "Hold DIG. The sluice pays for this load.";
+    if (v.cargoOre === "dirt") return "Overburden goes to the sluice, west of the yard. Reclaim pays the same, but the plant takes it.";
     return `${ORES[v.cargoOre].name} pays at the sluice, west of the yard. The crusher will not buy it.`;
   }
   if (v.cargo > 0.08 && pad) return `Hold DIG to sell at the ${pad.name.toLowerCase()}.`;
