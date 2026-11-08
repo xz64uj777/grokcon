@@ -8,6 +8,7 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (!crew.hired && !crew.active) return "Hire an operator if you want this machine to work while you drive another one.";
   if (crew.hired && !crew.operator) return "The operator is off duty. Turn them on to restart this machine.";
   if (crew.status === "Backing off a wall") return "It hit an obstacle and is backing up before trying to move again.";
+  if (crew.status === "Making room") return "Another machine is in the way. It will pull aside and go around.";
   if (crew.status.startsWith("Backing off ")) return "Backing away from the face is part of the dozer's normal push cycle; it should push again shortly.";
   if (crew.status === "Backed out of the west cliff") return "The west wall blocked its route, so it was moved back to safe ground.";
   if (crew.status === "Needs a payloader") return "A loader or excavator needs to bring material to this truck.";

@@ -93,6 +93,37 @@ test("ridge overburden hauls to the sluice and pays more than reclaim", () => {
   assert.equal(plannedPad(s, s.active), "reclaim");
 });
 
+test("a machine goes around one sitting in its way", () => {
+  const s = freshGame("Jam");
+  s.cash = 1e6;
+  s.watching = true;
+  const pad = PADS.find((p) => p.kind === "crusher")!;
+  buyVehicle(s, "skid");
+  const blocker = s.vehicles[s.vehicles.length - 1];
+  blocker.x = pad.x;
+  blocker.z = pad.z + 8;
+  blocker.yaw = 0;
+  blocker.operator = false;
+  buyVehicle(s, "skid");
+  const mover = s.vehicles[s.vehicles.length - 1];
+  mover.x = pad.x;
+  mover.z = pad.z + 16;
+  mover.yaw = 0;
+  mover.cargo = 3;
+  mover.cargoOre = "iron";
+  mover.hired = true;
+  mover.operator = true;
+  s.active = 0;
+  let overlapped = 0;
+  for (let i = 0; i < 30 * 6; i++) {
+    step(s, idle, 1 / 30, false);
+    if (Math.hypot(mover.x - blocker.x, mover.z - blocker.z) < 2.4) overlapped++;
+  }
+  const gap = Math.hypot(mover.x - blocker.x, mover.z - blocker.z);
+  assert.ok(gap > 3, `still boxed in, gap ${gap.toFixed(2)} status ${mover.status}`);
+  assert.ok(overlapped < 60, `jammed for ${(overlapped / 30).toFixed(1)}s`);
+});
+
 test("plant stockpile crew limit survives a save and load", () => {
   const s = freshGame("T");
   s.feedLimit = 1;

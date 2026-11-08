@@ -898,6 +898,52 @@ function seek(v: VehicleState, tx: number, tz: number, arrive: number): Control 
   return { throttle, steer, action: false, brake };
 }
 
+/** Another machine in front, and which side of the nose it is on. */
+function machineAhead(state: GameState, v: VehicleState) {
+  const fx = -Math.sin(v.yaw);
+  const fz = -Math.cos(v.yaw);
+  const rx = -fz;
+  const rz = fx;
+  let best: { gap: number; side: number } | null = null;
+  for (const o of state.vehicles) {
+    if (o === v || aboard(o)) continue;
+    if (areaOf(o.x) !== areaOf(v.x)) continue;
+    const dx = o.x - v.x;
+    const dz = o.z - v.z;
+    const dist = Math.hypot(dx, dz) || 0.001;
+    const gap = dist - vehicleStats(v).radius - vehicleStats(o).radius;
+    if (gap > 8) continue;
+    if ((dx * fx + dz * fz) / dist < 0.2) continue;
+    const side = dx * rx + dz * rz;
+    if (!best || gap < best.gap) best = { gap, side };
+  }
+  return best;
+}
+
+/** Don't drive into the machine ahead. Back out when already touching, otherwise pass on the open side. */
+function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
+  if (v.defId === "crusher" || v.defId === "light") return c;
+  const hit = machineAhead(state, v);
+  if (!hit) return c;
+  const holding = c.throttle === 0 && c.brake > 0.5;
+  if (holding && hit.gap > 0.25) return c;
+  const away = hit.side >= 0 ? 0.9 : -0.9;
+  if (hit.gap < 0.7) {
+    v.status = "Making room";
+    return { throttle: -0.5, steer: away, action: false, brake: 0 };
+  }
+  if (c.throttle > 0.05 && hit.gap < 5.5) {
+    v.status = "Making room";
+    return {
+      throttle: Math.min(c.throttle, hit.gap < 2.6 ? 0.12 : 0.4),
+      steer: clamp(c.steer * 0.35 + away * 0.8, -1, 1),
+      action: false,
+      brake: 0,
+    };
+  }
+  return c;
+}
+
 /** A face the crew can actually drive onto. The ridge back wall is solid, so a cut walked into it is pulled back out. */
 function driveFace(vein: Deposit) {
   const cut = faceOf(vein);
@@ -2039,10 +2085,13 @@ function resolveVehicles(state: GameState) {
       const push = (min - d) / 2;
       const nx = dx / d;
       const nz = dz / d;
-      a.x -= nx * push;
-      a.z -= nz * push;
-      b.x += nx * push;
-      b.z += nz * push;
+      const aPlayer = i === state.active && !state.watching;
+      const bPlayer = j === state.active && !state.watching;
+      const aShare = aPlayer ? 0.12 : bPlayer ? 0.88 : 0.5;
+      a.x -= nx * push * 2 * aShare;
+      a.z -= nz * push * 2 * aShare;
+      b.x += nx * push * 2 * (1 - aShare);
+      b.z += nz * push * 2 * (1 - aShare);
     }
   }
 }
@@ -2468,7 +2517,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
       if (evacuation) {
         c = evacuation;
       } else if (v.operator) {
-        c = aiControl(state, i);
+        c = avoidTraffic(state, v, aiControl(state, i));
       } else {
         // Parking brake on, so an idle machine doesn't roll down a grade.
         c = { ...ZERO, brake: 1 };
@@ -2524,14 +2573,16 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     if (v.operator && (state.watching || i !== state.active)) {
       const c = controls[i];
       const spinning = Math.abs(c.steer) > 0.75 && Math.abs(c.throttle) < 0.15 && Math.abs(v.speed) < 0.8;
+      const jammed = machineAhead(state, v);
+      const tight = !!jammed && jammed.gap < 2 && c.throttle > 0;
       // A crawl with the throttle open counts too. The old bar was so high that an
       // excavator pinned on a face never backed off, so it sat full and did nothing.
-      if ((c.throttle > 0.18 && Math.abs(v.speed) < 0.35) || spinning) v.stuck += dt;
+      if ((c.throttle > 0.18 && Math.abs(v.speed) < 0.35) || spinning || (tight && Math.abs(v.speed) < 0.8)) v.stuck += tight ? dt * 2 : dt;
       else v.stuck = 0;
-      if (v.stuck > 1.25) {
+      if (v.stuck > 1.1) {
         v.stuck = 0;
-        v.unstick = 0.85;
-        v.bias = Math.random() < 0.5 ? 1 : -1;
+        v.unstick = 1.5;
+        v.bias = jammed ? (jammed.side >= 0 ? 0.9 : -0.9) : Math.random() < 0.5 ? 1 : -1;
       }
     }
     if (v.unstick > 0) v.unstick = Math.max(0, v.unstick - dt);

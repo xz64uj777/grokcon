@@ -13,6 +13,7 @@ const crew = (status: string, extra: Partial<Parameters<typeof crewExplanation>[
 
 test("crew explanations tell players how to respond to common blockers", () => {
   assert.match(crewExplanation(crew("Backing off a wall")) ?? "", /obstacle/);
+  assert.match(crewExplanation(crew("Making room")) ?? "", /go around/);
   assert.match(crewExplanation(crew("Backing off Deep Copper")) ?? "", /normal push cycle/);
   assert.match(crewExplanation(crew("Needs a payloader")) ?? "", /loader or excavator/);
   assert.match(crewExplanation(crew("Waiting on the Excavator")) ?? "", /waiting for another machine/);
