@@ -16,3 +16,9 @@ export function pileShape(tons: number): PileShape {
   const rr = r / Math.sqrt(stretch);
   return { kind: "windrow", radius: rr, height: rr * REPOSE, stretch };
 }
+
+/** Solid heart of a loose pile. The outside is loose rock you can dig; the middle stops a machine. */
+export function pileFootprint(tons: number) {
+  const s = pileShape(Math.max(0.4, tons));
+  return { rx: s.radius * 0.62, rz: s.radius * s.stretch * 0.62 };
+}

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { heightAt, gradeAt, climbFactor, PIT_DEPTH } from "@/game/terrain";
-import { pileShape } from "@/game/piles";
+import { pileFootprint, pileShape } from "@/game/piles";
 import { DRILL_SECONDS, BORE_SECONDS, BLAST_COST } from "@/game/mining";
 import { sideTipLimit, tipsOnSlope, ripTick, ops, RIP_SECONDS } from "@/game/ops";
 import { X1, SWITCHBACKS } from "@/game/mountain";
@@ -67,6 +67,27 @@ test("piles grow with tonnage and change shape", () => {
   // Volume keeps rising with tons even when the windrow gets lower and longer.
   const vol = (p: ReturnType<typeof pileShape>) => p.radius * p.radius * p.stretch * p.height;
   assert.ok(vol(c) > vol(b) * 4);
+});
+
+test("a machine stops in a pile instead of driving through it", () => {
+  const s = freshGame("Pile");
+  const sample = s.deposits.find((d) => d.kind === "pile");
+  assert.ok(sample);
+  const pile = { ...sample, id: "block-pile", tons: 40, max: 40, regen: 0, x: 8, z: -28 };
+  s.deposits.push(pile);
+  const foot = pileFootprint(pile.tons);
+  const v = s.vehicles[0];
+  s.active = 0;
+  v.x = pile.x;
+  v.z = pile.z + foot.rz + 6;
+  v.yaw = 0;
+  v.speed = 10;
+  let closest = Infinity;
+  for (let i = 0; i < 30 * 4; i++) {
+    step(s, { throttle: 1, steer: 0, action: false }, 1 / 30, true);
+    closest = Math.min(closest, Math.hypot(v.x - pile.x, (v.z - pile.z) / (foot.rz / foot.rx || 1)));
+  }
+  assert.ok(closest > foot.rx * 0.5, `drove through the pile, closest ${closest.toFixed(2)} heart ${foot.rx.toFixed(2)}`);
 });
 
 test("blast: 12 s of boring then charging, still a flat $750", () => {

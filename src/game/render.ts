@@ -677,6 +677,14 @@ export function createWorld(host: HTMLElement): World {
     gold: oreMat(ORES.gold.color),
     silver: oreMat(ORES.silver.color),
   };
+  const pileMaterials: Record<string, THREE.MeshStandardMaterial> = {
+    dirt: track(oreMaterials.dirt.clone()),
+    iron: track(oreMaterials.iron.clone()),
+    copper: track(oreMaterials.copper.clone()),
+    gold: track(oreMaterials.gold.clone()),
+    silver: track(oreMaterials.silver.clone()),
+  };
+  for (const m of Object.values(pileMaterials)) m.side = THREE.DoubleSide;
   function makeCargoLoad(parent: THREE.Object3D, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Group {
     const pile = new THREE.Group();
     pile.position.set(x, y, z);
@@ -760,33 +768,34 @@ export function createWorld(host: HTMLElement): World {
       scrape.position.y = 0.03;
       scrape.receiveShadow = true;
       group.add(scrape);
-      // The heap itself: a rough cone of unit radius, scaled to the tonnage every frame.
-      const heapGeo = new THREE.ConeGeometry(1, 1, 18, 4, false);
+      // Closed heap. The base is buried so the back does not read as an open shell.
+      const heapGeo = new THREE.ConeGeometry(1, 1, 22, 3, false);
       const hp = heapGeo.attributes.position as THREE.BufferAttribute;
       for (let k = 0; k < hp.count; k++) {
         const y = hp.getY(k);
-        if (y > 0.49) continue;
-        const n = Math.sin(hp.getX(k) * 9.1 + hp.getZ(k) * 5.3) * 0.08;
-        hp.setXYZ(k, hp.getX(k) * (1 + n), y, hp.getZ(k) * (1 - n));
+        if (y < -0.2 || y > 0.42) continue;
+        const n = Math.sin(hp.getX(k) * 9.1 + hp.getZ(k) * 5.3) * 0.07;
+        hp.setXYZ(k, hp.getX(k) * (1 + n), y, hp.getZ(k) * (1 + n * 0.6));
       }
-      heapGeo.translate(0, 0.5, 0);
+      heapGeo.translate(0, 0.38, 0);
       heapGeo.computeVertexNormals();
-      const heap = new THREE.Mesh(track(heapGeo), mat);
+      const heap = new THREE.Mesh(track(heapGeo), pileMaterials.iron);
       heap.userData.ore = true;
       heap.userData.heap = true;
       heap.castShadow = true;
       heap.receiveShadow = true;
       group.add(heap);
-      const count = 10;
+      const count = 14;
       for (let i = 0; i < count; i++) {
-        const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], mat);
+        const mesh = new THREE.Mesh(rockGeometries[i % rockGeometries.length], pileMaterials.iron);
         mesh.userData.ore = true;
-        const size = 0.16 + ((i * 5) % 7) * 0.03;
+        mesh.userData.heap = true;
+        const size = 0.14 + ((i * 5) % 7) * 0.028;
         const angle = i * 2.399963229728653;
-        // Loose lumps rolled down to the toe of the heap.
-        const ring = 0.85 + ((i * 3) % 4) * 0.06;
-        mesh.userData.toe = true;
-        mesh.position.set(Math.cos(angle) * ring, 0.08 + (1 - ring) * 0.75, Math.sin(angle) * ring);
+        const up = i % 3 === 0;
+        const ring = up ? 0.42 + ((i * 3) % 3) * 0.08 : 0.78 + ((i * 3) % 4) * 0.05;
+        mesh.userData.toe = !up;
+        mesh.position.set(Math.cos(angle) * ring, up ? 0.38 : 0.1, Math.sin(angle) * ring);
         mesh.rotation.set((i * 0.71) % 1.8, angle, (i * 0.43) % 1.2);
         mesh.scale.set(size, size * 0.7, size * 0.9);
         mesh.castShadow = true;
@@ -1395,7 +1404,8 @@ export function createWorld(host: HTMLElement): World {
         child.traverse((part) => {
           const mesh = part as THREE.Mesh;
           if (!(mesh instanceof THREE.Mesh) || !mesh.userData.ore) return;
-          mesh.material = owned ? oreMaterials[d.ore] : lockedMat;
+          const piles = pileMaterials[d.ore] ?? pileMaterials.iron;
+          mesh.material = mesh.userData.heap ? (owned ? piles : lockedMat) : owned ? oreMaterials[d.ore] : lockedMat;
         });
       }
       if (view.lease !== !owned) {

@@ -1,6 +1,7 @@
 import * as Ops from "@/game/ops";
 import * as Career from "@/game/career";
 import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
+import { pileFootprint } from "@/game/piles";
 import { MILL_PRICE, MOUNTAIN_CLAIM, MOUNTAIN_HAUL_FEE, MOUNTAIN_SPAWNS, SWITCHBACKS, X1, benchAt, coldFactor, switchbackWaypoint } from "@/game/mountain";
 import {
   BASE_DEPOSITS,
@@ -1922,6 +1923,26 @@ function resolveCircle(state: GameState, v: VehicleState, radius: number) {
   }
 }
 
+/** Keep machines out of the heart of a loose pile. The toe stays soft so a bucket can still reach it. */
+function holdPiles(state: GameState, v: VehicleState) {
+  if (aboard(v)) return;
+  const body = vehicleStats(v).radius * 0.45;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.tons < 0.4 || d.id.startsWith("feed-")) continue;
+    const foot = pileFootprint(d.tons);
+    const rx = foot.rx + body;
+    const rz = foot.rz + body;
+    const dx = v.x - d.x;
+    const dz = v.z - d.z;
+    const n = (dx * dx) / (rx * rx) + (dz * dz) / (rz * rz);
+    if (n >= 1) continue;
+    const scale = 1 / Math.sqrt(Math.max(n, 1e-6));
+    v.x = d.x + dx * scale;
+    v.z = d.z + dz * scale;
+    v.speed *= 0.45;
+  }
+}
+
 /** Keep a machine on the planks while it crosses, instead of letting the body rub the river. */
 function holdDeck(v: VehicleState) {
   if (areaOf(v.x) !== "river") return;
@@ -2451,6 +2472,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   for (let n = 0; n < 2; n++) {
     state.vehicles.forEach((v, i) => {
       resolveCircle(state, v, vehicleStats(v).radius);
+      holdPiles(state, v);
       guardBridge(state, v, i);
     });
     resolveVehicles(state);
