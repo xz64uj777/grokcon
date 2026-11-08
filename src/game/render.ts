@@ -760,7 +760,6 @@ export function createWorld(host: HTMLElement): World {
   }
   function makeDeposit(d: Deposit): DepositView {
     const group = new THREE.Group();
-    const mat = oreMaterials[d.ore];
     let cut: THREE.Mesh | null = null;
     if (d.kind === "vein") {
       const skin = cutMat.clone();

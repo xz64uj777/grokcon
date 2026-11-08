@@ -801,23 +801,6 @@ function pileInReach(state: GameState, v: VehicleState) {
   return best;
 }
 
-/** Side spot for a truck. Small shuffles of the loader do not move it. */
-const parkLatch = new WeakMap<VehicleState, { key: string; x: number; z: number }>();
-
-function besideMachine(v: VehicleState, other: VehicleState) {
-  const fx = -Math.sin(other.yaw);
-  const fz = -Math.cos(other.yaw);
-  const slot = slotOf(v);
-  const side = slot % 2 === 0 ? 1 : -1;
-  const along = (slot % 3) - 1;
-  const x = other.x + -fz * side * 8 + fx * along * 4.5;
-  const z = other.z + fx * side * 8 + fz * along * 4.5;
-  const prev = parkLatch.get(v);
-  if (prev && prev.key === other.uid && distTo(prev.x, prev.z, x, z) < 6) return { x: prev.x, z: prev.z };
-  parkLatch.set(v, { key: other.uid, x, z });
-  return { x, z };
-}
-
 /** Other working machines already on this spot. Each crew member should pick a different one. */
 function crewNear(state: GameState, v: VehicleState, x: number, z: number, reach: number) {
   let n = 0;
