@@ -1029,13 +1029,22 @@ function pinHome(state: GameState, v: VehicleState) {
   if (!pile) return prev ?? null;
   let ang = pileAng.get(pile.id);
   if (ang == null) {
-    ang = Math.PI / 2;
-    const choices = [Math.PI / 2, 0.4, 2.4, 0, Math.PI, -Math.PI / 2];
+    const toward = Math.atan2(GATE.z - pile.z, GATE.x - pile.x);
+    ang = pile.x < -70 ? toward : Math.PI / 2;
+    const choices = pile.x < -70 ? [toward, 0, toward + 0.4, Math.PI / 2] : [Math.PI / 2, 0, toward, -Math.PI / 2];
     for (const a of choices) {
-      if (!pointBlocked(pile.x + Math.cos(a) * 22, pile.z + Math.sin(a) * 22, 3.2)) {
-        ang = a;
-        break;
+      let clear = true;
+      for (const dist of [20, 36, 54]) {
+        const x = pile.x + Math.cos(a) * dist;
+        const z = pile.z + Math.sin(a) * dist;
+        if (pointBlocked(x, z, 3.4)) clear = false;
+        if (x > -58 && x < -22 && z > 3 && z < 14) clear = false;
+        if (Math.hypot(x + 22, z - 44) < 16) clear = false;
       }
+      if (!clear) continue;
+      if (pile.x < -70 && Math.cos(a) < 0.2) continue;
+      ang = a;
+      break;
     }
     pileAng.set(pile.id, ang);
   }
@@ -1045,30 +1054,37 @@ function pinHome(state: GameState, v: VehicleState) {
 }
 
 function bayPose(home: { x: number; z: number; ang: number }, place: number) {
-  const back = 20 + place * 16;
+  const back = 32 + place * 18;
   const x = home.x + Math.cos(home.ang) * back;
   const z = home.z + Math.sin(home.ang) * back;
   const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
-  return { x, z, yaw, stageX: x + fx * 16, stageZ: z + fz * 16 };
+  return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18, homeX: home.x, homeZ: home.z };
 }
 
 const bayReady = new WeakSet<VehicleState>();
 const bayCommit = new WeakSet<VehicleState>();
 
-/** Drive to the open end, turn to face out, then back straight in. Pulling away is then a straight shot. */
-function enterBay(v: VehicleState, bay: { x: number; z: number; yaw: number; stageX: number; stageZ: number }, place: number): Control {
-  const fx = -Math.sin(bay.yaw);
-  const fz = -Math.cos(bay.yaw);
-  const along = (v.x - bay.x) * fx + (v.z - bay.z) * fz;
+/** Stay off the pile. The only way into the bay is from the open side, backing in. */
+function enterBay(
+  v: VehicleState,
+  bay: { x: number; z: number; yaw: number; fx: number; fz: number; stageX: number; stageZ: number; homeX: number; homeZ: number },
+  place: number,
+): Control {
+  const along = (v.x - bay.x) * bay.fx + (v.z - bay.z) * bay.fz;
   const err = Math.atan2(Math.sin(bay.yaw - v.yaw), Math.cos(bay.yaw - v.yaw));
   const label = place === 0 ? "In the load bay" : `In line (${place + 1})`;
-  // along > 0 means the truck is on the exit side of the slot. Get well past it before turning around.
+  // Behind gold creek there is no road. Come around to the east side first.
+  if (bay.homeX < -70 && v.x < bay.homeX + 6) {
+    bayCommit.delete(v);
+    v.status = "Staying off the pile";
+    return seek(v, bay.homeX + 36, bay.homeZ + 14, 4);
+  }
   if (along > 10) bayCommit.add(v);
   if (!bayCommit.has(v)) {
     v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
-    return seek(v, bay.stageX, bay.stageZ, 3.5);
+    return seek(v, bay.stageX, bay.stageZ, 4);
   }
   if (Math.abs(err) > 0.3) {
     v.status = "Turning to back in";
@@ -1131,10 +1147,14 @@ function routeTo(v: VehicleState, tx: number, tz: number) {
   }
   // Gold creek and the sluice are west of the yard wall. A straight line from
   // the gate clips that wall and leaves the skid steers stuck on it.
-  if (tx < -58 && v.x > -62) {
-    if (v.z < 12 && v.x < -22) return { x: -6, z: Math.min(v.z, 3) };
-    if (v.z < 16) return { x: Math.max(v.x, -18), z: 20 };
-    return { x: -70, z: Math.max(18, Math.min(v.z, 30)) };
+  // Gold creek and the sluice are west of the yard wall. The southwest wall
+  // covers x -55 to -25, z 5 to 12. Cross north of it, never through it.
+  if ((tx < -58 && v.x > -66) || (v.x < -66 && tx > v.x + 6)) {
+    if (v.x < -24 && v.x > -58 && v.z < 18) return { x: -14, z: Math.min(v.z, 2) };
+    if (v.z < 18) return { x: Math.max(v.x, -16), z: 24 };
+    if (v.x < -66 && tx > -66) return { x: -60, z: 24 };
+    if (v.x > -68 && tx < -58) return { x: -74, z: 24 };
+    return { x: tx, z: tz };
   }
   return { x: tx, z: tz };
 }

@@ -17,6 +17,7 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status === "Waiting to load" || crew.status === "Waiting off the pile" || crew.status.startsWith("Waiting beside")) return "The truck is parked off to the side and stays there until the bed is loaded.";
   if (crew.status.startsWith("In line")) return "This truck is waiting its turn. It stays back until the one ahead is loaded.";
   if (crew.status.startsWith("Wash line")) return "Waiting its turn at the wash plant. Only one machine dumps at a time.";
+  if (crew.status === "Staying off the pile") return "Keeping clear of the face. It only backs into the load bay from the open side.";
   if (crew.status === "In the load bay" || crew.status === "Backing into the bay" || crew.status === "Lining up at the bay" || crew.status === "Turning to back in") return "Backed into a bay clear of the pile, nose pointing out. It stays there until it is loaded, then drives straight out.";
   if (crew.status === "Waiting at the pile" || crew.status === "Back to the pile") return "Parked back from the pile. It stays there until a loader comes back to fill it.";
   if (crew.status === "Making a pile for the loader" || crew.status === "Stockpiling for the loader" || crew.status === "Stockpiled for the loader") return "Skid steers drop a pile off to the side. A loader or excavator loads that into the trucks.";

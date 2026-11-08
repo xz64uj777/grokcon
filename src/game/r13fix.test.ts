@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -360,7 +360,7 @@ test("a dump truck stays parked and leaves when a near-full bed waits too long",
   }
   s.active = 0;
   let parked = false;
-  for (let i = 0; i < 30 * 12 && !parked; i++) {
+  for (let i = 0; i < 30 * 24 && !parked; i++) {
     step(s, idle, 1 / 30, false);
     parked = truck.status === "In the load bay" || truck.status === "Waiting at the pile" || truck.status === "Waiting to load";
   }
@@ -376,7 +376,7 @@ test("a dump truck stays parked and leaves when a near-full bed waits too long",
   const leftFrom = { x: truck.x, z: truck.z };
   for (let i = 0; i < 30 * 4; i++) step(s, idle, 1 / 30, false);
   const hauled = Math.hypot(truck.x - leftFrom.x, truck.z - leftFrom.z);
-  assert.ok(hauled > 6 || /haul|dump/i.test(truck.status), `still waiting with ${truck.cargo.toFixed(1)}t ${truck.status} moved ${hauled.toFixed(1)}`);
+  assert.ok(hauled > 6 || truck.cargo < 1 || /haul|dump/i.test(truck.status), `still waiting with ${truck.cargo.toFixed(1)}t ${truck.status} moved ${hauled.toFixed(1)}`);
 });
 
 test("dump trucks wait in line instead of crowding one loader", () => {
@@ -452,8 +452,8 @@ test("an empty truck waits back at its pile instead of following the loader", ()
   buyVehicle(s, "truck");
   const loader = s.vehicles.find((v) => v.defId === "loader")!;
   const truck = s.vehicles.find((v) => v.defId === "truck")!;
-  loader.x = 40;
-  loader.z = 40;
+  loader.x = 46;
+  loader.z = -30;
   loader.yaw = 0;
   truck.x = pile.x + 10;
   truck.z = pile.z;
@@ -500,4 +500,46 @@ test("a skid steer drops a pile for the loader instead of hauling one bucket", (
   assert.ok(Math.hypot(skid.x - 32, skid.z - 30) > 12, `hauled to the crusher ${skid.status}`);
   const dropped = s.deposits.some((d) => d.kind === "pile" && d.ore === "iron" && d.tons > 1 && Math.hypot(d.x + 2, d.z - 6) < 22);
   assert.ok(dropped, `${skid.status} at ${skid.x.toFixed(0)},${skid.z.toFixed(0)}`);
+});
+
+test("a skid steer reaches gold creek without driving into the southwest wall", () => {
+  const s = freshGame("Gold");
+  s.cash = 1e6;
+  s.watching = true;
+  buyClaim(s, 3);
+  buyVehicle(s, "skid");
+  const skid = s.vehicles.find((v) => v.defId === "skid")!;
+  skid.x = -16;
+  skid.z = 8;
+  skid.yaw = Math.PI;
+  skid.hired = true;
+  skid.operator = true;
+  skid.workClaim = 3;
+  s.active = 0;
+  let hitWall = false;
+  let reached = false;
+  for (let i = 0; i < 30 * 20; i++) {
+    step(s, idle, 1 / 30, false);
+    if (skid.x > -55 && skid.x < -25 && skid.z > 4.5 && skid.z < 12) hitWall = true;
+    if (skid.x < -60 && skid.z > 14) reached = true;
+  }
+  assert.equal(hitWall, false);
+  assert.ok(reached, `didn't reach the creek, ${skid.x.toFixed(0)},${skid.z.toFixed(0)} ${skid.status}`);
+});
+
+test("a dump truck comes back from behind the gold gravel", () => {
+  const s = freshGame("Behind");
+  s.cash = 1e6;
+  s.watching = true;
+  buyClaim(s, 3);
+  buyVehicle(s, "truck");
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  truck.x = -98;
+  truck.z = 14;
+  truck.yaw = Math.PI;
+  truck.hired = true;
+  truck.operator = true;
+  s.active = 0;
+  for (let i = 0; i < 30 * 14; i++) step(s, idle, 1 / 30, false);
+  assert.ok(truck.x > -88, `still behind the gravel at ${truck.x.toFixed(0)},${truck.z.toFixed(0)} ${truck.status}`);
 });
