@@ -378,3 +378,69 @@ test("a dump truck stays parked and leaves when a near-full bed waits too long",
   const hauled = Math.hypot(truck.x - leftFrom.x, truck.z - leftFrom.z);
   assert.ok(hauled > 6 || truck.cargo < 1, `still waiting with ${truck.cargo.toFixed(1)}t ${truck.status} moved ${hauled.toFixed(1)}`);
 });
+
+test("dump trucks wait in line instead of crowding one loader", () => {
+  const s = freshGame("Queue");
+  s.cash = 1e6;
+  s.watching = true;
+  buyVehicle(s, "loader");
+  buyVehicle(s, "truck");
+  buyVehicle(s, "truck");
+  const loader = s.vehicles.find((v) => v.defId === "loader")!;
+  const trucks = s.vehicles.filter((v) => v.defId === "truck");
+  loader.x = -8;
+  loader.z = 8;
+  loader.yaw = 0;
+  trucks[0]!.x = 14;
+  trucks[0]!.z = 8;
+  trucks[1]!.x = 18;
+  trucks[1]!.z = 14;
+  for (const m of [loader, ...trucks]) {
+    m.hired = true;
+    m.operator = true;
+  }
+  s.active = 0;
+  let sawLine = false;
+  let queuedGap = 0;
+  for (let i = 0; i < 30 * 12; i++) {
+    step(s, idle, 1 / 30, false);
+    if (trucks.some((t) => t.status.startsWith("In line"))) {
+      sawLine = true;
+      queuedGap = Math.max(queuedGap, Math.hypot(trucks[0]!.x - trucks[1]!.x, trucks[0]!.z - trucks[1]!.z));
+    }
+  }
+  assert.ok(sawLine, trucks.map((t) => t.status).join(" | "));
+  assert.ok(queuedGap > 8, `queued on top of each other, gap ${queuedGap.toFixed(1)}`);
+});
+
+test("a skid steer drops a pile for the loader instead of hauling one bucket", () => {
+  const s = freshGame("Skid");
+  s.cash = 1e6;
+  s.watching = true;
+  buyVehicle(s, "loader");
+  buyVehicle(s, "skid");
+  const loader = s.vehicles.find((v) => v.defId === "loader")!;
+  const skid = s.vehicles.find((v) => v.defId === "skid")!;
+  loader.x = -16;
+  loader.z = 36;
+  loader.yaw = 0;
+  skid.x = -2;
+  skid.z = 6;
+  skid.yaw = 0;
+  skid.cargo = 2.4;
+  skid.cargoOre = "iron";
+  for (const m of [loader, skid]) {
+    m.hired = true;
+    m.operator = true;
+  }
+  s.active = 0;
+  let emptied = false;
+  for (let i = 0; i < 30 * 8; i++) {
+    step(s, idle, 1 / 30, false);
+    if (skid.cargo < 0.3) emptied = true;
+  }
+  assert.ok(emptied, `never dropped the bucket, ${skid.cargo.toFixed(2)} ${skid.status}`);
+  assert.ok(Math.hypot(skid.x - 32, skid.z - 30) > 12, `hauled to the crusher ${skid.status}`);
+  const dropped = s.deposits.some((d) => d.kind === "pile" && d.ore === "iron" && d.tons > 1 && Math.hypot(d.x + 2, d.z - 6) < 22);
+  assert.ok(dropped, `${skid.status} at ${skid.x.toFixed(0)},${skid.z.toFixed(0)}`);
+});
