@@ -124,6 +124,24 @@ test("a machine goes around one sitting in its way", () => {
   assert.ok(overlapped < 60, `jammed for ${(overlapped / 30).toFixed(1)}s`);
 });
 
+test("the yard sells extra diggers and trucks, each one costing more", () => {
+  const s = freshGame("Fleet");
+  s.cash = 2_000_000;
+  for (const id of ["dozer", "loader", "excavator", "heavy"] as const) {
+    assert.equal(buyVehicle(s, id), "");
+    assert.equal(buyVehicle(s, id), "");
+    assert.match(buyVehicle(s, id), /yard limit/);
+  }
+  const before = s.cash;
+  assert.equal(buyVehicle(s, "truck"), "");
+  const first = before - s.cash;
+  assert.equal(buyVehicle(s, "truck"), "");
+  assert.equal(before - s.cash, first * 3);
+  assert.equal(buyVehicle(s, "truck"), "");
+  assert.match(buyVehicle(s, "truck"), /yard limit/);
+  assert.equal(s.vehicles.filter((v) => v.defId === "truck").length, 3);
+});
+
 test("plant stockpile crew limit survives a save and load", () => {
   const s = freshGame("T");
   s.feedLimit = 1;

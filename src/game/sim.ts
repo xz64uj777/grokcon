@@ -2660,14 +2660,19 @@ export function lotButtons(state: GameState) {
 }
 
 function yardCap(id: VehicleId) {
-  if (id === "skid") return 3;
+  if (id === "skid" || id === "truck") return 3;
   if (id === "light") return 4;
+  if (id === "dozer" || id === "loader" || id === "excavator" || id === "heavy") return 2;
   return 1;
 }
 
 function canAdd(state: GameState, id: VehicleId, leaving?: VehicleId) {
   const count = state.vehicles.filter((v) => v.defId === id).length - (leaving === id ? 1 : 0);
-  if (count >= yardCap(id)) return id === "skid" ? "Three skid steers is the yard limit." : id === "light" ? "Four light plants is the yard limit." : "Already on the yard.";
+  const cap = yardCap(id);
+  if (count >= cap) {
+    if (cap <= 1) return "Already on the yard.";
+    return `${cap} ${DEFS[id].name.toLowerCase()}s is the yard limit.`;
+  }
   return "";
 }
 

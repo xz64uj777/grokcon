@@ -499,7 +499,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   dozer: {
     id: "dozer",
     name: "Bulldozer",
-    blurb: "Pushes a face into a pile for the haulers. No bed of its own.",
+    blurb: "Pushes a face into a pile for the haulers. No bed of its own. Up to two. The second costs more.",
     price: 12500,
     capacity: 0,
     maxSpeed: 10,
@@ -517,7 +517,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   loader: {
     id: "loader",
     name: "Payloader",
-    blurb: "Big bucket. Fills dump trucks, or hauls a pile to the crusher itself.",
+    blurb: "Big bucket. Fills dump trucks, or hauls a pile itself. Up to two. The second costs more.",
     price: 28000,
     capacity: 8,
     maxSpeed: 13,
@@ -535,7 +535,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   excavator: {
     id: "excavator",
     name: "Excavator",
-    blurb: "Production digger. Park it on a face and fill the truck beside it.",
+    blurb: "Production digger. Park it on a face and fill the truck beside it. Up to two. The second costs more.",
     price: 64000,
     capacity: 3.2,
     maxSpeed: 6.5,
@@ -553,7 +553,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   truck: {
     id: "truck",
     name: "Dump truck",
-    blurb: "Hauls what the payloader and excavator dig. Hire it a driver.",
+    blurb: "Hauls what the payloader and excavator dig. Up to three. Each one costs more.",
     price: 42000,
     capacity: 22,
     maxSpeed: 16,
@@ -571,7 +571,7 @@ export const DEFS: Record<VehicleId, VehicleDef> = {
   heavy: {
     id: "heavy",
     name: "Heavy haul",
-    blurb: "Forty tons a trip, on one bank. In the valley it sells at the west barge. It does not take the bridge.",
+    blurb: "Forty tons a trip, on one bank. Up to two. The second costs more. In the valley it sells at the west barge.",
     price: 125000,
     capacity: 40,
     maxSpeed: 13,
