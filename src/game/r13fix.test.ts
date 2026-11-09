@@ -313,7 +313,7 @@ test("turning in the open yard is not called a wall", () => {
   assert.equal(wall, 0);
 });
 
-test("a loader fills from the edge of a pile and the truck waits beside it", () => {
+test("a loader fills from the edge of a pile and the truck waits beside it", () => withSeededRandom(123, () => {
   const s = freshGame("Edge");
   s.cash = 1e6;
   s.watching = true;
@@ -349,7 +349,7 @@ test("a loader fills from the edge of a pile and the truck waits beside it", () 
     for (let i = 0; i < 30 * 3; i++) step(s, idle, 1 / 30, false);
     assert.ok(Math.hypot(truck.x - tx, truck.z - tz) < 8, `truck chased a small move`);
   }
-});
+}));
 
 test("the dump truck and heavy reach the outward loading lane and load without entering the pile", () => withSeededRandom(123, () => {
   const s = freshGame("QueueTransfer");
@@ -388,6 +388,41 @@ test("the dump truck and heavy reach the outward loading lane and load without e
   assert.ok(sawBay, `neither truck stopped in the bay: ${truck.status} / ${heavy.status}`);
   assert.ok(transferred, `loader never transferred material: ${loader.status}`);
   assert.ok(nearestPileGap > 12, `a truck crowded the pile: nearest center distance ${nearestPileGap.toFixed(1)}m`);
+}));
+
+test("a truck settles at the Gold Creek bay and loads the excavator's ore", () => withSeededRandom(321, () => {
+  const s = freshGame("GoldBay");
+  s.cash = 10e6;
+  s.watching = true;
+  buyClaim(s, 3);
+  buyVehicle(s, "excavator");
+  buyVehicle(s, "truck");
+  const excavator = s.vehicles.find((v) => v.defId === "excavator")!;
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  const gold = s.deposits.find((d) => d.id === "gold")!;
+  toggleCrew(s, s.vehicles.indexOf(excavator));
+  toggleCrew(s, s.vehicles.indexOf(truck));
+  excavator.x = gold.x;
+  excavator.z = gold.z + 6;
+  excavator.cargo = 3;
+  excavator.cargoOre = "gold";
+  truck.x = -16;
+  truck.z = 8;
+  truck.yaw = Math.PI;
+  s.active = s.vehicles.indexOf(excavator);
+  let settledFrames = 0;
+  let longestSettled = 0;
+  for (let i = 0; i < 30 * 60; i++) {
+    step(s, idle, 1 / 30, false);
+    if (truck.status === "In the load bay") {
+      settledFrames++;
+      longestSettled = Math.max(longestSettled, settledFrames);
+    } else settledFrames = 0;
+  }
+  const distanceFromFace = Math.hypot(truck.x - gold.x, truck.z - gold.z);
+  assert.ok(longestSettled >= 30 * 3, `truck never settled: ${truck.status} at ${truck.x.toFixed(1)},${truck.z.toFixed(1)}`);
+  assert.ok(truck.cargo > 2.5, `truck never received the excavator's load: ${truck.cargo.toFixed(1)} ${truck.status}; excavator ${excavator.cargo.toFixed(1)} ${excavator.status}`);
+  assert.ok(distanceFromFace > 12, `truck crowded Gold Creek at ${distanceFromFace.toFixed(1)}m`);
 }));
 
 test("a dump truck stays parked until its bed is nearly full, then heads to dump", () => withSeededRandom(123, () => {

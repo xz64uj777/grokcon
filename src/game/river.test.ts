@@ -246,7 +246,7 @@ describe("river crew", () => {
     assert.ok(dug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
   }));
 
-  it("fills the dump and the heavy from the river bars instead of selling the bucket at the wash", () => {
+  it("fills the dump and the heavy from the river bars without routing the queue through the water", () => withSeededRandom(1, () => {
     const s = freshGame("Fill");
     s.cash = 1e6;
     s.claims = [1, 4, 5];
@@ -275,8 +275,11 @@ describe("river crew", () => {
     heavy.x = bar.x + 4;
     heavy.z = bar.z - 12;
     const input = { throttle: 0, steer: 0, action: false };
-    for (let i = 0; i < 30 * 20; i++) step(s, input, 1 / 30, false);
+    for (let i = 0; i < 30 * 60; i++) step(s, input, 1 / 30, false);
     const hauled = truck.cargo + heavy.cargo;
     assert.ok(hauled > 2, `truck ${truck.cargo.toFixed(1)} (${truck.status}) heavy ${heavy.cargo.toFixed(1)} (${heavy.status}) ex ${ex.status} loader ${loader.status}`);
-  });
+    assert.ok(heavy.cargo > 1, `heavy never received loader material: ${heavy.status}; loader ${loader.cargo.toFixed(1)} ${loader.status}`);
+    assert.ok(loader.cargo < 6.6, `loader kept its initial cargo: ${loader.cargo.toFixed(1)} ${loader.status}`);
+    assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
+  }));
 });

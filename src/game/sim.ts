@@ -925,7 +925,7 @@ function bayPose(home: { x: number; z: number; ang: number }, place: number) {
   const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
-  return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18, homeX: home.x, homeZ: home.z };
+  return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18 };
 }
 
 function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState) {
@@ -962,11 +962,20 @@ function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
   const side = slotOf(digger) % 2 === 0 ? 1 : -1;
-  const ang = areaOf(x) === "mountain"
+  let ang = areaOf(x) === "mountain"
     ? Math.atan2(fx * side, -fz * side)
     : away && Math.hypot(away.x, away.z) > 0.1
       ? Math.atan2(away.z, away.x)
       : Math.atan2(Math.cos(yaw), Math.sin(yaw));
+  if (areaOf(x) === "river") {
+    const riverBankSide = Math.sign(x - RIVER.x);
+    const bridgeSide = Math.sign(z - BRIDGE.z);
+    let safeX = 0;
+    let safeZ = 0;
+    if (riverBankSide !== 0 && Math.abs(x - RIVER.x) < 70 && riverBankSide * Math.cos(ang) < -0.05) safeX = riverBankSide;
+    if (bridgeSide !== 0 && Math.abs(z - BRIDGE.z) < 70 && bridgeSide * Math.sin(ang) < -0.05) safeZ = bridgeSide;
+    if (safeX || safeZ) ang = Math.atan2(safeZ, safeX);
+  }
   const home = {
     diggerUid: digger.uid,
     x,
@@ -983,22 +992,22 @@ const bayCommit = new WeakSet<VehicleState>();
 /** Stay off the pile. The only way into the bay is from the open side, backing in. */
 function enterBay(
   v: VehicleState,
-  bay: { x: number; z: number; yaw: number; fx: number; fz: number; stageX: number; stageZ: number; homeX: number; homeZ: number },
+  bay: { x: number; z: number; yaw: number; fx: number; fz: number; stageX: number; stageZ: number },
   place: number,
 ): Control {
   const along = (v.x - bay.x) * bay.fx + (v.z - bay.z) * bay.fz;
+  const lateral = -(v.x - bay.x) * bay.fz + (v.z - bay.z) * bay.fx;
   const err = Math.atan2(Math.sin(bay.yaw - v.yaw), Math.cos(bay.yaw - v.yaw));
   const label = place === 0 ? "In the load bay" : `In line (${place + 1})`;
-  // Behind gold creek there is no road. Come around to the east side first.
-  if (bay.homeX < -70 && v.x < bay.homeX + 6) {
-    bayCommit.delete(v);
-    v.status = "Staying off the pile";
-    return seek(v, bay.homeX + 36, bay.homeZ + 14, 4);
-  }
-  if (along > 10 && distTo(v.x, v.z, bay.stageX, bay.stageZ) < 6) bayCommit.add(v);
+  if (along > 10 && distTo(v.x, v.z, bay.stageX, bay.stageZ) < 3.5 && Math.abs(lateral) < 2.5) bayCommit.add(v);
   if (!bayCommit.has(v)) {
     v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
     return seek(v, bay.stageX, bay.stageZ, 4);
+  }
+  if (Math.abs(lateral) > 3.5) {
+    bayCommit.delete(v);
+    v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
+    return seek(v, bay.stageX, bay.stageZ, 3);
   }
   if (Math.abs(err) > 0.3) {
     v.status = "Turning to back in";
@@ -2529,7 +2538,7 @@ function pourIntoTrucks(state: GameState) {
     if (!v.operator && !(v === state.vehicles[state.active] && !state.watching)) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
     const head = lineFor(state, v)[0];
-    const reach = v.defId === "excavator" ? 20 : 22;
+    const reach = v.defId === "excavator" ? 26 : 22;
     if (!head || !bayReady.has(head)) return;
     if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
   });
