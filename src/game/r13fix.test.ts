@@ -390,9 +390,9 @@ test("the dump truck and heavy reach the outward loading lane and load without e
   assert.ok(nearestPileGap > 12, `a truck crowded the pile: nearest center distance ${nearestPileGap.toFixed(1)}m`);
 }));
 
-test("a dump truck stays parked until its bed is nearly full, then heads to dump", () => {
+test("a dump truck stays parked until its bed is nearly full, then heads to dump", () => withSeededRandom(123, () => {
   const s = freshGame("Park");
-  s.cash = 1e6;
+  s.cash = 10e6;
   s.watching = true;
   const pile = s.deposits.find((d) => d.id === "starter")!;
   buyVehicle(s, "loader");
@@ -442,7 +442,7 @@ test("a dump truck stays parked until its bed is nearly full, then heads to dump
   for (let i = 0; i < 30 * 12; i++) step(s, idle, 1 / 30, false);
   const fullMove = Math.hypot(truck.x - fullFrom.x, truck.z - fullFrom.z);
   assert.ok(fullMove > 6 || truck.cargo < cap * 0.9, `nearly-full truck did not make its dump trip: ${truck.status}, moved ${fullMove.toFixed(1)}m`);
-});
+}));
 
 test("a loader does not chase an unassigned truck that has not backed into the bay", () => {
   const s = freshGame("Handshake");
