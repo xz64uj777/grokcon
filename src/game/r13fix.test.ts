@@ -11,6 +11,20 @@ function feedPile(s: ReturnType<typeof freshGame>) {
   return s.deposits.find((d) => d.id.startsWith("feed-"));
 }
 
+function withSeededRandom<T>(seed: number, run: () => T): T {
+  const originalRandom = Math.random;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  try {
+    return run();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
 test("yard feeder alone pays the pile out and removes it (no softlock)", () => {
   const s = freshGame("T");
   s.claims.push(5);
@@ -337,6 +351,45 @@ test("a loader fills from the edge of a pile and the truck waits beside it", () 
   }
 });
 
+test("the dump truck and heavy reach the outward loading lane and load without entering the pile", () => withSeededRandom(123, () => {
+  const s = freshGame("QueueTransfer");
+  s.cash = 1e6;
+  s.watching = true;
+  const pile = s.deposits.find((d) => d.id === "starter")!;
+  buyVehicle(s, "loader");
+  buyVehicle(s, "truck");
+  buyVehicle(s, "heavy");
+  const loader = s.vehicles.find((v) => v.defId === "loader")!;
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  const heavy = s.vehicles.find((v) => v.defId === "heavy")!;
+  loader.x = pile.x + 7;
+  loader.z = pile.z;
+  loader.yaw = Math.PI / 2;
+  truck.x = pile.x + 7;
+  truck.z = pile.z + 14;
+  heavy.x = pile.x - 8;
+  heavy.z = pile.z + 15;
+  for (const v of [loader, truck, heavy]) {
+    v.hired = true;
+    v.operator = true;
+  }
+  s.active = s.vehicles.indexOf(loader);
+  let sawBay = false;
+  let transferred = false;
+  let nearestPileGap = Infinity;
+  for (let i = 0; i < 30 * 40; i++) {
+    step(s, idle, 1 / 30, false);
+    for (const v of [truck, heavy]) {
+      if (v.status === "In the load bay") sawBay = true;
+      if (v.cargo > 0.2) transferred = true;
+      nearestPileGap = Math.min(nearestPileGap, Math.hypot(v.x - pile.x, v.z - pile.z));
+    }
+  }
+  assert.ok(sawBay, `neither truck stopped in the bay: ${truck.status} / ${heavy.status}`);
+  assert.ok(transferred, `loader never transferred material: ${loader.status}`);
+  assert.ok(nearestPileGap > 12, `a truck crowded the pile: nearest center distance ${nearestPileGap.toFixed(1)}m`);
+}));
+
 test("a dump truck stays parked until its bed is nearly full, then heads to dump", () => {
   const s = freshGame("Park");
   s.cash = 1e6;
@@ -522,7 +575,7 @@ test("an empty truck waits back at its pile instead of following the loader", ()
   for (let i = 0; i < 30 * 8; i++) step(s, idle, 1 / 30, false);
   const fromPile = Math.hypot(truck.x - pile.x, truck.z - pile.z);
   const fromLoader = Math.hypot(truck.x - loader.x, truck.z - loader.z);
-  assert.ok(fromPile > 18, `too close to the pile, ${fromPile.toFixed(1)} ${truck.status}`);
+  assert.ok(fromPile > 12, `too close to the pile, ${fromPile.toFixed(1)} ${truck.status}`);
   assert.ok(fromLoader > 15, `followed the loader, ${fromLoader.toFixed(1)} ${truck.status}`);
 });
 

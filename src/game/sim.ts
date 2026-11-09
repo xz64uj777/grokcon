@@ -849,7 +849,6 @@ function bestPile(state: GameState, v: VehicleState) {
 /** One truck per digger, in the order they showed up. The rest wait behind it. */
 const lineTicket = new WeakMap<VehicleState, number>();
 let lineNo = 1;
-const diggerPad = new WeakMap<VehicleState, { x: number; z: number; ax: number; az: number }>();
 
 function loaderInArea(state: GameState, v: VehicleState) {
   return state.vehicles.some(
@@ -888,17 +887,6 @@ function lineFor(state: GameState, digger: VehicleState) {
   return list;
 }
 
-function loadPoint(digger: VehicleState) {
-  const prev = diggerPad.get(digger);
-  if (prev && distTo(digger.x, digger.z, prev.ax, prev.az) < 16) return { x: prev.x, z: prev.z };
-  const fx = -Math.sin(digger.yaw);
-  const fz = -Math.cos(digger.yaw);
-  const side = slotOf(digger) % 2 === 0 ? 1 : -1;
-  const spot = { x: digger.x - fz * side * TRUCK_PARK, z: digger.z + fx * side * TRUCK_PARK, ax: digger.x, az: digger.z };
-  diggerPad.set(digger, spot);
-  return spot;
-}
-
 function diggerForTruck(state: GameState, v: VehicleState) {
   const open = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "excavator") &&
@@ -928,10 +916,10 @@ const dumpAnyway = new WeakSet<VehicleState>();
 const truckBayHome = new WeakMap<VehicleState, { diggerUid: string; x: number; z: number; ang: number }>();
 const plantTicket = new WeakMap<VehicleState, number>();
 let plantNo = 1;
-const TRUCK_PARK = 28;
+const TRUCK_PARK = 16;
 
 function bayPose(home: { x: number; z: number; ang: number }, place: number) {
-  const back = TRUCK_PARK + place * 13;
+  const back = TRUCK_PARK + place * 14;
   const x = home.x + Math.cos(home.ang) * back;
   const z = home.z + Math.sin(home.ang) * back;
   const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
@@ -940,15 +928,50 @@ function bayPose(home: { x: number; z: number; ang: number }, place: number) {
   return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18, homeX: home.x, homeZ: home.z };
 }
 
-function bayHomeForTruck(v: VehicleState, digger: VehicleState) {
+function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState) {
   const prev = truckBayHome.get(v);
   if (prev?.diggerUid === digger.uid) return prev;
-  const point = loadPoint(digger);
+  let x = digger.x;
+  let z = digger.z;
+  let yaw = digger.yaw;
+  let away: { x: number; z: number } | null = null;
+  const def = DEFS[digger.defId];
+  if (def.scoop > 0) {
+    const pile = (digger.cargo > 0.15 && digger.cargoOre ? pileInReach(state, digger) : null) ?? bestPile(state, digger);
+    if (pile) {
+      if (digger.cargo <= 0.15 || !digger.cargoOre) {
+        const spot = pileApproach(digger, pile);
+        x = spot.x;
+        z = spot.z;
+        yaw = Math.atan2(-(pile.x - x), -(pile.z - z));
+      }
+      away = { x: x - pile.x, z: z - pile.z };
+    }
+  } else if (def.dig > 0) {
+    const vein = bestVein(state, digger, digger.cargo > 0.15 ? digger.cargoOre : null);
+    if (vein) {
+      if (digger.cargo <= 0.15 || !digger.cargoOre) {
+        const face = driveFace(vein);
+        x = face.x;
+        z = face.z;
+        yaw = faceOf(vein).yaw;
+      }
+      away = { x: x - vein.x, z: z - vein.z };
+    }
+  }
+  const fx = -Math.sin(yaw);
+  const fz = -Math.cos(yaw);
+  const side = slotOf(digger) % 2 === 0 ? 1 : -1;
+  const ang = areaOf(x) === "mountain"
+    ? Math.atan2(fx * side, -fz * side)
+    : away && Math.hypot(away.x, away.z) > 0.1
+      ? Math.atan2(away.z, away.x)
+      : Math.atan2(Math.cos(yaw), Math.sin(yaw));
   const home = {
     diggerUid: digger.uid,
-    x: digger.x,
-    z: digger.z,
-    ang: Math.atan2(point.z - digger.z, point.x - digger.x),
+    x,
+    z,
+    ang,
   };
   truckBayHome.set(v, home);
   return home;
@@ -972,7 +995,7 @@ function enterBay(
     v.status = "Staying off the pile";
     return seek(v, bay.homeX + 36, bay.homeZ + 14, 4);
   }
-  if (along > 10) bayCommit.add(v);
+  if (along > 10 && distTo(v.x, v.z, bay.stageX, bay.stageZ) < 6) bayCommit.add(v);
   if (!bayCommit.has(v)) {
     v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
     return seek(v, bay.stageX, bay.stageZ, 4);
@@ -1645,7 +1668,7 @@ function aiControl(state: GameState, index: number): Control {
       if (digger) {
         const line = lineFor(state, digger);
         const place = Math.max(0, line.findIndex((t) => t === v));
-        return enterBay(v, bayPose(bayHomeForTruck(v, digger), place), place);
+        return enterBay(v, bayPose(bayHomeForTruck(state, v, digger), place), place);
       }
       v.status = "Needs a payloader";
       return { ...ZERO, brake: 1 };
@@ -2506,7 +2529,7 @@ function pourIntoTrucks(state: GameState) {
     if (!v.operator && !(v === state.vehicles[state.active] && !state.watching)) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
     const head = lineFor(state, v)[0];
-    const reach = v.defId === "excavator" ? 16 : 22;
+    const reach = v.defId === "excavator" ? 20 : 22;
     if (!head || !bayReady.has(head)) return;
     if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
   });
