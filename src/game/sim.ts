@@ -492,6 +492,7 @@ function feedCrewFor(state: GameState, pile: Deposit) {
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
     .filter(({ v, index, rate }) =>
       !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) && !otherBank(v.x, pile.x) &&
+      !(fillsHaulers(v.defId) && lineFor(state, v).length > 0) &&
       distTo(v.x, v.z, pile.x, pile.z) < (v.defId === "excavator" ? FEED_CALL_RANGE : 120) &&
       !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid),
     )
@@ -604,6 +605,8 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
 /** Crew loader/excavator job: go feed the nearest plant pile in this area. */
 function feedJob(state: GameState, v: VehicleState): Control | null {
   if (!FEED_RATES[v.defId] || v.cargo > 0.25) return null;
+  // Trucks waiting on this machine come first; the plant feeds itself meanwhile.
+  if (fillsHaulers(v.defId) && lineFor(state, v).length > 0) return null;
   const index = state.vehicles.indexOf(v);
   let best: Deposit | null = null;
   let bestD = Infinity;
