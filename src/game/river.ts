@@ -15,10 +15,11 @@ export function areaOf(x: number): AreaId {
   return x > 1500 ? "mountain" : x > AREA_SPLIT ? "river" : "ridge";
 }
 
-export const RIVER_BOUNDS = { minX: X0 - 92, maxX: X0 + 92, minZ: -72, maxZ: 70 };
+/** Playable valley. The south side is long enough for a gold-bar lineup to finish backing in. The north posts stop short of the haul road. */
+export const RIVER_BOUNDS = { minX: X0 - 92, maxX: X0 + 92, minZ: -112, maxZ: 84 };
 
-/** River runs north-south through the middle of the valley. */
-export const RIVER = { x: X0, halfWidth: 7, minZ: -72, maxZ: 70 };
+/** River runs north-south through the middle of the valley, out to the fence. */
+export const RIVER = { x: X0, halfWidth: 7, minZ: -112, maxZ: 84 };
 
 /** The one bridge across. Deck runs east-west, centred on z = BRIDGE.z. */
 export const BRIDGE = { x: X0, z: 8, halfLength: 11, halfWidth: 4.2, limit: 32 };

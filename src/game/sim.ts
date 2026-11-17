@@ -918,14 +918,52 @@ const plantTicket = new WeakMap<VehicleState, number>();
 let plantNo = 1;
 const TRUCK_PARK = 16;
 
+/** Metres of open ground along a bay ray before the fence or a wall. */
+function alongRoom(x: number, z: number, ang: number) {
+  const b = boundsFor(x);
+  const pad = 8;
+  let room = 64;
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  if (c > 0.02) room = Math.min(room, (b.maxX - pad - x) / c);
+  else if (c < -0.02) room = Math.min(room, (x - (b.minX + pad)) / -c);
+  if (s > 0.02) room = Math.min(room, (b.maxZ - pad - z) / s);
+  else if (s < -0.02) room = Math.min(room, (z - (b.minZ + pad)) / -s);
+  for (let d = 4; d <= room; d += 4) {
+    if (pointBlocked(x + c * d, z + s * d, 3)) return Math.max(0, d - 4);
+  }
+  return Math.max(0, room);
+}
+
+/** Prefer the digger's angle, but not one that runs the line through the fence or the river. */
+function openBayAngle(x: number, z: number, prefer: number) {
+  const bank = areaOf(x) === "river" ? Math.sign(x - RIVER.x) : 0;
+  const intoRiver = (a: number) => bank !== 0 && bank * Math.cos(a) < -0.15;
+  let best = prefer;
+  let bestRoom = intoRiver(prefer) ? -1 : alongRoom(x, z, prefer);
+  if (bestRoom >= 50) return prefer;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    if (intoRiver(a)) continue;
+    const room = alongRoom(x, z, a);
+    if (room > bestRoom) {
+      bestRoom = room;
+      best = a;
+    }
+  }
+  return best;
+}
+
 function bayPose(home: { x: number; z: number; ang: number }, place: number) {
-  const back = TRUCK_PARK + place * 14;
+  const room = alongRoom(home.x, home.z, home.ang);
+  const back = Math.min(TRUCK_PARK + place * 14, Math.max(12, room - 8));
   const x = home.x + Math.cos(home.ang) * back;
   const z = home.z + Math.sin(home.ang) * back;
   const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
-  return { x, z, yaw, fx, fz, stageX: x + fx * 18, stageZ: z + fz * 18 };
+  const stageFar = Math.min(18, Math.max(6, room - back));
+  return { x, z, yaw, fx, fz, stageX: x + fx * stageFar, stageZ: z + fz * stageFar };
 }
 
 function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState) {
@@ -976,6 +1014,7 @@ function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState
     if (bridgeSide !== 0 && Math.abs(z - BRIDGE.z) < 70 && bridgeSide * Math.sin(ang) < -0.05) safeZ = bridgeSide;
     if (safeX || safeZ) ang = Math.atan2(safeZ, safeX);
   }
+  if (areaOf(x) === "river") ang = openBayAngle(x, z, ang);
   const home = {
     diggerUid: digger.uid,
     x,
@@ -999,15 +1038,22 @@ function enterBay(
   const lateral = -(v.x - bay.x) * bay.fz + (v.z - bay.z) * bay.fx;
   const err = Math.atan2(Math.sin(bay.yaw - v.yaw), Math.cos(bay.yaw - v.yaw));
   const label = place === 0 ? "In the load bay" : `In line (${place + 1})`;
-  if (along > 10 && distTo(v.x, v.z, bay.stageX, bay.stageZ) < 3.5 && Math.abs(lateral) < 2.5) bayCommit.add(v);
+  const atStage = distTo(v.x, v.z, bay.stageX, bay.stageZ) < 5.5;
+  // At the lineup point. The old check wanted a perfect reverse, so a truck sitting on that point never counted.
+  if (atStage) bayCommit.add(v);
   if (!bayCommit.has(v)) {
     v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
-    return seek(v, bay.stageX, bay.stageZ, 4);
+    return seek(v, bay.stageX, bay.stageZ, 3.2);
   }
-  if (Math.abs(lateral) > 3.5) {
+  if (!atStage && Math.abs(lateral) > 8) {
     bayCommit.delete(v);
     v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
-    return seek(v, bay.stageX, bay.stageZ, 3);
+    return seek(v, bay.stageX, bay.stageZ, 3.2);
+  }
+  if (atStage && Math.abs(v.speed) < 0.6) {
+    bayReady.add(v);
+    v.status = label;
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
   if (Math.abs(err) > 0.3) {
     v.status = "Turning to back in";
@@ -1219,6 +1265,10 @@ function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   const pullingOut = (v.defId === "truck" || v.defId === "heavy") && (dumpAnyway.has(v) || v.cargo >= vehicleStats(v).capacity * 0.85);
   if (hit.gap < 0 && !pullingOut) {
     v.status = "Making room";
+    // In the valley, reversing along the bay ray put the dump back into the skid. Slide past it.
+    if (areaOf(v.x) === "river" && (v.defId === "truck" || v.defId === "heavy")) {
+      return { throttle: 0.35, steer: away, action: false, brake: 0 };
+    }
     return { throttle: -0.5, steer: away, action: false, brake: 0 };
   }
   if (pullingOut) return { ...c, steer: clamp(c.steer + away, -1, 1), throttle: Math.max(c.throttle, 0.45) };
@@ -2302,7 +2352,7 @@ function resolveCircle(state: GameState, v: VehicleState, radius: number) {
     return;
   }
   if (blockRoadGate(v.defId, v.x, v.z)) {
-    v.z = Math.min(v.z, v.x > 500 ? 68 : 63);
+    v.z = Math.min(v.z, v.x > 500 ? 78 : 63);
     v.speed = 0;
     v.status = "The north road is for the lowboy";
     return;

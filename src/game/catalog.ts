@@ -49,8 +49,8 @@ export const BLOCKS: Block[] = [
   { id: "river-s", x: RIVER.x, z: (RIVER.minZ + BRIDGE.z - BRIDGE.halfWidth) / 2, sx: RIVER.halfWidth * 2, sy: 0.4, sz: BRIDGE.z - BRIDGE.halfWidth - RIVER.minZ, kind: "water" },
   { id: "river-n", x: RIVER.x, z: (RIVER.maxZ + BRIDGE.z + BRIDGE.halfWidth) / 2, sx: RIVER.halfWidth * 2, sy: 0.4, sz: RIVER.maxZ - BRIDGE.z - BRIDGE.halfWidth, kind: "water" },
   // Valley wall on the west side, with the quarry cut into it.
-  { id: "cliff-nw", x: X0 - 84, z: 36, sx: 10, sy: 14, sz: 64, kind: "cliff" },
-  { id: "cliff-sw", x: X0 - 84, z: -44, sx: 10, sy: 14, sz: 52, kind: "cliff" },
+  { id: "cliff-nw", x: X0 - 84, z: (4 + RIVER_BOUNDS.maxZ) / 2, sx: 10, sy: 14, sz: RIVER_BOUNDS.maxZ - 4, kind: "cliff" },
+  { id: "cliff-sw", x: X0 - 84, z: (RIVER_BOUNDS.minZ - 18) / 2, sx: 10, sy: 14, sz: -18 - RIVER_BOUNDS.minZ, kind: "cliff" },
   { id: "rim-wall", x: X0 + 88, z: -22, sx: 6, sy: 10, sz: 22, kind: "cliff" },
   { id: "camp-shed", x: X0 + 70, z: 60, sx: 14, sy: 4.5, sz: 7, kind: "building" },
   { id: "v-rock-1", x: X0 - 48, z: -58, sx: 4, sy: 2.4, sz: 4, kind: "rock" },
