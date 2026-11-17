@@ -792,12 +792,38 @@ function pileApproach(v: VehicleState, pile: Deposit) {
   const prev = approachLatch.get(v);
   if (prev && prev.id === pile.id && distTo(v.x, v.z, pile.x, pile.z) < 22) return { x: prev.x, z: prev.z };
   const foot = pileFootprint(Math.max(pile.tons, 0.4));
-  const dx = v.x - pile.x;
-  const dz = v.z - pile.z;
-  const ang = Math.atan2(dz, dx) + ((slotOf(v) % 5) - 2) * 0.38;
-  const rx = foot.rx + 2.2;
-  const rz = foot.rz + 2.2;
-  const spot = { id: pile.id, x: pile.x + Math.cos(ang) * rx, z: pile.z + Math.sin(ang) * rz };
+  if (!wheelLoader(v.defId)) {
+    const dx = v.x - pile.x;
+    const dz = v.z - pile.z;
+    const ang = Math.atan2(dz, dx) + ((slotOf(v) % 5) - 2) * 0.38;
+    const spot = { id: pile.id, x: pile.x + Math.cos(ang) * (foot.rx + 2.2), z: pile.z + Math.sin(ang) * (foot.rz + 2.2) };
+    approachLatch.set(v, spot);
+    return spot;
+  }
+  // On the open side of the heap, still close enough to scoop, with room for a truck outside it.
+  const bank = areaOf(pile.x) === "river" ? Math.sign(pile.x - RIVER.x) || 1 : 0;
+  const shift = ((slotOf(v) % 5) - 2) * 0.42;
+  let bestX = pile.x + (bank || 1) * (foot.rx + 2.2);
+  let bestZ = pile.z;
+  let bestS = -Infinity;
+  for (let i = 0; i < 24; i++) {
+    const ang = (i / 24) * Math.PI * 2 + shift;
+    const x = pile.x + Math.cos(ang) * (foot.rx + 2.2);
+    const z = pile.z + Math.sin(ang) * (foot.rz + 2.2);
+    if (pointBlocked(x, z, 1.8)) continue;
+    if (areaOf(pile.x) === "river" && otherBank(x, pile.x)) continue;
+    if (areaOf(pile.x) === "ridge" && x < -86) continue;
+    const pocketX = x + Math.cos(ang) * 12;
+    const pocketZ = z + Math.sin(ang) * 12;
+    let score = spotOpen(pocketX, pocketZ, x, z, pile.x, pile.z, 24) ? 100 : -20;
+    if (bank !== 0) score += Math.cos(ang) * bank * 28;
+    if (score > bestS) {
+      bestS = score;
+      bestX = x;
+      bestZ = z;
+    }
+  }
+  const spot = { id: pile.id, x: bestX, z: bestZ };
   approachLatch.set(v, spot);
   return spot;
 }
@@ -958,6 +984,31 @@ export const TRUCK_IDLE_SECONDS = 45;
 function holdForTruck(state: GameState, v: VehicleState): Control {
   const crossing = loaderToHeavyBank(state, v);
   if (crossing) return crossing;
+  // A full loader on the river walks to the open side before it waits, so the bay is not in the water.
+  if (wheelLoader(v.defId) && areaOf(v.x) === "river") {
+    const beside = state.vehicles.some(
+      (t) => DEFS[t.defId].receives && (t.operator || handsOn(state, t)) && sameArea(t, v) && !truckLeaving(t) && distTo(v.x, v.z, t.x, t.z) < pourReach(v.defId),
+    );
+    if (!beside) {
+      let vein: Deposit | null = null;
+      let bestD = 36;
+      for (const d of state.deposits) {
+        if (d.kind !== "vein" || d.tons < 1 || !ownsClaim(state, d.claim) || !sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
+        const dist = distTo(v.x, v.z, d.x, d.z);
+        if (dist < bestD) {
+          bestD = dist;
+          vein = d;
+        }
+      }
+      if (vein) {
+        const stand = loaderStand(v, vein);
+        if (distTo(v.x, v.z, stand.x, stand.z) > 5) {
+          v.status = "Setting up the load";
+          return seek(v, stand.x, stand.z, 3.2);
+        }
+      }
+    }
+  }
   // Nobody has taken this bucket for a while: tip it beside the machine as a pile.
   if (fillsHaulers(v.defId) && v.cargoOre && v.cargo > 0.15 && idleFor(state, v) > DIGGER_HOLD_SECONDS) {
     addPile(state, v.cargoOre, v.cargo, v.x + Math.sin(v.yaw) * 5, v.z + Math.cos(v.yaw) * 5, homeClaim(areaOf(v.x)), v.cargoPurity ?? 1);
@@ -985,7 +1036,7 @@ function loaderToHeavyBank(state: GameState, v: VehicleState): Control | null {
       best = d;
     }
   }
-  const face = best ? driveFace(best) : { x: RIVER.x + bank * (RIVER.halfWidth + 18), z: BRIDGE.z };
+  const face = best ? jobStand(v, best) : { x: RIVER.x + bank * (RIVER.halfWidth + 18), z: BRIDGE.z };
   v.status = "Crossing to the heavy haul's bank";
   return seek(v, face.x, face.z, 4);
 }
@@ -1102,7 +1153,7 @@ function workAnchor(state: GameState, digger: VehicleState) {
       }
     }
     if (vein) {
-      const face = driveFace(vein);
+      const face = wheelLoader(digger.defId) ? loaderStand(digger, vein) : driveFace(vein);
       return { id: vein.id, standX: face.x, standZ: face.z, keepX: vein.x, keepZ: vein.z };
     }
   }
@@ -1176,6 +1227,48 @@ function buildSpots(standX: number, standZ: number, keepX: number, keepZ: number
     }
   }
   return best ? [best] : [{ x: standX + Math.cos(prefer) * KEEP_CLEAR, z: standZ + Math.sin(prefer) * KEEP_CLEAR }];
+}
+
+/** A wheel loader stands on the open side of a face, where a truck can pull in beside it. */
+const standLatch = new WeakMap<VehicleState, { id: string; x: number; z: number }>();
+
+function loaderStand(v: VehicleState, vein: Deposit) {
+  const prev = standLatch.get(v);
+  if (prev && prev.id === vein.id && !pointBlocked(prev.x, prev.z, 2)) return { x: prev.x, z: prev.z, reach: 3.6 };
+  const ring = vein.radius + (v.defId === "hloader" ? 3.4 : 2.6);
+  const bank = areaOf(vein.x) === "river" ? Math.sign(vein.x - RIVER.x) || 1 : 0;
+  const shift = ((slotOf(v) % 5) - 2) * 0.42;
+  let bestX = vein.x + (bank || 1) * ring;
+  let bestZ = vein.z;
+  let bestS = -Infinity;
+  for (let i = 0; i < 24; i++) {
+    const ang = (i / 24) * Math.PI * 2 + shift;
+    const x = vein.x + Math.cos(ang) * ring;
+    const z = vein.z + Math.sin(ang) * ring;
+    if (pointBlocked(x, z, 2.2)) continue;
+    if (areaOf(vein.x) === "river" && otherBank(x, vein.x)) continue;
+    if (areaOf(vein.x) === "ridge" && (x < -86 || z < -48)) continue;
+    const pocketX = vein.x + Math.cos(ang) * (ring + 13);
+    const pocketZ = vein.z + Math.sin(ang) * (ring + 13);
+    const pocket = spotOpen(pocketX, pocketZ, x, z, vein.x, vein.z, 26);
+    let score = pocket ? 100 : -30;
+    if (bank !== 0) score += Math.cos(ang) * bank * 28;
+    for (const pad of PADS) {
+      if (Math.hypot(x - pad.x, z - pad.z) < pad.r + 8) score -= 70;
+      if (Math.hypot(pocketX - pad.x, pocketZ - pad.z) < pad.r + 8) score -= 40;
+    }
+    if (score > bestS) {
+      bestS = score;
+      bestX = x;
+      bestZ = z;
+    }
+  }
+  standLatch.set(v, { id: vein.id, x: bestX, z: bestZ });
+  return { x: bestX, z: bestZ, reach: 3.6 };
+}
+
+function jobStand(v: VehicleState, vein: Deposit) {
+  return wheelLoader(v.defId) ? loaderStand(v, vein) : driveFace(vein);
 }
 
 function loadingZone(state: GameState, digger: VehicleState): LoadZone {
@@ -2083,7 +2176,7 @@ function aiControl(state: GameState, index: number): Control {
       }
     } else if (def.scoop > 0 && v.operator && assignedClaim(v) != null) {
       const spot = bestVein(state, v, null);
-      const cut = spot ? driveFace(spot) : null;
+      const cut = spot ? jobStand(v, spot) : null;
       if (spot && cut) {
         const held = workHere(v, cut.x, cut.z, cut.reach);
         if (held) {
@@ -2096,7 +2189,7 @@ function aiControl(state: GameState, index: number): Control {
       } else label = "No material at assigned source";
     } else if (def.scoop > 0) {
       const spot = bestVein(state, v, null);
-      const cut = spot ? driveFace(spot) : null;
+      const cut = spot ? jobStand(v, spot) : null;
       if (spot && cut) {
         target = cut;
         arrive = Math.max(4, cut.reach * 0.7);
@@ -2422,8 +2515,15 @@ function performAction(
     }
     const pile = pileInReach(state, v);
     const spot = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
-    const cut = spot ? faceOf(spot) : null;
-    const faceNear = spot && cut && distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
+    let faceNear = false;
+    if (spot && wheelLoader(v.defId)) {
+      const stand = loaderStand(v, spot);
+      faceNear = distTo(v.x, v.z, stand.x, stand.z) <= stand.reach + 1.4;
+    }
+    if (spot && !faceNear) {
+      const cut = faceOf(spot);
+      faceNear = distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
+    }
     const source = faceNear && spot ? spot : pile && pile.tons > 0.05 ? pile : null;
     if (source) {
       if (!ownsClaim(state, source.claim)) return null;

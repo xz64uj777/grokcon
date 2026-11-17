@@ -318,6 +318,30 @@ describe("river crew", () => {
     assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
   }));
 
+  it("parks the payloader on the open side of the bar, away from the river", () => withSeededRandom(1, () => {
+    const s = freshGame("Open side");
+    s.cash = 1e6;
+    s.claims = [1, 4, 5];
+    s.watching = true;
+    buyVehicle(s, "loader");
+    buyVehicle(s, "heavy");
+    const bar = s.deposits.find((d) => d.id === "silver-bar")!;
+    const loader = s.vehicles.find((v) => v.defId === "loader")!;
+    const heavy = s.vehicles.find((v) => v.defId === "heavy")!;
+    toggleCrew(s, s.vehicles.indexOf(loader));
+    toggleCrew(s, s.vehicles.indexOf(heavy));
+    loader.x = bar.x + 4;
+    loader.z = bar.z;
+    loader.cargo = 0;
+    heavy.x = bar.x - 20;
+    heavy.z = bar.z + 8;
+    const input = { throttle: 0, steer: 0, action: false };
+    for (let i = 0; i < 30 * 20; i++) step(s, input, 1 / 30, false);
+    assert.ok(loader.x < bar.x - 3, `loader stayed on the river side of the bar: x=${(loader.x - X0).toFixed(1)} bar=${(bar.x - X0).toFixed(1)} ${loader.status}`);
+    assert.ok(Math.abs(loader.x - RIVER.x) > RIVER.halfWidth + 8, `loader is in the river lane at x=${(loader.x - X0).toFixed(1)}`);
+    assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed at x=${(heavy.x - X0).toFixed(1)} ${heavy.status}`);
+  }));
+
   it("keeps the heavy haul on its bank and brings the loader across", () => withSeededRandom(1, () => {
     const s = freshGame("Stay west");
     s.cash = 1e6;
