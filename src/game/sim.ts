@@ -36,7 +36,6 @@ import {
   boggedDown,
   BARGE_RATE,
   bridgeMaxLoad,
-  bridgeAllows,
   crossingWorth,
   otherBank,
   grossTons,
@@ -761,7 +760,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (!ownsClaim(state, d.claim)) continue;
     if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
     if (ore && d.ore !== ore) continue;
-    if (!sameArea(d, v)) continue;
+    if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
     const busy = crewNear(state, v, d.x, d.z, 16);
@@ -843,7 +842,7 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!ownsClaim(state, d.claim)) continue;
     if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
-    if (!sameArea(d, v)) continue;
+    if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
     if (v.defId === "skid" && loaderInArea(state, v) && d.tons < 8) continue;
     const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
@@ -905,9 +904,59 @@ function truckLeaving(t: VehicleState) {
 }
 
 function heavyReaches(t: VehicleState, digger: VehicleState) {
-  if (t.defId !== "heavy" || !otherBank(t.x, digger.x)) return true;
-  // Empty enough to use the bridge. A loaded heavy haul stays on its bank.
-  return bridgeAllows("heavy", t.cargo);
+  return t.defId !== "heavy" || !otherBank(t.x, digger.x);
+}
+
+/** The bank a heavy haul is working, when no dump truck is here to cross for. */
+function heavyBank(state: GameState, v: VehicleState): number | null {
+  if (areaOf(v.x) !== "river" || !fillsHaulers(v.defId)) return null;
+  let bank = 0;
+  let heavies = 0;
+  let dumps = 0;
+  for (const t of state.vehicles) {
+    if (!DEFS[t.defId].receives || !(t.operator || handsOn(state, t)) || areaOf(t.x) !== "river" || truckLeaving(t)) continue;
+    if (t.defId === "truck") dumps++;
+    if (t.defId === "heavy") {
+      heavies++;
+      bank = Math.sign(t.x - RIVER.x) || bank;
+    }
+  }
+  if (dumps > 0 || heavies === 0) return null;
+  return bank || -1;
+}
+
+function offHeavyBank(state: GameState, v: VehicleState, x: number) {
+  const bank = heavyBank(state, v);
+  if (bank == null) return false;
+  const side = Math.sign(x - RIVER.x);
+  return side !== 0 && side !== bank;
+}
+
+function holdForTruck(state: GameState, v: VehicleState): Control {
+  const crossing = loaderToHeavyBank(state, v);
+  if (crossing) return crossing;
+  v.status = truckWaitStatus(state, v);
+  return { throttle: 0, steer: 0, action: false, brake: 1 };
+}
+
+/** The loader crosses to the heavy's bank. The heavy haul does not use the bridge. */
+function loaderToHeavyBank(state: GameState, v: VehicleState): Control | null {
+  const bank = heavyBank(state, v);
+  if (bank == null || Math.sign(v.x - RIVER.x) === bank) return null;
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (d.kind !== "vein" || d.tons < 1 || !ownsClaim(state, d.claim) || !sameArea(d, v)) continue;
+    if (Math.sign(d.x - RIVER.x) !== bank) continue;
+    const dist = distTo(v.x, v.z, d.x, d.z);
+    if (dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  const face = best ? driveFace(best) : { x: RIVER.x + bank * (RIVER.halfWidth + 18), z: BRIDGE.z };
+  v.status = "Crossing to the heavy haul's bank";
+  return seek(v, face.x, face.z, 4);
 }
 
 function truckWaitStatus(state: GameState, v: VehicleState) {
@@ -1312,8 +1361,8 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
   if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
-  // The heavy haul stays put once the bed is over the bridge limit. Empty, it crosses to the loader.
-  if (v.defId === "heavy" && !onBridge(v.x, v.z, 1) && !bridgeAllows("heavy", v.cargo)) return { x: v.x, z: v.z };
+  // The heavy haul never starts a crossing. It sells on the bank it is already on.
+  if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
   const exitX = BRIDGE.x + (goal || -side || 1) * (BRIDGE.halfLength + 6);
   const exit = { x: exitX, z: BRIDGE.z };
   // Once you're on the crossing, finish it. Sliding off the planks used to
@@ -1358,13 +1407,13 @@ function commitVein(state: GameState, v: VehicleState, next: Deposit | null, sco
   const pin = facePin(state, v);
   if (pin) return pin;
   const prev = state.deposits.find((d) => d.id === crewJob.get(v));
-  if (veinUsable(state, v, prev) && next && prev.id !== next.id) {
+  if (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) && next && prev.id !== next.id) {
     const onIt = distTo(v.x, v.z, prev.x, prev.z) < prev.radius + 16;
     if (onIt || scoreOf(next) < scoreOf(prev) * 1.45) {
       return prev;
     }
   }
-  const pick = next ?? (veinUsable(state, v, prev) ? prev : null);
+  const pick = next ?? (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) ? prev : null);
   if (pick) crewJob.set(v, pick.id);
   else crewJob.delete(v);
   return pick;
@@ -1792,10 +1841,7 @@ function aiControl(state: GameState, index: number): Control {
     }
     if (full && v.cargoOre) {
       haulTarget();
-      if (!target) {
-        v.status = truckWaitStatus(state, v);
-        return { throttle: 0, steer: 0, action: false, brake: 1 };
-      }
+      if (!target) return holdForTruck(state, v);
     }
     const digHaul = target as { x: number; z: number } | null;
     if (digHaul) {
@@ -1810,6 +1856,7 @@ function aiControl(state: GameState, index: number): Control {
         if (d.kind !== "vein" || d.tons < 0.35) continue;
         if (!ownsClaim(state, d.claim)) continue;
         if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
+        if (offHeavyBank(state, v, d.x)) continue;
         const dist = distTo(v.x, v.z, d.x, d.z);
         const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
         if (s > veinS) {
@@ -1831,10 +1878,7 @@ function aiControl(state: GameState, index: number): Control {
           v.status = `Hauling ${ORES[v.cargoOre].name}`;
           return seek(v, pad.x, pad.z, arrive);
         }
-        if (fillsHaulers(def.id)) {
-          v.status = truckWaitStatus(state, v);
-          return { throttle: 0, steer: 0, action: false, brake: 1 };
-        }
+        if (fillsHaulers(def.id)) return holdForTruck(state, v);
       }
       const cut = driveFace(vein);
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -1897,14 +1941,10 @@ function aiControl(state: GameState, index: number): Control {
       return { ...ZERO, brake: 1 };
     }
   } else if (waitingTruck) {
-    v.status = truckWaitStatus(state, v);
-    return { throttle: 0, steer: 0, action: false, brake: 1 };
+    return holdForTruck(state, v);
   } else if (has && full) {
     haulTarget();
-    if (!target) {
-      v.status = truckWaitStatus(state, v);
-      return { throttle: 0, steer: 0, action: false, brake: 1 };
-    }
+    if (!target) return holdForTruck(state, v);
   } else if (def.dig > 0 || def.scoop > 0) {
     const vein = def.dig > 0 && !full ? bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null) : null;
     const pile = def.scoop > 0 && !full ? bestPile(state, v) : null;
@@ -1926,10 +1966,7 @@ function aiControl(state: GameState, index: number): Control {
     } else if (vein) {
       if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
         haulTarget();
-        if (!target) {
-          v.status = truckWaitStatus(state, v);
-          return { throttle: 0, steer: 0, action: false, brake: 1 };
-        }
+        if (!target) return holdForTruck(state, v);
         const truck = target as { x: number; z: number };
         v.status = label;
         return seek(v, truck.x, truck.z, arrive);

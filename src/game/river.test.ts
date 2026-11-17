@@ -74,6 +74,7 @@ describe("bridge", () => {
   });
   it("does not plan a heavy-haul crossing", () => {
     assert.equal(crossingWorth("heavy", 40, 0), false);
+    assert.equal(crossingWorth("heavy", 40, 2), false);
     assert.equal(crossingWorth("heavy", 40, 20), false);
     assert.equal(crossingWorth("hloader", 16, 0), false);
     assert.equal(crossingWorth("truck", 22, 0), true);
@@ -310,8 +311,8 @@ describe("river crew", () => {
     assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
   }));
 
-  it("sends the heavy to the payloader and leaves the payloader on the face", () => withSeededRandom(1, () => {
-    const s = freshGame("To the loader");
+  it("keeps the heavy haul on its bank and brings the loader across", () => withSeededRandom(1, () => {
+    const s = freshGame("Stay west");
     s.cash = 1e6;
     s.claims = [1, 4, 5];
     s.watching = true;
@@ -329,14 +330,11 @@ describe("river crew", () => {
     heavy.x = X0 - 30;
     heavy.z = -20;
     const input = { throttle: 0, steer: 0, action: false };
-    let crossed = false;
-    for (let i = 0; i < 30 * 50; i++) {
+    for (let i = 0; i < 30 * 40; i++) {
       step(s, input, 1 / 30, false);
-      assert.ok(loader.x > X0 + 8, `payloader left the east face for the heavy: ${loader.status} x=${(loader.x - X0).toFixed(1)}`);
-      assert.doesNotMatch(loader.status, /dump truck/i, loader.status);
-      if (heavy.x > X0 - RIVER.halfWidth) crossed = true;
+      assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy headed for the bridge: ${heavy.status} x=${(heavy.x - X0).toFixed(1)}`);
     }
-    assert.ok(crossed || /load bay|Lining up|In line/.test(heavy.status), `heavy never went to the loader: ${heavy.status} x=${(heavy.x - X0).toFixed(1)}`);
-    assert.match(loader.status, /heavy haul|Loading the Heavy/i, loader.status);
+    assert.ok(loader.x < X0 - RIVER.halfWidth, `loader stayed on the east face: ${loader.status} x=${(loader.x - X0).toFixed(1)}`);
+    assert.doesNotMatch(heavy.status, /bridge/i, heavy.status);
   }));
 });

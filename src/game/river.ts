@@ -132,6 +132,8 @@ export function otherBank(ax: number, bx: number) {
  * or at least half an empty bed. A heavy haul's few tonnes of allowance is not a plan.
  */
 export function crossingWorth(defId: string, capacity: number, cargo: number) {
+  // A few tonnes of bridge room is not a haul. The heavy stays on its bank.
+  if (defId === "heavy") return false;
   const legal = cargo > 0.2 ? cargo : bridgeMaxLoad(defId);
   if (!bridgeAllows(defId, legal)) return false;
   if (cargo > 0.2) return true;
