@@ -36,6 +36,7 @@ import {
   boggedDown,
   BARGE_RATE,
   bridgeMaxLoad,
+  bridgeAllows,
   crossingWorth,
   otherBank,
   grossTons,
@@ -903,13 +904,32 @@ function truckLeaving(t: VehicleState) {
   return cap > 0 && t.cargo >= cap * 0.9;
 }
 
+function heavyReaches(t: VehicleState, digger: VehicleState) {
+  if (t.defId !== "heavy" || !otherBank(t.x, digger.x)) return true;
+  // Empty enough to use the bridge. A loaded heavy haul stays on its bank.
+  return bridgeAllows("heavy", t.cargo);
+}
+
+function truckWaitStatus(state: GameState, v: VehicleState) {
+  let heavy = false;
+  let dump = false;
+  for (const t of state.vehicles) {
+    if (!DEFS[t.defId].receives || !(t.operator || handsOn(state, t)) || !sameArea(t, v) || truckLeaving(t)) continue;
+    if (!heavyReaches(t, v)) continue;
+    if (t.defId === "heavy") heavy = true;
+    else dump = true;
+  }
+  if (heavy && !dump) return "Waiting for the heavy haul";
+  return "Waiting for a ready dump truck";
+}
+
 function lineFor(state: GameState, digger: VehicleState) {
   const list = state.vehicles.filter((t) => {
     if (!DEFS[t.defId].receives || t === digger) return false;
     if (!(t.operator || handsOn(state, t))) return false;
     if (truckPartner.get(t) !== digger.uid) return false;
     if (!sameArea(t, digger)) return false;
-    if (t.defId === "heavy" && otherBank(t.x, digger.x)) return false;
+    if (!heavyReaches(t, digger)) return false;
     if (truckLeaving(t)) return false;
     return true;
   });
@@ -922,7 +942,7 @@ function diggerForTruck(state: GameState, v: VehicleState) {
   const open = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "hloader" || o.defId === "excavator") &&
     (o.operator || handsOn(state, o)) &&
-    !(v.defId === "heavy" && otherBank(v.x, o.x));
+    heavyReaches(v, o);
   const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
   if (prev && !truckLeaving(v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
   let best: VehicleState | null = null;
@@ -1292,8 +1312,8 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
   if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
-  // The heavy haul stays on its bank. A dozer or payloader is light enough to cross.
-  if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
+  // The heavy haul stays put once the bed is over the bridge limit. Empty, it crosses to the loader.
+  if (v.defId === "heavy" && !onBridge(v.x, v.z, 1) && !bridgeAllows("heavy", v.cargo)) return { x: v.x, z: v.z };
   const exitX = BRIDGE.x + (goal || -side || 1) * (BRIDGE.halfLength + 6);
   const exit = { x: exitX, z: BRIDGE.z };
   // Once you're on the crossing, finish it. Sliding off the planks used to
@@ -1708,15 +1728,7 @@ function aiControl(state: GameState, index: number): Control {
     if (!v.cargoOre) return;
     const loadsTrucks = fillsHaulers(def.id);
     if (loadsTrucks) {
-      const truck = nearestHauler(state, v, 480, true);
-      if (truck && !benchBetween(v.x, v.z, truck.x, truck.z)) {
-        target = truck;
-        arrive = 7.5;
-        label = `Loading ${DEFS[truck.defId].name}`;
-      }
-      // Loaders/excavators wait at the work area if their assigned truck is
-      // still arriving. They never abandon the face to chase a plant or a
-      // different truck; the truck moves into the fixed bay instead.
+      // The truck drives into the bay. The loader stays on the face.
       return;
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
@@ -1781,7 +1793,7 @@ function aiControl(state: GameState, index: number): Control {
     if (full && v.cargoOre) {
       haulTarget();
       if (!target) {
-        v.status = "Waiting for a ready dump truck";
+        v.status = truckWaitStatus(state, v);
         return { throttle: 0, steer: 0, action: false, brake: 1 };
       }
     }
@@ -1820,7 +1832,7 @@ function aiControl(state: GameState, index: number): Control {
           return seek(v, pad.x, pad.z, arrive);
         }
         if (fillsHaulers(def.id)) {
-          v.status = "Waiting for a ready dump truck";
+          v.status = truckWaitStatus(state, v);
           return { throttle: 0, steer: 0, action: false, brake: 1 };
         }
       }
@@ -1885,16 +1897,12 @@ function aiControl(state: GameState, index: number): Control {
       return { ...ZERO, brake: 1 };
     }
   } else if (waitingTruck) {
-    if (distTo(v.x, v.z, waitingTruck.x, waitingTruck.z) < 8) {
-      v.status = `Loading the ${DEFS[waitingTruck.defId].name}`;
-      return { throttle: 0, steer: 0, action: true, brake: 1 };
-    }
-    v.status = `Hauling to the ${DEFS[waitingTruck.defId].name}`;
-    return seek(v, waitingTruck.x, waitingTruck.z, 6);
+    v.status = truckWaitStatus(state, v);
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
   } else if (has && full) {
     haulTarget();
     if (!target) {
-      v.status = "Waiting for a ready dump truck";
+      v.status = truckWaitStatus(state, v);
       return { throttle: 0, steer: 0, action: false, brake: 1 };
     }
   } else if (def.dig > 0 || def.scoop > 0) {
@@ -1919,7 +1927,7 @@ function aiControl(state: GameState, index: number): Control {
       if (v.cargo > 0.25 && v.cargoOre && faceOutput(vein, "auto") !== v.cargoOre) {
         haulTarget();
         if (!target) {
-          v.status = "Waiting for a ready dump truck";
+          v.status = truckWaitStatus(state, v);
           return { throttle: 0, steer: 0, action: false, brake: 1 };
         }
         const truck = target as { x: number; z: number };

@@ -309,4 +309,34 @@ describe("river crew", () => {
     assert.ok(loader.cargo < 6, `loader kept the bucket ${loader.cargo.toFixed(1)} ${loader.status}`);
     assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
   }));
+
+  it("sends the heavy to the payloader and leaves the payloader on the face", () => withSeededRandom(1, () => {
+    const s = freshGame("To the loader");
+    s.cash = 1e6;
+    s.claims = [1, 4, 5];
+    s.watching = true;
+    buyVehicle(s, "loader");
+    buyVehicle(s, "heavy");
+    const gold = s.deposits.find((d) => d.id === "bar-gold")!;
+    const loader = s.vehicles.find((v) => v.defId === "loader")!;
+    const heavy = s.vehicles.find((v) => v.defId === "heavy")!;
+    toggleCrew(s, s.vehicles.indexOf(loader));
+    toggleCrew(s, s.vehicles.indexOf(heavy));
+    loader.x = gold.x;
+    loader.z = gold.z + 6;
+    loader.cargo = 8;
+    loader.cargoOre = "gold";
+    heavy.x = X0 - 30;
+    heavy.z = -20;
+    const input = { throttle: 0, steer: 0, action: false };
+    let crossed = false;
+    for (let i = 0; i < 30 * 50; i++) {
+      step(s, input, 1 / 30, false);
+      assert.ok(loader.x > X0 + 8, `payloader left the east face for the heavy: ${loader.status} x=${(loader.x - X0).toFixed(1)}`);
+      assert.doesNotMatch(loader.status, /dump truck/i, loader.status);
+      if (heavy.x > X0 - RIVER.halfWidth) crossed = true;
+    }
+    assert.ok(crossed || /load bay|Lining up|In line/.test(heavy.status), `heavy never went to the loader: ${heavy.status} x=${(heavy.x - X0).toFixed(1)}`);
+    assert.match(loader.status, /heavy haul|Loading the Heavy/i, loader.status);
+  }));
 });
