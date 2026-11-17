@@ -424,14 +424,25 @@ function nearestPad(state: GameState, x: number, z: number) {
 }
 
 function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
-  const head = lineFor(state, v)[0];
-  // No opportunistic fallback: following any nearby truck breaks the loading
-  // queue and makes loaders chase trucks that are arriving, queued, or leaving.
-  if (!head || !sameArea(head, v) || !bayReady.has(head)) return null;
-  if (operatedOnly && !head.operator && state.vehicles[state.active] !== head) return null;
-  const room = vehicleStats(head).capacity - head.cargo;
-  if (room < 0.4 || (head.cargoOre && v.cargoOre && head.cargoOre !== v.cargoOre)) return null;
-  return distTo(v.x, v.z, head.x, head.z) <= maxDist ? head : null;
+  const line = lineFor(state, v);
+  // The line head loads first when it is actually parked in the zone.
+  // If it is still out on the road, take the closest truck that is.
+  let best: VehicleState | null = null;
+  let bestD = maxDist;
+  for (const t of line) {
+    if (!sameArea(t, v) || !bayReady.has(t)) continue;
+    if (operatedOnly && !t.operator && state.vehicles[state.active] !== t) continue;
+    const room = vehicleStats(t).capacity - t.cargo;
+    if (room < 0.4 || (t.cargoOre && v.cargoOre && t.cargoOre !== v.cargoOre)) continue;
+    const d = distTo(v.x, v.z, t.x, t.z);
+    if (d > maxDist) continue;
+    if (t === line[0]) return t;
+    if (d < bestD) {
+      bestD = d;
+      best = t;
+    }
+  }
+  return best;
 }
 
 function closestDeposit(
@@ -912,160 +923,278 @@ function diggerForTruck(state: GameState, v: VehicleState) {
 }
 
 const dumpAnyway = new WeakSet<VehicleState>();
-/** Fixed loading bay assigned per truck: it stays put while the loader works. */
-const truckBayHome = new WeakMap<VehicleState, { diggerUid: string; x: number; z: number; ang: number }>();
 const plantTicket = new WeakMap<VehicleState, number>();
 let plantNo = 1;
-const TRUCK_PARK = 16;
+const bayReady = new WeakSet<VehicleState>();
+const bayCommit = new WeakSet<VehicleState>();
 
-/** Metres of open ground along a bay ray before the fence or a wall. */
-function alongRoom(x: number, z: number, ang: number) {
-  const b = boundsFor(x);
-  const pad = 8;
-  let room = 64;
-  const c = Math.cos(ang);
-  const s = Math.sin(ang);
-  if (c > 0.02) room = Math.min(room, (b.maxX - pad - x) / c);
-  else if (c < -0.02) room = Math.min(room, (x - (b.minX + pad)) / -c);
-  if (s > 0.02) room = Math.min(room, (b.maxZ - pad - z) / s);
-  else if (s < -0.02) room = Math.min(room, (z - (b.minZ + pad)) / -s);
-  for (let d = 4; d <= room; d += 4) {
-    if (pointBlocked(x + c * d, z + s * d, 3)) return Math.max(0, d - 4);
-  }
-  return Math.max(0, room);
-}
+/**
+ * A loading zone is two or three open parking spots beside the face the
+ * digger is on. It stays put while that face is worked, and is rebuilt
+ * when the digger moves on to a different face.
+ */
+type BaySpot = { x: number; z: number };
+type LoadZone = {
+  gen: number;
+  sourceId: string;
+  ax: number;
+  az: number;
+  standX: number;
+  standZ: number;
+  keepX: number;
+  keepZ: number;
+  spots: BaySpot[];
+};
 
-/** Prefer the digger's angle, but not one that runs the line through the fence or the river. */
-function openBayAngle(x: number, z: number, prefer: number) {
-  const bank = areaOf(x) === "river" ? Math.sign(x - RIVER.x) : 0;
-  const intoRiver = (a: number) => bank !== 0 && bank * Math.cos(a) < -0.15;
-  let best = prefer;
-  let bestRoom = intoRiver(prefer) ? -1 : alongRoom(x, z, prefer);
-  if (bestRoom >= 50) return prefer;
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    if (intoRiver(a)) continue;
-    const room = alongRoom(x, z, a);
-    if (room > bestRoom) {
-      bestRoom = room;
-      best = a;
-    }
-  }
-  return best;
-}
+const diggerZone = new WeakMap<VehicleState, LoadZone>();
+const truckSpot = new WeakMap<VehicleState, { gen: number; index: number }>();
 
-function bayPose(home: { x: number; z: number; ang: number }, place: number) {
-  const room = alongRoom(home.x, home.z, home.ang);
-  const back = Math.min(TRUCK_PARK + place * 14, Math.max(12, room - 8));
-  const x = home.x + Math.cos(home.ang) * back;
-  const z = home.z + Math.sin(home.ang) * back;
-  const yaw = Math.atan2(-Math.cos(home.ang), -Math.sin(home.ang));
-  const fx = -Math.sin(yaw);
-  const fz = -Math.cos(yaw);
-  const stageFar = Math.min(18, Math.max(6, room - back));
-  return { x, z, yaw, fx, fz, stageX: x + fx * stageFar, stageZ: z + fz * stageFar };
-}
+const ZONE_HOLD = 20;
+const KEEP_CLEAR = 16;
+const SPOT_GAP = 13;
 
-function bayHomeForTruck(state: GameState, v: VehicleState, digger: VehicleState) {
-  const prev = truckBayHome.get(v);
-  if (prev?.diggerUid === digger.uid) return prev;
-  let x = digger.x;
-  let z = digger.z;
-  let yaw = digger.yaw;
-  let away: { x: number; z: number } | null = null;
+function workAnchor(state: GameState, digger: VehicleState) {
   const def = DEFS[digger.defId];
   if (def.scoop > 0) {
     const pile = (digger.cargo > 0.15 && digger.cargoOre ? pileInReach(state, digger) : null) ?? bestPile(state, digger);
     if (pile) {
-      if (digger.cargo <= 0.15 || !digger.cargoOre) {
-        const spot = pileApproach(digger, pile);
-        x = spot.x;
-        z = spot.z;
-        yaw = Math.atan2(-(pile.x - x), -(pile.z - z));
-      }
-      away = { x: x - pile.x, z: z - pile.z };
+      const spot = pileApproach(digger, pile);
+      return { id: pile.id, standX: spot.x, standZ: spot.z, keepX: pile.x, keepZ: pile.z };
     }
-  } else if (def.dig > 0) {
-    const vein = bestVein(state, digger, digger.cargo > 0.15 ? digger.cargoOre : null);
+  }
+  if (def.dig > 0 || def.scoop > 0) {
+    // The face under the machine, not the next one it might drive to.
+    const ore = digger.cargo > 0.15 ? digger.cargoOre : null;
+    let vein: Deposit | null = null;
+    let bestD = 28;
+    for (const d of state.deposits) {
+      if (d.kind !== "vein" || d.tons < 0.5) continue;
+      if (!ownsClaim(state, d.claim)) continue;
+      if (!sameArea(d, digger)) continue;
+      if (ore && d.ore !== ore) continue;
+      const dist = distTo(digger.x, digger.z, d.x, d.z);
+      if (dist < bestD) {
+        bestD = dist;
+        vein = d;
+      }
+    }
     if (vein) {
-      if (digger.cargo <= 0.15 || !digger.cargoOre) {
-        const face = driveFace(vein);
-        x = face.x;
-        z = face.z;
-        yaw = faceOf(vein).yaw;
-      }
-      away = { x: x - vein.x, z: z - vein.z };
+      const face = driveFace(vein);
+      return { id: vein.id, standX: face.x, standZ: face.z, keepX: vein.x, keepZ: vein.z };
     }
   }
-  const fx = -Math.sin(yaw);
-  const fz = -Math.cos(yaw);
-  const side = slotOf(digger) % 2 === 0 ? 1 : -1;
-  let ang = areaOf(x) === "mountain"
-    ? Math.atan2(fx * side, -fz * side)
-    : away && Math.hypot(away.x, away.z) > 0.1
-      ? Math.atan2(away.z, away.x)
-      : Math.atan2(Math.cos(yaw), Math.sin(yaw));
-  if (areaOf(x) === "river") {
-    const riverBankSide = Math.sign(x - RIVER.x);
-    const bridgeSide = Math.sign(z - BRIDGE.z);
-    let safeX = 0;
-    let safeZ = 0;
-    if (riverBankSide !== 0 && Math.abs(x - RIVER.x) < 70 && riverBankSide * Math.cos(ang) < -0.05) safeX = riverBankSide;
-    if (bridgeSide !== 0 && Math.abs(z - BRIDGE.z) < 70 && bridgeSide * Math.sin(ang) < -0.05) safeZ = bridgeSide;
-    if (safeX || safeZ) ang = Math.atan2(safeZ, safeX);
-  }
-  if (areaOf(x) === "river") ang = openBayAngle(x, z, ang);
-  const home = {
-    diggerUid: digger.uid,
-    x,
-    z,
-    ang,
-  };
-  truckBayHome.set(v, home);
-  return home;
+  return { id: `at:${digger.uid}`, standX: digger.x, standZ: digger.z, keepX: digger.x, keepZ: digger.z };
 }
 
-const bayReady = new WeakSet<VehicleState>();
-const bayCommit = new WeakSet<VehicleState>();
+/** Open ground a truck can park on: off the pile, off the river, inside the fence. */
+function spotOpen(x: number, z: number, standX: number, standZ: number, keepX: number, keepZ: number, pour: number) {
+  if (Math.hypot(x - keepX, z - keepZ) < KEEP_CLEAR) return false;
+  const fromStand = Math.hypot(x - standX, z - standZ);
+  if (fromStand < 8 || fromStand > pour) return false;
+  if (areaOf(x) === "ridge" && x < -88) return false;
+  if (areaOf(standX) === "river") {
+    if (otherBank(x, standX)) return false;
+    if (Math.abs(x - RIVER.x) < RIVER.halfWidth + 6) return false;
+  }
+  const b = boundsFor(x);
+  if (x < b.minX + 8 || x > b.maxX - 8 || z < b.minZ + 8 || z > b.maxZ - 8) return false;
+  for (const pad of PADS) {
+    if (Math.hypot(x - pad.x, z - pad.z) < pad.r + 6) return false;
+  }
+  return !pointBlocked(x, z, 3.4);
+}
 
-/** Stay off the pile. The only way into the bay is from the open side, backing in. */
-function enterBay(
-  v: VehicleState,
-  bay: { x: number; z: number; yaw: number; fx: number; fz: number; stageX: number; stageZ: number },
-  place: number,
-): Control {
-  const along = (v.x - bay.x) * bay.fx + (v.z - bay.z) * bay.fz;
-  const lateral = -(v.x - bay.x) * bay.fz + (v.z - bay.z) * bay.fx;
-  const err = Math.atan2(Math.sin(bay.yaw - v.yaw), Math.cos(bay.yaw - v.yaw));
+function buildSpots(standX: number, standZ: number, keepX: number, keepZ: number, pour: number): BaySpot[] {
+  let prefer = Math.atan2(standZ - keepZ, standX - keepX);
+  if (!Number.isFinite(prefer)) prefer = 0;
+  if (areaOf(standX) === "river") {
+    const bank = Math.sign(standX - RIVER.x) || 1;
+    if (bank * Math.cos(prefer) < 0.2) prefer = Math.atan2(Math.sin(prefer), bank * 0.45);
+  }
+  const found: { x: number; z: number; score: number }[] = [];
+  for (let i = 0; i < 24; i++) {
+    const ang = prefer + (i / 24) * Math.PI * 2;
+    const turn = Math.abs(Math.atan2(Math.sin(ang - prefer), Math.cos(ang - prefer)));
+    for (const r of [14, 16, 12, 18, 20]) {
+      if (r > pour) continue;
+      const x = standX + Math.cos(ang) * r;
+      const z = standZ + Math.sin(ang) * r;
+      if (!spotOpen(x, z, standX, standZ, keepX, keepZ, pour)) continue;
+      found.push({ x, z, score: turn * 8 + r * 0.04 });
+      break;
+    }
+  }
+  found.sort((a, b) => a.score - b.score);
+  const picked: BaySpot[] = [];
+  for (const c of found) {
+    if (picked.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < SPOT_GAP)) continue;
+    picked.push({ x: c.x, z: c.z });
+    if (picked.length >= 3) break;
+  }
+  if (picked.length > 0) return picked;
+  let best: BaySpot | null = null;
+  let bestD = Infinity;
+  for (let i = 0; i < 16; i++) {
+    const ang = (i / 16) * Math.PI * 2;
+    for (let r = KEEP_CLEAR; r <= 36; r += 2) {
+      const x = keepX + Math.cos(ang) * r;
+      const z = keepZ + Math.sin(ang) * r;
+      if (areaOf(x) === "ridge" && x < -88) continue;
+      if (areaOf(standX) === "river" && otherBank(x, standX)) continue;
+      const b = boundsFor(x);
+      if (x < b.minX + 8 || x > b.maxX - 8 || z < b.minZ + 8 || z > b.maxZ - 8) continue;
+      if (pointBlocked(x, z, 3.2)) continue;
+      const d = Math.hypot(x - standX, z - standZ);
+      if (d < bestD) {
+        bestD = d;
+        best = { x, z };
+      }
+      break;
+    }
+  }
+  return best ? [best] : [{ x: standX + Math.cos(prefer) * KEEP_CLEAR, z: standZ + Math.sin(prefer) * KEEP_CLEAR }];
+}
+
+function loadingZone(state: GameState, digger: VehicleState): LoadZone {
+  const a = workAnchor(state, digger);
+  const prev = diggerZone.get(digger);
+  if (prev && prev.spots.length > 0) {
+    const drifted = Math.hypot(prev.ax - a.standX, prev.az - a.standZ);
+    if (drifted < ZONE_HOLD) return prev;
+    // The spots belong to this face while it still has ore. They move when
+    // the digger sets up on the next one.
+    const still = state.deposits.find((d) => d.id === prev.sourceId);
+    if (still && still.tons > 1) return prev;
+    if (distTo(digger.x, digger.z, a.standX, a.standZ) > 14) return prev;
+  }
+  const pour = digger.defId === "excavator" ? 24 : 20;
+  const zone: LoadZone = {
+    gen: (prev?.gen ?? 0) + 1,
+    sourceId: a.id,
+    ax: a.standX,
+    az: a.standZ,
+    standX: a.standX,
+    standZ: a.standZ,
+    keepX: a.keepX,
+    keepZ: a.keepZ,
+    spots: buildSpots(a.standX, a.standZ, a.keepX, a.keepZ, pour),
+  };
+  diggerZone.set(digger, zone);
+  return zone;
+}
+
+/** How close the straight path comes to the material. */
+function chordGap(x0: number, z0: number, x1: number, z1: number, kx: number, kz: number) {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const len2 = dx * dx + dz * dz;
+  if (len2 < 1) return Math.hypot(x0 - kx, z0 - kz);
+  let t = ((kx - x0) * dx + (kz - z0) * dz) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x0 + dx * t - kx, z0 + dz * t - kz);
+}
+
+/** A parking spot on the truck's own side of the face, when the shared spots are across the pile. */
+function sideSpot(v: VehicleState, zone: LoadZone, pour: number): BaySpot | null {
+  const ang = Math.atan2(v.z - zone.keepZ, v.x - zone.keepX);
+  for (const r of [16, 18, 14, 20, 22]) {
+    const x = zone.keepX + Math.cos(ang) * r;
+    const z = zone.keepZ + Math.sin(ang) * r;
+    if (!spotOpen(x, z, zone.standX, zone.standZ, zone.keepX, zone.keepZ, pour)) continue;
+    if (chordGap(v.x, v.z, x, z, zone.keepX, zone.keepZ) < 12.5) continue;
+    return { x, z };
+  }
+  return null;
+}
+
+/** The truck's own spot in the digger's zone. Latched until the zone moves. */
+function spotForTruck(state: GameState, v: VehicleState, digger: VehicleState, place: number): BaySpot {
+  const zone = loadingZone(state, digger);
+  const spots = zone.spots;
+  const used = new Set<number>();
+  for (const t of lineFor(state, digger)) {
+    if (t === v) continue;
+    const hold = truckSpot.get(t);
+    if (hold && hold.gen === zone.gen && hold.index < spots.length) used.add(hold.index);
+  }
+  const hold = truckSpot.get(v);
+  if (hold && hold.gen === zone.gen && hold.index < spots.length && !used.has(hold.index)) return spots[hold.index]!;
+  let bestI = 0;
+  let bestS = Infinity;
+  const scoreOf = (i: number) => {
+    const s = spots[i]!;
+    return place === 0 ? Math.hypot(s.x - zone.standX, s.z - zone.standZ) : Math.hypot(s.x - v.x, s.z - v.z);
+  };
+  for (let i = 0; i < spots.length; i++) {
+    if (used.has(i)) continue;
+    const score = scoreOf(i);
+    if (score < bestS) {
+      bestS = score;
+      bestI = i;
+    }
+  }
+  if (bestS === Infinity) {
+    for (let i = 0; i < spots.length; i++) {
+      const score = scoreOf(i);
+      if (score < bestS) {
+        bestS = score;
+        bestI = i;
+      }
+    }
+  }
+  const chosen = spots[bestI]!;
+  if (chordGap(v.x, v.z, chosen.x, chosen.z, zone.keepX, zone.keepZ) < 10) {
+    let alt = -1;
+    let altD = Infinity;
+    for (let i = 0; i < spots.length; i++) {
+      if (used.has(i)) continue;
+      const s = spots[i]!;
+      if (chordGap(v.x, v.z, s.x, s.z, zone.keepX, zone.keepZ) < 12.5) continue;
+      const d = Math.hypot(s.x - v.x, s.z - v.z);
+      if (d < altD) {
+        altD = d;
+        alt = i;
+      }
+    }
+    if (alt >= 0) bestI = alt;
+    else {
+      const pour = digger.defId === "excavator" ? 28 : 26;
+      const extra = sideSpot(v, zone, pour);
+      if (extra) {
+        spots.push(extra);
+        bestI = spots.length - 1;
+      }
+    }
+  }
+  truckSpot.set(v, { gen: zone.gen, index: bestI });
+  return spots[bestI]!;
+}
+
+/** Drive onto the open spot and stop. A stopped truck in its spot is the bay. */
+function enterBay(v: VehicleState, spot: BaySpot, place: number, keepX: number, keepZ: number): Control {
   const label = place === 0 ? "In the load bay" : `In line (${place + 1})`;
-  const atStage = distTo(v.x, v.z, bay.stageX, bay.stageZ) < 5.5;
-  // At the lineup point. The old check wanted a perfect reverse, so a truck sitting on that point never counted.
-  if (atStage) bayCommit.add(v);
-  if (!bayCommit.has(v)) {
-    v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
-    return seek(v, bay.stageX, bay.stageZ, 3.2);
-  }
-  if (!atStage && Math.abs(lateral) > 8) {
-    bayCommit.delete(v);
-    v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
-    return seek(v, bay.stageX, bay.stageZ, 3.2);
-  }
-  if (atStage && Math.abs(v.speed) < 0.6) {
+  const dist = distTo(v.x, v.z, spot.x, spot.z);
+  const fromKeep = Math.hypot(v.x - keepX, v.z - keepZ);
+  // Close to the spot, and still outside the pile. An 8 m bubble reached back into the heap.
+  const close = dist < 4.5 && fromKeep > 12.5;
+  const was = bayCommit.has(v);
+  if (close) bayCommit.add(v);
+  else if (dist > 16) bayCommit.delete(v);
+  if (was && close && Math.abs(v.speed) < 0.7) {
     bayReady.add(v);
     v.status = label;
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
-  if (Math.abs(err) > 0.3) {
-    v.status = "Turning to back in";
-    return { throttle: 0, steer: clamp(err * 1.6, -1, 1), action: false, brake: 0.85 };
+  bayReady.delete(v);
+  v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
+  if (close) return { throttle: 0, steer: 0, action: false, brake: 1 };
+  // Point at the spot before rolling. Turning on the move swings a truck into the pile.
+  if (fromKeep < 22 && dist > 2.5) {
+    const desired = Math.atan2(-(spot.x - v.x), -(spot.z - v.z));
+    const err = Math.atan2(Math.sin(desired - v.yaw), Math.cos(desired - v.yaw));
+    if (Math.abs(err) > 0.35) return { throttle: 0, steer: clamp(err * 1.8, -1, 1), action: false, brake: 0.75 };
   }
-  if (along > 2.4) {
-    v.status = place === 0 ? "Backing into the bay" : `In line (${place + 1})`;
-    return { throttle: -0.32, steer: clamp(-err * 0.6, -1, 1), action: false, brake: 0 };
-  }
-  bayReady.add(v);
-  v.status = label;
-  return { throttle: 0, steer: 0, action: false, brake: 1 };
+  return seek(v, spot.x, spot.z, 3.2);
 }
 
 function goingToWash(state: GameState, t: VehicleState) {
@@ -1705,7 +1834,8 @@ function aiControl(state: GameState, index: number): Control {
       lineTicket.delete(v);
       truckPartner.delete(v);
       bayReady.delete(v);
-      truckBayHome.delete(v);
+      bayCommit.delete(v);
+      truckSpot.delete(v);
       dumpAnyway.add(v);
       const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
       if (pad) {
@@ -1727,7 +1857,8 @@ function aiControl(state: GameState, index: number): Control {
       if (digger) {
         const line = lineFor(state, digger);
         const place = Math.max(0, line.findIndex((t) => t === v));
-        return enterBay(v, bayPose(bayHomeForTruck(state, v, digger), place), place);
+        const zone = loadingZone(state, digger);
+        return enterBay(v, spotForTruck(state, v, digger, place), place, zone.keepX, zone.keepZ);
       }
       v.status = "Needs a payloader";
       return { ...ZERO, brake: 1 };
@@ -2587,10 +2718,9 @@ function pourIntoTrucks(state: GameState) {
     if (v.manual) return;
     if (!v.operator && !(v === state.vehicles[state.active] && !state.watching)) return;
     if (v.cargo < 0.15 || !v.cargoOre) return;
-    const head = lineFor(state, v)[0];
     const reach = v.defId === "excavator" ? 26 : 22;
-    if (!head || !bayReady.has(head)) return;
-    if (distTo(v.x, v.z, head.x, head.z) <= reach) loadTruck(state, index, reach, head);
+    const truck = nearestHauler(state, v, reach, true);
+    if (truck) loadTruck(state, index, reach, truck);
   });
 }
 
