@@ -60,19 +60,22 @@ describe("bridge", () => {
     assert.ok(bridgeMaxLoad("heavy") < 40, "the heavy hauler can't cross full");
   });
   it("lets every machine cross empty except the track crusher", () => {
-    for (const id of ["pickup", "skid", "dozer", "loader", "truck", "excavator", "heavy"]) assert.ok(bridgeAllows(id, 0), id);
+    for (const id of ["pickup", "skid", "dozer", "loader", "hloader", "truck", "excavator", "heavy"]) assert.ok(bridgeAllows(id, 0), id);
     assert.ok(!bridgeAllows("crusher", 0));
   });
   it("gives the dozer and the payloader room on a 32 t bridge", () => {
     assert.equal(BRIDGE.limit, 32);
     assert.ok(bridgeAllows("dozer", 0));
     assert.ok(bridgeAllows("loader", 8));
+    assert.ok(bridgeAllows("hloader", 0));
+    assert.ok(!bridgeAllows("hloader", 16), "a full heavy-loader bucket is over the bridge limit");
     assert.ok(crossingWorth("dozer", 0, 0));
     assert.ok(crossingWorth("loader", 8, 0));
   });
   it("does not plan a heavy-haul crossing", () => {
     assert.equal(crossingWorth("heavy", 40, 0), false);
     assert.equal(crossingWorth("heavy", 40, 20), false);
+    assert.equal(crossingWorth("hloader", 16, 0), false);
     assert.equal(crossingWorth("truck", 22, 0), true);
     assert.equal(crossingWorth("truck", 22, 20), true);
     assert.equal(crossingWorth("truck", 22, 22), false);
@@ -280,6 +283,30 @@ describe("river crew", () => {
     assert.ok(hauled > 2, `truck ${truck.cargo.toFixed(1)} (${truck.status}) heavy ${heavy.cargo.toFixed(1)} (${heavy.status}) ex ${ex.status} loader ${loader.status}`);
     assert.ok(heavy.cargo > 1, `heavy never received loader material: ${heavy.status}; loader ${loader.cargo.toFixed(1)} ${loader.status}`);
     assert.ok(loader.cargo < 6.6, `loader kept its initial cargo: ${loader.cargo.toFixed(1)} ${loader.status}`);
+    assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
+  }));
+
+  it("a heavy loader puts one big bucket into the heavy haul", () => withSeededRandom(1, () => {
+    const s = freshGame("Heavy loader");
+    s.cash = 1e6;
+    s.claims = [1, 4, 5];
+    s.watching = true;
+    assert.equal(buyVehicle(s, "hloader"), "");
+    assert.equal(buyVehicle(s, "heavy"), "");
+    const bar = s.deposits.find((d) => d.id === "silver-bar")!;
+    const loader = s.vehicles.find((v) => v.defId === "hloader")!;
+    const heavy = s.vehicles.find((v) => v.defId === "heavy")!;
+    for (const v of [loader, heavy]) toggleCrew(s, s.vehicles.indexOf(v));
+    loader.x = bar.x + 6;
+    loader.z = bar.z;
+    loader.cargo = 14;
+    loader.cargoOre = "silver";
+    heavy.x = bar.x + 4;
+    heavy.z = bar.z - 18;
+    const input = { throttle: 0, steer: 0, action: false };
+    for (let i = 0; i < 30 * 50; i++) step(s, input, 1 / 30, false);
+    assert.ok(heavy.cargo > 8, `heavy ${heavy.cargo.toFixed(1)} ${heavy.status}; loader ${loader.cargo.toFixed(1)} ${loader.status}`);
+    assert.ok(loader.cargo < 6, `loader kept the bucket ${loader.cargo.toFixed(1)} ${loader.status}`);
     assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
   }));
 });

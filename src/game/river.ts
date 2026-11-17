@@ -73,6 +73,7 @@ export const MACHINE_TONS: Record<string, number> = {
   skid: 4,
   dozer: 21,
   loader: 17,
+  hloader: 27,
   truck: 12,
   excavator: 22,
   heavy: 28,

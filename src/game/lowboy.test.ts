@@ -14,6 +14,7 @@ describe("lowboy deck space", () => {
     assert.equal(deckSpots("truck"), 3);
     assert.equal(deckSpots("excavator"), 3);
     assert.equal(deckSpots("heavy"), 3);
+    assert.equal(deckSpots("hloader"), 3);
     assert.equal(deckSpots("crusher"), null);
     assert.equal(deckSpots("lowboy"), null);
   });
@@ -24,6 +25,7 @@ describe("lowboy deck space", () => {
     assert.equal(deckFit(["skid"], "dozer"), "");
     assert.equal(deckFit(["dozer"], "loader"), "Not enough deck left for that machine.");
     assert.equal(deckFit(["heavy"], "skid"), "Not enough deck left for that machine.");
+    assert.equal(deckFit(["hloader"], "skid"), "Not enough deck left for that machine.");
     assert.equal(deckFit(["skid", "pickup"], "skid"), "The deck already has two machines.");
     assert.equal(deckFit([], "crusher"), "That machine does not fit on the lowboy.");
     assert.equal(spotsUsed(["skid", "dozer"]), 3);

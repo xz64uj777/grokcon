@@ -281,7 +281,7 @@ export function bridgeClock(state: GameState) {
 // ---- Round 7, 9: tires and fuel ---------------------------------------------
 /** US gallons in a full tank. The crusher burns none. The claim truck and light plants take gas. Everything else, including the skid steer, takes diesel. */
 export function tankGallons(v: VehicleState) {
-  return ({ pickup: 26, skid: 25, light: 12, dozer: 115, loader: 100, excavator: 105, truck: 80, heavy: 230, lowboy: 155, crusher: 0 } as Record<string, number>)[v.defId] ?? 80;
+  return ({ pickup: 26, skid: 25, light: 12, dozer: 115, loader: 100, hloader: 170, excavator: 105, truck: 80, heavy: 230, lowboy: 155, crusher: 0 } as Record<string, number>)[v.defId] ?? 80;
 }
 export function fuelKind(id: string): "gas" | "diesel" | "none" {
   if (id === "crusher") return "none";
@@ -318,7 +318,7 @@ export function burn(v: VehicleState, dt: number) {
   return working ? dt / (DAY * 1.5) : 0;
 }
 export function tireCost(v: VehicleState) {
-  return ({ pickup: 900, skid: 1400, loader: 6000, truck: 4800, heavy: 9000, lowboy: 7200 } as Record<string, number>)[v.defId] ?? 0;
+  return ({ pickup: 900, skid: 1400, loader: 6000, hloader: 11000, truck: 4800, heavy: 9000, lowboy: 7200 } as Record<string, number>)[v.defId] ?? 0;
 }
 /** Tread lasts about 25 km. Worn tires can go flat. */
 export function wear(tread: number, metres: number) {

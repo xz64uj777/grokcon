@@ -445,27 +445,32 @@ export function createWorld(host: HTMLElement): World {
       ripper.visible = false;
       root.add(ripper);
       box(root, 0.45, 0.35, 0.7, 0, 0.7, 1.45, trim);
-    } else if (id === "loader") {
-      wheels.push(addWheel(root, -0.95, 0.62, -1.15), addWheel(root, 0.95, 0.62, -1.15));
-      wheels.push(addWheel(root, -0.95, 0.62, 1.25), addWheel(root, 0.95, 0.62, 1.25));
-      box(root, 1.7, 0.7, 2.8, 0, 1.15, 0.2, body);
-      box(root, 1.4, 0.9, 1.2, 0, 1.85, 0.55, cabMat);
-      box(root, 1.15, 0.5, 1.0, 0, 1.95, 0.5, glass, false);
-      box(root, 0.16, 0.16, 2.1, -0.45, 1.55, -1.15, steel);
-      box(root, 0.16, 0.16, 2.1, 0.45, 1.55, -1.15, steel);
+    } else if (id === "loader" || id === "hloader") {
+      const big = id === "hloader";
+      const sc = big ? 1.22 : 1;
+      const paintBody = big ? orange : body;
+      wheels.push(addWheel(root, -0.95 * sc, 0.62 * sc, -1.15 * sc), addWheel(root, 0.95 * sc, 0.62 * sc, -1.15 * sc));
+      wheels.push(addWheel(root, -0.95 * sc, 0.62 * sc, 1.25 * sc), addWheel(root, 0.95 * sc, 0.62 * sc, 1.25 * sc));
+      if (big) wheels.push(addWheel(root, -0.95 * sc, 0.62 * sc, 2.05 * sc), addWheel(root, 0.95 * sc, 0.62 * sc, 2.05 * sc));
+      box(root, 1.7 * sc, 0.7 * sc, (big ? 3.5 : 2.8) * sc, 0, 1.15 * sc, 0.2 * sc, paintBody);
+      box(root, 1.4 * sc, 0.9 * sc, 1.2 * sc, 0, 1.85 * sc, (big ? 0.85 : 0.55) * sc, cabMat);
+      box(root, 1.15 * sc, 0.5 * sc, 1.0 * sc, 0, 1.95 * sc, (big ? 0.8 : 0.5) * sc, glass, false);
+      box(root, 0.16 * sc, 0.16 * sc, 2.1 * sc, -0.45 * sc, 1.55 * sc, -1.15 * sc, steel);
+      box(root, 0.16 * sc, 0.16 * sc, 2.1 * sc, 0.45 * sc, 1.55 * sc, -1.15 * sc, steel);
       bucket = new THREE.Group();
-      bucket.position.set(0, 0.7, -2.15);
-      box(bucket, 2.05, 0.7, 0.7, 0, 0.25, 0, steel);
-      // Wide loader cutting lip with five distinct replaceable-looking teeth.
-      box(bucket, 2.08, 0.12, 0.16, 0, -0.08, -0.38, paintDark);
-      for (let i = 0; i < 7; i++) {
-        const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.09, 0.28, 5)), steel);
+      bucket.position.set(0, 0.7 * sc, -2.15 * sc);
+      box(bucket, (big ? 2.45 : 2.05) * sc, 0.7 * sc, 0.7 * sc, 0, 0.25 * sc, 0, steel);
+      box(bucket, (big ? 2.48 : 2.08) * sc, 0.12 * sc, 0.16 * sc, 0, -0.08 * sc, -0.38 * sc, paintDark);
+      const teeth = big ? 8 : 7;
+      const span = big ? 1.05 : 0.82;
+      for (let i = 0; i < teeth; i++) {
+        const tooth = new THREE.Mesh(track(new THREE.ConeGeometry(0.09 * sc, 0.28 * sc, 5)), steel);
         tooth.rotation.x = -Math.PI / 2;
-        tooth.position.set(-0.82 + i * 0.273, -0.11, -0.49);
+        tooth.position.set((-span + (i * (span * 2)) / (teeth - 1)) * sc, -0.11 * sc, -0.49 * sc);
         bucket.add(tooth);
       }
       root.add(bucket);
-      load = makeCargoLoad(bucket, 1.7, 0.35, 0.45, 0, 0.55, 0.05);
+      load = makeCargoLoad(bucket, 1.7 * sc, (big ? 0.5 : 0.35) * sc, 0.45 * sc, 0, 0.55 * sc, 0.05);
     } else if (id === "excavator") {
       box(root, 0.45, 0.4, 2.6, -0.7, 0.4, 0.1, cabMat);
       box(root, 0.45, 0.4, 2.6, 0.7, 0.4, 0.1, cabMat);
@@ -648,7 +653,7 @@ export function createWorld(host: HTMLElement): World {
     if (id === "pickup") addLamps(root, 1.02, -2.22, 0.58);
     else if (id === "skid") addLamps(root, 1.72, -0.22, 0.42);
     else if (id === "dozer") addLamps(root, 2.08, -0.42, 0.46);
-    else if (id === "loader") addLamps(root, 2.42, 0.05, 0.5);
+    else if (id === "loader" || id === "hloader") addLamps(root, id === "hloader" ? 2.85 : 2.42, 0.05, id === "hloader" ? 0.7 : 0.5);
     else if (id === "excavator" && house) addLamps(house, 1.85, -1.08, 0.42);
     else if (id === "lowboy") addLamps(root, 1.5, -5.2, 0.95);
 
@@ -1435,7 +1440,7 @@ export function createWorld(host: HTMLElement): World {
     // Dust trails behind every moving machine (pooled; the player kicks up the most).
     state.vehicles.forEach((v, vi) => {
       const sp = Math.abs(v.speed);
-      const digging = v.busy && (v.defId === "dozer" || v.defId === "excavator" || v.defId === "skid" || v.defId === "loader");
+      const digging = v.busy && (v.defId === "dozer" || v.defId === "excavator" || v.defId === "skid" || v.defId === "loader" || v.defId === "hloader");
       if (sp < 2.2 && !digging) return;
       const fx = -Math.sin(v.yaw);
       const fz = -Math.cos(v.yaw);

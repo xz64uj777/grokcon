@@ -9,6 +9,7 @@ export type VehicleId =
   | "skid"
   | "dozer"
   | "loader"
+  | "hloader"
   | "excavator"
   | "truck"
   | "heavy"

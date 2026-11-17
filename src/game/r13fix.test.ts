@@ -141,11 +141,14 @@ test("a machine goes around one sitting in its way", () => {
 test("the yard sells extra diggers and trucks, each one costing more", () => {
   const s = freshGame("Fleet");
   s.cash = 2_000_000;
-  for (const id of ["dozer", "loader", "excavator", "heavy"] as const) {
+  for (const id of ["dozer", "excavator", "heavy", "hloader"] as const) {
     assert.equal(buyVehicle(s, id), "");
     assert.equal(buyVehicle(s, id), "");
     assert.match(buyVehicle(s, id), /yard limit/);
   }
+  for (let i = 0; i < 4; i++) assert.equal(buyVehicle(s, "loader"), "");
+  assert.match(buyVehicle(s, "loader"), /yard limit/);
+  assert.equal(s.vehicles.filter((v) => v.defId === "loader").length, 4);
   const before = s.cash;
   assert.equal(buyVehicle(s, "truck"), "");
   const first = before - s.cash;

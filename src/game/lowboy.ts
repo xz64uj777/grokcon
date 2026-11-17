@@ -12,7 +12,7 @@ export const DECK_SPOTS = 3;
 export function deckSpots(defId: string): number | null {
   if (defId === "pickup" || defId === "skid") return 1;
   if (defId === "dozer" || defId === "loader") return 2;
-  if (defId === "truck" || defId === "excavator" || defId === "heavy") return 3;
+  if (defId === "truck" || defId === "excavator" || defId === "heavy" || defId === "hloader") return 3;
   return null;
 }
 

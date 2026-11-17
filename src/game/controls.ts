@@ -35,7 +35,7 @@ export type MachineKind = "skid" | "excavator" | "loader" | "dozer" | "truck" | 
 export function machineKind(defId: string): MachineKind {
   if (defId === "skid") return "skid";
   if (defId === "excavator") return "excavator";
-  if (defId === "loader") return "loader";
+  if (defId === "loader" || defId === "hloader") return "loader";
   if (defId === "dozer") return "dozer";
   if (defId === "truck" || defId === "heavy") return "truck";
   return "car";
@@ -241,7 +241,11 @@ export function controlHelp(defId: string, parked = false): HelpCard {
         ? { title: "Excavator · park on", phoneLeft: "Slew ↔ · dipper ↕", phoneRight: "Boom up ↑ · curl ← dump →" }
         : { title: "Excavator", phoneLeft: "Drive ↕ · steer ↔", phoneRight: "Boom up ↑ · curl ← dump →" };
     case "loader":
-      return { title: "Payloader", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Arms ↕ · bucket ↔" };
+      return {
+        title: defId === "hloader" ? "Heavy loader" : "Payloader",
+        phoneLeft: "Drive/reverse ↕ · steer ↔",
+        phoneRight: "Arms ↕ · bucket ↔",
+      };
     case "dozer":
       return { title: "Bulldozer", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Blade ↕ · angle ↔" };
     case "truck":
