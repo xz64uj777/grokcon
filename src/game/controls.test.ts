@@ -12,6 +12,7 @@ import {
   sticksToCommand,
   tankMotion,
 } from "./controls.ts";
+import { buyVehicle, freshGame, setActive, step } from "./sim.ts";
 
 
 describe("loader-style skid steer controls", () => {
@@ -112,6 +113,31 @@ describe("dozer and truck sticks", () => {
     assert.ok(tankMotion(steer.drive.left, steer.drive.right).turn < 0, "left stick right turns right");
     assert.equal(steer.axes.lift, 0);
     assert.equal(steer.axes.tilt, 0);
+  });
+  it("stick left still goes left while the dozer is backing up", () => {
+    const yawOf = (id: "dozer" | "loader", stick: { x: number; y: number }) => {
+      const s = freshGame("Steer");
+      s.cash = 1e6;
+      s.controlMode = "real";
+      s.watching = false;
+      buyVehicle(s, id);
+      const idx = s.vehicles.findIndex((v) => v.defId === id);
+      setActive(s, idx);
+      const v = s.vehicles[idx]!;
+      v.x = -20;
+      v.z = 40;
+      v.yaw = 0;
+      v.speed = 0;
+      const input = { throttle: 0, steer: 0, action: false, cmd: sticksToCommand(id, stick, { x: 0, y: 0 }) };
+      for (let i = 0; i < 45; i++) step(s, input, 1 / 30, true);
+      return v.yaw;
+    };
+    const forward = yawOf("dozer", { x: -1, y: 1 });
+    assert.ok(forward > 0.05, `stick left while going ahead turned right, yaw ${forward.toFixed(2)}`);
+    const backed = yawOf("dozer", { x: -1, y: -1 });
+    const loader = yawOf("loader", { x: -1, y: -1 });
+    assert.ok(backed < -0.05, `stick left while backing turned right, yaw ${backed.toFixed(2)}`);
+    assert.ok(loader < -0.05, `payloader reference yaw ${loader.toFixed(2)}`);
   });
   it("truck bed rides the right stick", () => {
     assert.ok(sticksToCommand("truck", { x: 0, y: 0 }, { x: 0, y: 1 }).axes.lift > 0.9);

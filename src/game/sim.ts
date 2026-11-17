@@ -2357,8 +2357,9 @@ function integrateTank(v: VehicleState, left: number, right: number, dt: number,
   if (v.speed < target) v.speed = Math.min(target, v.speed + accel * dt);
   else v.speed = Math.max(target, v.speed - accel * dt);
   if (Math.abs(v.speed) < 0.05 && Math.abs(m.forward) < 0.05) v.speed = 0;
-  // Counter-rotating sides spin the machine in place.
-  v.yaw += m.turn * st.turn * 1.1 * dt;
+  // Same as the wheeled machines: stick-left still goes left on screen while backing up.
+  const reverse = v.speed >= -0.2 ? 1 : -1;
+  v.yaw += m.turn * st.turn * 1.1 * reverse * dt;
   v.x += -Math.sin(v.yaw) * v.speed * dt;
   v.z += -Math.cos(v.yaw) * v.speed * dt;
 }
