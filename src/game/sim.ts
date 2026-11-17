@@ -423,6 +423,11 @@ function nearestPad(state: GameState, x: number, z: number) {
   return best && bestD <= best.r ? best : null;
 }
 
+/** The machine you are driving. Watching means you stepped out, so nobody is in a seat. */
+function handsOn(state: GameState, v: VehicleState) {
+  return !state.watching && v === state.vehicles[state.active];
+}
+
 function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
   const line = lineFor(state, v);
   // The line head loads first when it is actually parked in the zone.
@@ -431,7 +436,7 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
   let bestD = maxDist;
   for (const t of line) {
     if (!sameArea(t, v) || !bayReady.has(t)) continue;
-    if (operatedOnly && !t.operator && state.vehicles[state.active] !== t) continue;
+    if (operatedOnly && !t.operator && !handsOn(state, t)) continue;
     const room = vehicleStats(t).capacity - t.cargo;
     if (room < 0.4 || (t.cargoOre && v.cargoOre && t.cargoOre !== v.cargoOre)) continue;
     const d = distTo(v.x, v.z, t.x, t.z);
@@ -878,7 +883,7 @@ function pourReach(id: VehicleId) {
 
 function loaderInArea(state: GameState, v: VehicleState) {
   return state.vehicles.some(
-    (o) => fillsHaulers(o.defId) && (o.operator || o === state.vehicles[state.active]) && areaOf(o.x) === areaOf(v.x),
+    (o) => fillsHaulers(o.defId) && (o.operator || handsOn(state, o)) && areaOf(o.x) === areaOf(v.x),
   );
 }
 
@@ -901,7 +906,7 @@ function truckLeaving(t: VehicleState) {
 function lineFor(state: GameState, digger: VehicleState) {
   const list = state.vehicles.filter((t) => {
     if (!DEFS[t.defId].receives || t === digger) return false;
-    if (!(t.operator || t === state.vehicles[state.active])) return false;
+    if (!(t.operator || handsOn(state, t))) return false;
     if (truckPartner.get(t) !== digger.uid) return false;
     if (!sameArea(t, digger)) return false;
     if (t.defId === "heavy" && otherBank(t.x, digger.x)) return false;
@@ -916,7 +921,7 @@ function lineFor(state: GameState, digger: VehicleState) {
 function diggerForTruck(state: GameState, v: VehicleState) {
   const open = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "hloader" || o.defId === "excavator") &&
-    (o.operator || o === state.vehicles[state.active]) &&
+    (o.operator || handsOn(state, o)) &&
     !(v.defId === "heavy" && otherBank(v.x, o.x));
   const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
   if (prev && !truckLeaving(v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
@@ -1214,7 +1219,7 @@ function enterBay(v: VehicleState, spot: BaySpot, place: number, keepX: number, 
 
 function goingToWash(state: GameState, t: VehicleState) {
   if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
-  if (!(t.operator || t === state.vehicles[state.active])) return false;
+  if (!(t.operator || handsOn(state, t))) return false;
   const cap = vehicleStats(t).capacity;
   return cap <= 0 || t.cargo >= cap * 0.9 || dumpAnyway.has(t) || distTo(t.x, t.z, WASH_PLANT.x, WASH_PLANT.z) < 80;
 }
@@ -1663,7 +1668,7 @@ function aiControl(state: GameState, index: number): Control {
       if (o.defId === "pickup") continue;
       const od = DEFS[o.defId];
       if (od.dig <= 0 && !wheelLoader(o.defId)) continue;
-      if (!(o.operator || i === state.active)) continue;
+      if (!(o.operator || handsOn(state, o))) continue;
       const d = distTo(v.x, v.z, o.x, o.z);
       const score = d - (od.dig > 0 ? 40 : 0);
       if (score < best) {
@@ -2062,7 +2067,7 @@ function performAction(
   const st = vehicleStats(v);
   const fx = -Math.sin(v.yaw);
   const fz = -Math.cos(v.yaw);
-  const player = index === state.active;
+  const player = !state.watching && index === state.active;
   const manual = opts.phase !== "auto";
   const kind = machineKind(v.defId);
 
@@ -2592,7 +2597,7 @@ function guardBridge(state: GameState, v: VehicleState, index: number) {
       : v.defId === "lowboy"
         ? `Bridge limit ${BRIDGE.limit} tons. The lowboy weighs ${tons.toFixed(0)} tons with the deck loaded. The deck counts on the scale — take the north road.`
         : `Bridge limit ${BRIDGE.limit} tons. ${DEFS[v.defId].name} weighs ${tons.toFixed(0)} tons loaded. Carry ${bridgeMaxLoad(v.defId).toFixed(0)} tons or less.`;
-    if (index === state.active) log(state, msg);
+    if (!state.watching && index === state.active) log(state, msg);
   }
 }
 
@@ -2706,7 +2711,7 @@ export function loadTruck(state: GameState, index = state.active, maxDist = 32, 
   let cap = vehicleStats(truck).capacity;
   // Crew who mean to cross the bridge leave room for the limit. A heavy haul
   // does not: half a bed will not fit, so it fills up for the west barge.
-  const crewTruck = truck.operator && state.vehicles[state.active] !== truck;
+  const crewTruck = truck.operator && !handsOn(state, truck);
   if (crewTruck && areaOf(truck.x) === "river" && crossingWorth(truck.defId, cap, 0)) {
     cap = Math.min(cap, bridgeMaxLoad(truck.defId));
   }
@@ -3141,9 +3146,9 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     if (i === state.active && v.busy && v.cargo >= before - 1e-6 && !sale) dig = true;
   }
   updateBlast(state, dt, blasts);
-  const player = state.vehicles[state.active];
-  if (player && !player.status) {
-    player.status = player.busy ? "Working" : "In your seat";
+  const seated = state.vehicles[state.active];
+  if (seated && !state.watching && !seated.status) {
+    seated.status = seated.busy ? "Working" : "In your seat";
   }
   {
     const me = state.vehicles[state.active];

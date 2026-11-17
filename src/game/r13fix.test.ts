@@ -449,11 +449,15 @@ test("a dump truck stays parked until its bed is nearly full, then heads to dump
     m.hired = true;
     m.operator = true;
   }
-  loader.operator = false;
-  s.active = s.vehicles.indexOf(loader);
+  // The loader has to stay on the pile. An empty seat is not a digger once you step out.
+  const plant = { x: loader.x, z: loader.z };
+  s.active = s.vehicles.indexOf(truck);
   let parked = false;
   for (let i = 0; i < 30 * 45 && !parked; i++) {
     step(s, idle, 1 / 30, false);
+    loader.x = plant.x;
+    loader.z = plant.z;
+    loader.speed = 0;
     parked = truck.status === "In the load bay" || truck.status === "Waiting at the pile" || truck.status === "Waiting to load";
   }
   assert.equal(parked, true, truck.status);
@@ -462,22 +466,42 @@ test("a dump truck stays parked until its bed is nearly full, then heads to dump
   const tx = truck.x;
   const tz = truck.z;
   loader.x += 5;
-  for (let i = 0; i < 30 * 3; i++) step(s, idle, 1 / 30, false);
+  for (let i = 0; i < 30 * 3; i++) {
+    step(s, idle, 1 / 30, false);
+    loader.x = plant.x + 5;
+    loader.z = plant.z;
+    loader.speed = 0;
+  }
   assert.ok(Math.hypot(truck.x - tx, truck.z - tz) < 3, `left the spot early, ${truck.status}`);
   loader.x -= 5;
   const cap = vehicleStats(truck).capacity;
   truck.cargo = cap * 0.72;
   const partialFrom = { x: truck.x, z: truck.z };
   s.seconds += 60;
-  for (let i = 0; i < 30 * 4; i++) step(s, idle, 1 / 30, false);
+  for (let i = 0; i < 30 * 4; i++) {
+    step(s, idle, 1 / 30, false);
+    loader.x = plant.x;
+    loader.z = plant.z;
+    loader.speed = 0;
+  }
   const partialMove = Math.hypot(truck.x - partialFrom.x, truck.z - partialFrom.z);
   assert.ok(partialMove < 2, `partial truck moved ${partialMove.toFixed(1)}m after a long wait: ${truck.status}`);
   assert.ok(!/haul|dump/i.test(truck.status), `partial truck should remain parked: ${truck.status}`);
   truck.cargo = cap * 0.9;
   const fullFrom = { x: truck.x, z: truck.z };
-  for (let i = 0; i < 30 && !/Hauling to|Dumping at/.test(truck.status); i++) step(s, idle, 1 / 30, false);
+  for (let i = 0; i < 30 && !/Hauling to|Dumping at/.test(truck.status); i++) {
+    step(s, idle, 1 / 30, false);
+    loader.x = plant.x;
+    loader.z = plant.z;
+    loader.speed = 0;
+  }
   assert.match(truck.status, /Hauling to|Dumping at/, `nearly-full truck should dispatch immediately, got ${truck.status}`);
-  for (let i = 0; i < 30 * 12; i++) step(s, idle, 1 / 30, false);
+  for (let i = 0; i < 30 * 12; i++) {
+    step(s, idle, 1 / 30, false);
+    loader.x = plant.x;
+    loader.z = plant.z;
+    loader.speed = 0;
+  }
   const fullMove = Math.hypot(truck.x - fullFrom.x, truck.z - fullFrom.z);
   assert.ok(fullMove > 6 || truck.cargo < cap * 0.9, `nearly-full truck did not make its dump trip: ${truck.status}, moved ${fullMove.toFixed(1)}m`);
 }));

@@ -147,6 +147,29 @@ describe("watching the crew", () => {
     for (let i = 0; i < 40; i++) step(state, ZERO, 1 / 30, true);
     assert.ok(Math.hypot(v.x - x0, v.z - z0) < 0.25);
   });
+
+  it("does not send the crew to the machine you are only watching", () => {
+    const state = freshGame("Watch");
+    state.claims = [1];
+    state.watching = true;
+    const seat = state.vehicles[0];
+    seat.defId = "loader";
+    seat.tool = homeTool("loader");
+    seat.operator = false;
+    seat.hired = false;
+    seat.x = 4;
+    seat.z = 8;
+    seat.yaw = 0;
+    seat.speed = 0;
+    seat.cargo = 8;
+    seat.cargoOre = "gold";
+    state.active = 0;
+    const truck = park(state, "truck", 22, 8, { hired: true, operator: true });
+    for (let i = 0; i < 90; i++) step(state, ZERO, 1 / 30, true);
+    assert.equal(seat.cargo, 8, "an empty seat should not dump into the crew");
+    assert.match(truck.status, /Needs a payloader|Parked/);
+    assert.ok(Math.hypot(truck.x - seat.x, truck.z - seat.z) > 10, `truck drove to the empty seat, ${truck.status}`);
+  });
 });
 
 describe("valley crew", () => {
