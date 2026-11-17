@@ -492,6 +492,7 @@ function feedCrewFor(state: GameState, pile: Deposit) {
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
     .filter(({ v, index, rate }) =>
       !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) && !otherBank(v.x, pile.x) &&
+      distTo(v.x, v.z, pile.x, pile.z) < (v.defId === "excavator" ? FEED_CALL_RANGE : 120) &&
       !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid),
     )
     .sort((a, b) => distTo(a.v.x, a.v.z, pile.x, pile.z) - distTo(b.v.x, b.v.z, pile.x, pile.z));
@@ -502,6 +503,8 @@ export const YARD_FEED_RATE = 0.1;
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
 export const YARD_FEED_KEEP = 0.8;
 export const FEED_REACH = 10;
+/** An excavator further off than this keeps digging; the yard feeder covers it. */
+export const FEED_CALL_RANGE = 60;
 
 export function feedId(padId: string) {
   return `feed-${padId}`;
@@ -932,9 +935,34 @@ function offHeavyBank(state: GameState, v: VehicleState, x: number) {
   return side !== 0 && side !== bank;
 }
 
+/** Seconds since this machine's load last changed. */
+const loadSince = new WeakMap<VehicleState, { cargo: number; t: number }>();
+function idleFor(state: GameState, v: VehicleState) {
+  const e = loadSince.get(v);
+  if (!e || Math.abs(e.cargo - v.cargo) > 0.05) {
+    loadSince.set(v, { cargo: v.cargo, t: state.seconds });
+    return 0;
+  }
+  return state.seconds - e.t;
+}
+/** A loose pile this wheel loader could scoop. */
+function hasPile(state: GameState, o: VehicleState) {
+  return state.deposits.some((d) => d.kind === "pile" && d.tons >= 0.4 && !d.id.startsWith("feed-") && sameArea(d, o) && ownsClaim(state, d.claim));
+}
+export const DIGGER_HOLD_SECONDS = 30;
+export const TRUCK_IDLE_SECONDS = 45;
+
 function holdForTruck(state: GameState, v: VehicleState): Control {
   const crossing = loaderToHeavyBank(state, v);
   if (crossing) return crossing;
+  // Nobody has taken this bucket for a while: tip it beside the machine as a pile.
+  if (fillsHaulers(v.defId) && v.cargoOre && v.cargo > 0.15 && idleFor(state, v) > DIGGER_HOLD_SECONDS) {
+    addPile(state, v.cargoOre, v.cargo, v.x + Math.sin(v.yaw) * 5, v.z + Math.cos(v.yaw) * 5, homeClaim(areaOf(v.x)), v.cargoPurity ?? 1);
+    v.cargo = 0;
+    v.cargoOre = null;
+    v.status = "Tipped the load on a pile";
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
+  }
   v.status = truckWaitStatus(state, v);
   return { throttle: 0, steer: 0, action: false, brake: 1 };
 }
@@ -991,7 +1019,10 @@ function diggerForTruck(state: GameState, v: VehicleState) {
   const open = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "hloader" || o.defId === "excavator") &&
     (o.operator || handsOn(state, o)) &&
-    heavyReaches(v, o);
+    heavyReaches(v, o) &&
+    (!wheelLoader(o.defId) || o.cargo > 0.15 || hasPile(state, o)) &&
+    // DRAFT: a part-loaded truck only lines up at a digger holding the same ore (or an empty bucket).
+    (v.cargo < 0.15 || !v.cargoOre || o.cargo < 0.15 || !o.cargoOre || o.cargoOre === v.cargoOre);
   const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
   if (prev && !truckLeaving(v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
   let best: VehicleState | null = null;
@@ -1147,7 +1178,9 @@ function buildSpots(standX: number, standZ: number, keepX: number, keepZ: number
 function loadingZone(state: GameState, digger: VehicleState): LoadZone {
   const a = workAnchor(state, digger);
   const prev = diggerZone.get(digger);
-  if (prev && prev.spots.length > 0) {
+  // DRAFT: a digger that has settled on another face out of pour reach takes its bay with it.
+  const leftZone = !!prev && Math.abs(digger.speed) < 0.5 && distTo(digger.x, digger.z, prev.standX, prev.standZ) > pourReach(digger.defId);
+  if (prev && prev.spots.length > 0 && !leftZone) {
     const drifted = Math.hypot(prev.ax - a.standX, prev.az - a.standZ);
     if (drifted < ZONE_HOLD) return prev;
     // The spots belong to this face while it still has ore. They move when
@@ -1205,6 +1238,13 @@ function spotForTruck(state: GameState, v: VehicleState, digger: VehicleState, p
     if (t === v) continue;
     const hold = truckSpot.get(t);
     if (hold && hold.gen === zone.gen && hold.index < spots.length) used.add(hold.index);
+  }
+  // Another digger's truck parked on a spot holds it too.
+  for (const t of state.vehicles) {
+    if (t === v || !DEFS[t.defId].receives || !bayCommit.has(t) || truckPartner.get(t) === digger.uid) continue;
+    spots.forEach((s, i) => {
+      if (Math.hypot(s.x - t.x, s.z - t.z) < 7) used.add(i);
+    });
   }
   const hold = truckSpot.get(v);
   if (hold && hold.gen === zone.gen && hold.index < spots.length && !used.has(hold.index)) return spots[hold.index]!;
@@ -1290,7 +1330,8 @@ function goingToWash(state: GameState, t: VehicleState) {
   if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
   if (!(t.operator || handsOn(state, t))) return false;
   const cap = vehicleStats(t).capacity;
-  return cap <= 0 || t.cargo >= cap * 0.9 || dumpAnyway.has(t) || distTo(t.x, t.z, WASH_PLANT.x, WASH_PLANT.z) < 80;
+  // DRAFT: only machines actually hauling in. A part-loaded truck in a bay near the plant held the line.
+  return t.cargo >= cap * 0.9 || dumpAnyway.has(t) || (cap <= 0 || !DEFS[t.defId].receives) && distTo(t.x, t.z, WASH_PLANT.x, WASH_PLANT.z) < 80 && !fillsHaulers(t.defId);
 }
 
 function plantLine(state: GameState) {
@@ -1470,6 +1511,46 @@ function machineAhead(state: GameState, v: VehicleState) {
   return best;
 }
 
+/** Waits that are part of the job, not a stall. */
+const PATIENT = /^(Bridge flooded|In line|At the|Needs a pile|Feeding|Working|Lights|Light plant|Plant|Out of fuel|Wash line|Towed|Dumping|Scooping|Pushing|Backing off)/;
+const crewSeen = new WeakMap<VehicleState, { x: number; z: number; cargo: number; t: number }>();
+/** A crew machine that has not moved or loaded for 45 s drops its spot and backs out to re-plan. */
+function crewWatchdog(state: GameState, v: VehicleState) {
+  const now = state.seconds;
+  const e = crewSeen.get(v);
+  if (!e || Math.hypot(v.x - e.x, v.z - e.z) > 3 || Math.abs(v.cargo - e.cargo) > 0.05) {
+    if (e && Math.hypot(v.x - e.x, v.z - e.z) > 12) crewRetry.delete(v);
+    crewSeen.set(v, { x: v.x, z: v.z, cargo: v.cargo, t: now });
+    return;
+  }
+  const limit = PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing|Lining)/.test(v.status) ? 15 : 30;
+  if (now - e.t < limit) return;
+  e.t = now;
+  truckSpot.delete(v);
+  bayCommit.delete(v);
+  bayReady.delete(v);
+  pileJob.delete(v);
+  lineTicket.delete(v);
+  if (/^(Out of fuel|Needs a pile|At the|Lights|Light plant|Plant)/.test(v.status)) return;
+  // A bucket that stopped filling at the face counts as full, so it goes and tips.
+  if (/^Working/.test(v.status) && v.cargo > vehicleStats(v).capacity * 0.5) {
+    topped.add(v);
+    return;
+  }
+  // Backing into something: stop reversing and drive on instead.
+  if (/^Backing/.test(v.status)) {
+    v.unstick = 0;
+    return;
+  }
+  // Each retry in a row backs out further and turns the other way.
+  const n = (crewRetry.get(v) ?? 0) + 1;
+  crewRetry.set(v, n);
+  v.unstick = Math.min(8, 2 + n * 1.5);
+  v.bias = n % 2 ? 0.9 : -0.9;
+}
+const crewRetry = new WeakMap<VehicleState, number>();
+const topped = new WeakSet<VehicleState>();
+const roomSince = new WeakMap<VehicleState, { start: number; last: number }>();
 /** Don't drive into the machine ahead. Back out when already touching, otherwise pass on the open side. */
 function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   if (v.defId === "crusher" || v.defId === "light") return c;
@@ -1483,6 +1564,18 @@ function avoidTraffic(state: GameState, v: VehicleState, c: Control): Control {
   const pullingOut = (v.defId === "truck" || v.defId === "heavy") && (dumpAnyway.has(v) || v.cargo >= vehicleStats(v).capacity * 0.85);
   if (hit.gap < 0 && !pullingOut) {
     v.status = "Making room";
+    const e = roomSince.get(v);
+    const now = state.seconds;
+    if (!e || now - e.last > 5) roomSince.set(v, { start: now, last: now });
+    else {
+      e.last = now;
+      if (now - e.start > 20) {
+        // Still wedged: back straight out a few metres.
+        roomSince.delete(v);
+        v.unstick = 3;
+        v.bias = 0;
+      }
+    }
     // In the valley, reversing along the bay ray put the dump back into the skid. Slide past it.
     if (areaOf(v.x) === "river" && (v.defId === "truck" || v.defId === "heavy")) {
       return { throttle: 0.35, steer: away, action: false, brake: 0 };
@@ -1697,7 +1790,9 @@ function aiControl(state: GameState, index: number): Control {
   const def = DEFS[v.defId];
   const st = vehicleStats(v);
   const cap = st.capacity;
-  const full = cap > 0 && v.cargo >= cap * 0.9;
+  // A near-full bucket that has stopped filling counts as full.
+  if (v.cargo < 0.25) topped.delete(v);
+  const full = cap > 0 && (v.cargo >= cap * 0.9 || topped.has(v));
   const has = v.cargo > 0.25;
   let target: { x: number; z: number } | null = null;
   let arrive = 6;
@@ -1856,9 +1951,9 @@ function aiControl(state: GameState, index: number): Control {
         if (d.kind !== "vein" || d.tons < 0.35) continue;
         if (!ownsClaim(state, d.claim)) continue;
         if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
-        if (offHeavyBank(state, v, d.x)) continue;
+        if (offHeavyBank(state, v, d.x) || (assignedClaim(v) == null && !sameArea(d, v))) continue;
         const dist = distTo(v.x, v.z, d.x, d.z);
-        const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+        const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist - crewNear(state, v, d.x, d.z, 14) * 2000;
         if (s > veinS) {
           veinS = s;
           vein = d;
@@ -1866,7 +1961,7 @@ function aiControl(state: GameState, index: number): Control {
       }
       vein = commitVein(state, v, vein, (d) => {
         const dist = distTo(v.x, v.z, d.x, d.z);
-        return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist;
+        return washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist - crewNear(state, v, d.x, d.z, 14) * 2000;
       });
     }
     if (vein) {
@@ -1906,7 +2001,9 @@ function aiControl(state: GameState, index: number): Control {
     }
   } else if (def.receives) {
     if (v.cargo < 0.15) dumpAnyway.delete(v);
-    const leave = cap > 0 && v.cargo >= cap * 0.9;
+    // A part load goes in after a long idle, or when no digger can top it up.
+    const stale = cap > 0 && v.cargo > 0.4 && (dumpAnyway.has(v) || (idleFor(state, v) > TRUCK_IDLE_SECONDS && !/^In line/.test(v.status)));
+    const leave = cap > 0 && (v.cargo >= cap * 0.9 || stale);
     if (leave && v.cargoOre) {
       lineTicket.delete(v);
       truckPartner.delete(v);
@@ -2000,7 +2097,7 @@ function aiControl(state: GameState, index: number): Control {
       if (spot && cut) {
         target = cut;
         arrive = Math.max(4, cut.reach * 0.7);
-        label = `Heading to ${prettySign(spot.sign)}`;
+        label = wheelLoader(def.id) && !hasPile(state, v) ? "Needs a pile (dozer, skid or blast)" : `Heading to ${prettySign(spot.sign)}`;
       } else label = "Looking for a pile";
     } else label = "No face in reach";
   }
@@ -3170,6 +3267,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
         v.bias = boxed ? (boxed.side >= 0 ? 0.9 : -0.9) : Math.random() < 0.5 ? 1 : -1;
       }
     }
+    if (v.operator && (state.watching || i !== state.active)) crewWatchdog(state, v);
     if (v.unstick > 0) v.unstick = Math.max(0, v.unstick - dt);
     if (!controls[i].action) {
       const pending = saleAcc.get(v) ?? 0;

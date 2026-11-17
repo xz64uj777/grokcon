@@ -279,10 +279,17 @@ describe("river crew", () => {
     heavy.x = bar.x + 4;
     heavy.z = bar.z - 12;
     const input = { throttle: 0, steer: 0, action: false };
-    for (let i = 0; i < 30 * 60; i++) step(s, input, 1 / 30, false);
-    const hauled = truck.cargo + heavy.cargo;
+    // A part load now hauls in after a long idle, so track the most each one held.
+    let truckMax = 0;
+    let heavyMax = 0;
+    for (let i = 0; i < 30 * 60; i++) {
+      step(s, input, 1 / 30, false);
+      truckMax = Math.max(truckMax, truck.cargo);
+      heavyMax = Math.max(heavyMax, heavy.cargo);
+    }
+    const hauled = truckMax + heavyMax;
     assert.ok(hauled > 2, `truck ${truck.cargo.toFixed(1)} (${truck.status}) heavy ${heavy.cargo.toFixed(1)} (${heavy.status}) ex ${ex.status} loader ${loader.status}`);
-    assert.ok(heavy.cargo > 1, `heavy never received loader material: ${heavy.status}; loader ${loader.cargo.toFixed(1)} ${loader.status}`);
+    assert.ok(heavyMax > 1, `heavy never received loader material: ${heavy.status}; loader ${loader.cargo.toFixed(1)} ${loader.status}`);
     assert.ok(loader.cargo < 6.6, `loader kept its initial cargo: ${loader.cargo.toFixed(1)} ${loader.status}`);
     assert.ok(heavy.x < X0 - RIVER.halfWidth, `heavy crossed into the river lane at x=${heavy.x.toFixed(1)} ${heavy.status}`);
   }));

@@ -98,11 +98,14 @@ test("R8/R9 hired crew keeps working in the dark, and stops when the tank is emp
   assert.equal(v.x, prev.get(v.uid)!.x + 2);
   assert.notEqual(v.status, "Too dark to work (no lights)");
   O.ops(s).fuel[v.uid] = 0;
+  const keep = s.cash;
+  s.cash = 0; // No cash for the tow to the pumps, so it stays put.
   const dry = O.before(s);
   v.x += 2;
   O.tick(s, dry, 0.016, () => 2, () => {});
   assert.equal(v.status, "Out of fuel");
   assert.equal(v.x, dry.get(v.uid)!.x);
+  s.cash = keep;
   s.cash = 1000;
   s.active = 0;
   assert.match(opsAction(s, "fuel"), /Tank filled/);

@@ -444,8 +444,8 @@ export function tick(
         }
       }
       if (o.fuel[v.uid] <= 0 && player && state.cash < refuelCost(state, v)) rescue(state, v, yard(v));
-      if (o.fuel[v.uid] <= 0 && !player && areaOf(v.x) === "mountain") {
-        const bay = FUEL_BAYS.find((b) => b.area === "mountain");
+      if (o.fuel[v.uid] <= 0 && !player && FUEL_BAYS.some((b) => b.area === areaOf(v.x))) {
+        const bay = FUEL_BAYS.find((b) => b.area === areaOf(v.x));
         const cost = Math.round(tankGallons(v) * pumpPrice(v.defId));
         if (bay && state.cash >= cost) {
           state.cash -= cost;
@@ -455,7 +455,7 @@ export function tick(
           v.z = bay.z;
           v.speed = 0;
           v.status = "Towed to the fuel pumps";
-          say(state, `${v.defId === "pickup" ? "Claim truck" : "A machine"} ran dry on the mountain and was towed to the pumps.`);
+          say(state, `${v.defId === "pickup" ? "Claim truck" : "A machine"} ran dry and was towed to the pumps.`);
         } else stop = "Out of fuel";
       } else if (o.fuel[v.uid] <= 0) stop = "Out of fuel";
     }
