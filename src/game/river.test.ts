@@ -239,15 +239,17 @@ describe("river crew", () => {
     const skid = s.vehicles.find((v) => v.defId === "skid")!;
     const ex = s.vehicles.find((v) => v.defId === "excavator")!;
     const input = { throttle: 0, steer: 0, action: false };
-    let dug = false;
+    // The planner may put them on different bars, so they do not have to be
+    // loaded at the same instant — they just both have to work the river.
+    let skidDug = false;
+    let exDug = false;
     for (let i = 0; i < 30 * 24; i++) {
       step(s, input, 1 / 30, false);
-      if (skid.cargo > 0.4 && ex.cargo > 0.2) {
-        dug = true;
-        break;
-      }
+      if (skid.cargo > 0.4) skidDug = true;
+      if (ex.cargo > 0.2) exDug = true;
+      if (skidDug && exDug) break;
     }
-    assert.ok(dug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
+    assert.ok(skidDug && exDug, `skid ${skid.cargo.toFixed(2)} ${skid.status} / excavator ${ex.cargo.toFixed(2)} ${ex.status}`);
   }));
 
   it("fills the dump and the heavy from the river bars without routing the queue through the water", () => withSeededRandom(1, () => {
