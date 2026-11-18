@@ -705,15 +705,17 @@ test("a dump truck stays clear of gold gravel when no payloader is hired", () =>
   buyClaim(s, 3);
   buyVehicle(s, "truck");
   const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  const gold = s.deposits.find((d) => d.id === "gold")!;
   truck.x = -98;
   truck.z = 14;
   truck.yaw = Math.PI;
   truck.hired = true;
   truck.operator = true;
   s.active = 0;
-  for (let i = 0; i < 30 * 14; i++) step(s, idle, 1 / 30, false);
-  assert.equal(truck.status, "Needs a payloader");
-  assert.ok(truck.x < -88, `truck entered the gravel without a loading bay at ${truck.x.toFixed(0)},${truck.z.toFixed(0)}`);
+  for (let i = 0; i < 30 * 20; i++) step(s, idle, 1 / 30, false);
+  assert.match(truck.status, /Needs a payloader/);
+  assert.ok(truck.x > -88, `truck sat at the west fence at ${truck.x.toFixed(0)},${truck.z.toFixed(0)}`);
+  assert.ok(Math.hypot(truck.x - gold.x, truck.z - gold.z) > 12, `truck drove into the gravel at ${truck.x.toFixed(0)},${truck.z.toFixed(0)}`);
 });
 
 function loosePile(s: ReturnType<typeof freshGame>, ore: "iron", tons: number, x: number, z: number) {

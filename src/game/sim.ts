@@ -1269,18 +1269,32 @@ function workAnchor(state: GameState, digger: VehicleState) {
   return { id: `at:${digger.uid}`, standX: digger.x, standZ: digger.z, keepX: digger.x, keepZ: digger.z };
 }
 
+/** Too close to the map fence to wait or park. */
+function nearFence(x: number, z: number) {
+  const b = boundsFor(x);
+  return x < b.minX + 14 || x > b.maxX - 14 || z < b.minZ + 14 || z > b.maxZ - 14;
+}
+
+/** Ridge ground a truck may wait on: the pit, the yard, or the gold creek road — never the fence strips. */
+function ridgeParkOk(x: number, z: number) {
+  if (areaOf(x) !== "ridge") return !nearFence(x, z);
+  if (nearFence(x, z)) return false;
+  if (z < -50) return false;
+  if (x > 42 && z < 8) return false;
+  if (x < -82 || (x < -52 && z < 14)) return false;
+  return true;
+}
+
 /** Open ground a truck can park on: off the pile, off the river, inside the fence. */
 function spotOpen(x: number, z: number, standX: number, standZ: number, keepX: number, keepZ: number, pour: number) {
   if (Math.hypot(x - keepX, z - keepZ) < KEEP_CLEAR) return false;
   const fromStand = Math.hypot(x - standX, z - standZ);
   if (fromStand < 8 || fromStand > pour) return false;
-  if (areaOf(x) === "ridge" && (x < -82 || (x < -52 && z < 14))) return false;
+  if (!ridgeParkOk(x, z)) return false;
   if (areaOf(standX) === "river") {
     if (otherBank(x, standX)) return false;
     if (Math.abs(x - RIVER.x) < RIVER.halfWidth + 6) return false;
   }
-  const b = boundsFor(x);
-  if (x < b.minX + 8 || x > b.maxX - 8 || z < b.minZ + 8 || z > b.maxZ - 8) return false;
   for (const pad of PADS) {
     if (Math.hypot(x - pad.x, z - pad.z) < pad.r + 6) return false;
   }
@@ -1322,10 +1336,8 @@ function buildSpots(standX: number, standZ: number, keepX: number, keepZ: number
     for (let r = KEEP_CLEAR; r <= 36; r += 2) {
       const x = keepX + Math.cos(ang) * r;
       const z = keepZ + Math.sin(ang) * r;
-      if (areaOf(x) === "ridge" && (x < -82 || (x < -52 && z < 14))) continue;
+      if (!ridgeParkOk(x, z)) continue;
       if (areaOf(standX) === "river" && otherBank(x, standX)) continue;
-      const b = boundsFor(x);
-      if (x < b.minX + 8 || x > b.maxX - 8 || z < b.minZ + 8 || z > b.maxZ - 8) continue;
       if (pointBlocked(x, z, 3.2)) continue;
       const d = Math.hypot(x - standX, z - standZ);
       if (d < bestD) {
@@ -1335,7 +1347,18 @@ function buildSpots(standX: number, standZ: number, keepX: number, keepZ: number
       break;
     }
   }
-  return best ? [best] : [{ x: standX + Math.cos(prefer) * KEEP_CLEAR, z: standZ + Math.sin(prefer) * KEEP_CLEAR }];
+  if (best) return [best];
+  const gate = gateFor(standX);
+  const ang = Math.atan2(gate.z - standZ, gate.x - standX);
+  for (const r of [KEEP_CLEAR, 20, 24, 12]) {
+    const x = standX + Math.cos(ang) * r;
+    const z = standZ + Math.sin(ang) * r;
+    if (!ridgeParkOk(x, z) || pointBlocked(x, z, 3.2)) continue;
+    if (areaOf(standX) === "river" && otherBank(x, standX)) continue;
+    return [{ x, z }];
+  }
+  const yard = areaOf(standX) === "ridge" ? { x: GATE.x, z: Math.max(GATE.z, 28) } : { x: standX, z: standZ };
+  return [ridgeParkOk(yard.x, yard.z) ? yard : { x: standX, z: standZ }];
 }
 
 /** A wheel loader stands on the open side of a face, where a truck can pull in beside it. */
@@ -1502,6 +1525,51 @@ function spotForTruck(state: GameState, v: VehicleState, digger: VehicleState, p
   }
   truckSpot.set(v, { gen: zone.gen, index: bestI });
   return spots[bestI]!;
+}
+
+
+/** A hired digger on this yard the truck can wait beside, even if that bucket is not ready to load. */
+function hiredDiggerNearby(state: GameState, v: VehicleState) {
+  const job = peekCrewJob(state, v);
+  if (job) {
+    const d = state.vehicles.find(
+      (o) => job.partnerUids.includes(o.uid) && isPlanDigger(o.defId) && (o.operator || handsOn(state, o)) && sameArea(o, v),
+    );
+    if (d) return d;
+  }
+  let best: VehicleState | null = null;
+  let bestD = Infinity;
+  for (const o of state.vehicles) {
+    if (!isPlanDigger(o.defId) || !(o.operator || handsOn(state, o)) || !sameArea(o, v)) continue;
+    const d = distTo(v.x, v.z, o.x, o.z);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+/** Where an idle truck should wait: beside its team's loader, or off the plant / yard, never at the fence. */
+function safeWaitSpot(state: GameState, v: VehicleState) {
+  const digger = diggerForTruck(state, v) ?? hiredDiggerNearby(state, v);
+  if (digger) {
+    const zone = loadingZone(state, digger);
+    const spot = zone.spots.find((s) => ridgeParkOk(s.x, s.z));
+    if (spot) return spot;
+    if (ridgeParkOk(digger.x, digger.z)) return { x: digger.x, z: digger.z };
+  }
+  const gate = gateFor(v.x);
+  for (const pad of livePads(state)) {
+    if (!padOpen(state, pad.kind) || areaOf(pad.x) !== areaOf(v.x)) continue;
+    if (!isPlantKind(pad.kind) && pad.kind !== "reclaim") continue;
+    const ang = Math.atan2(gate.z - pad.z, gate.x - pad.x);
+    const x = pad.x + Math.cos(ang) * (pad.r + 10);
+    const z = pad.z + Math.sin(ang) * (pad.r + 10);
+    if (ridgeParkOk(x, z) && !pointBlocked(x, z, 3.2)) return { x, z };
+  }
+  if (areaOf(v.x) === "ridge") return { x: GATE.x, z: Math.max(GATE.z, 28) };
+  return { x: gate.x, z: gate.z };
 }
 
 /** Drive onto the open spot and stop. A stopped truck in its spot is the bay. */
@@ -2275,6 +2343,8 @@ function aiControl(state: GameState, index: number): Control {
         return enterBay(v, spotForTruck(state, v, digger, place), place, zone.keepX, zone.keepZ);
       }
       v.status = "Needs a payloader";
+      const wait = safeWaitSpot(state, v);
+      if (distTo(v.x, v.z, wait.x, wait.z) > 5) return seek(v, wait.x, wait.z, 5);
       return { ...ZERO, brake: 1 };
     }
   } else if (waitingTruck) {
