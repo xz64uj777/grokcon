@@ -1091,14 +1091,18 @@ function lineFor(state: GameState, digger: VehicleState) {
 }
 
 function diggerForTruck(state: GameState, v: VehicleState) {
-  const open = (o: VehicleState) =>
+  const isDigger = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "hloader" || o.defId === "excavator") &&
     (o.operator || handsOn(state, o)) &&
-    heavyReaches(v, o) &&
+    heavyReaches(v, o);
+  const open = (o: VehicleState) =>
+    isDigger(o) &&
     (!wheelLoader(o.defId) || o.cargo > 0.15 || hasPile(state, o)) &&
-    // DRAFT: a part-loaded truck only lines up at a digger holding the same ore (or an empty bucket).
+    // A part-loaded truck only lines up at a digger holding the same ore (or an empty bucket).
     (v.cargo < 0.15 || !v.cargoOre || o.cargo < 0.15 || !o.cargoOre || o.cargoOre === v.cargoOre);
-  const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && open(o));
+  // Keep the partner you already have, even if its bucket just changed ore.
+  // Dropping it left the truck sitting on "Needs a payloader" while the digger waited.
+  const prev = state.vehicles.find((o) => o.uid === truckPartner.get(v) && isDigger(o));
   if (prev && !truckLeaving(v) && distTo(v.x, v.z, prev.x, prev.z) < 120) return prev;
   let best: VehicleState | null = null;
   let bestS = Infinity;
@@ -1423,15 +1427,21 @@ function enterBay(v: VehicleState, spot: BaySpot, place: number, keepX: number, 
   const fromKeep = Math.hypot(v.x - keepX, v.z - keepZ);
   // Close to the spot, and still outside the pile. An 8 m bubble reached back into the heap.
   const close = dist < 4.5 && fromKeep > 12.5;
+  // Once parked, stay ready through small zone drift so the watchdog does not
+  // treat a long wait as a stall the instant the spot jitters.
+  const holding = bayReady.has(v) && dist < 8 && fromKeep > 10 && Math.abs(v.speed) < 1.2;
   const was = bayCommit.has(v);
-  if (close) bayCommit.add(v);
+  if (close || holding) bayCommit.add(v);
   else if (dist > 16) bayCommit.delete(v);
-  if (was && close && Math.abs(v.speed) < 0.7) {
+  if (holding || (was && close && Math.abs(v.speed) < 0.7)) {
     bayReady.add(v);
     v.status = label;
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
-  bayReady.delete(v);
+  if (bayReady.has(v)) {
+    bayReady.delete(v);
+    crewSeen.delete(v);
+  }
   v.status = place === 0 ? "Lining up at the bay" : `In line (${place + 1})`;
   if (close) return { throttle: 0, steer: 0, action: false, brake: 1 };
   // Point at the spot before rolling. Turning on the move swings a truck into the pile.
@@ -1639,7 +1649,7 @@ function machineAhead(state: GameState, v: VehicleState) {
 /** Waits that are part of the job, not a stall. */
 const PATIENT = /^(Bridge flooded|In line|At the|Needs a pile|Feeding|Working|Lights|Light plant|Plant|Out of fuel|Wash line|Towed|Dumping|Scooping|Pushing|Backing off)/;
 const crewSeen = new WeakMap<VehicleState, { x: number; z: number; cargo: number; t: number }>();
-/** A crew machine that has not moved or loaded for 45 s drops its spot and backs out to re-plan. */
+/** A crew machine that has not moved or loaded for a while drops its spot and backs out to re-plan. */
 function crewWatchdog(state: GameState, v: VehicleState) {
   const now = state.seconds;
   const e = crewSeen.get(v);
@@ -1648,7 +1658,10 @@ function crewWatchdog(state: GameState, v: VehicleState) {
     crewSeen.set(v, { x: v.x, z: v.z, cargo: v.cargo, t: now });
     return;
   }
-  const limit = PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing|Lining)/.test(v.status) ? 15 : 30;
+  // A truck already parked in its bay or line stall is waiting to be loaded, not stuck.
+  if (bayReady.has(v)) return;
+  // Lining up is a turn-and-roll, not a short heading. Give it the default window.
+  const limit = PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing)/.test(v.status) ? 15 : 30;
   if (now - e.t < limit) return;
   e.t = now;
   truckSpot.delete(v);
