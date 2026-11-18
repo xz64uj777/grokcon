@@ -129,7 +129,7 @@ test("the crew board lists what each hired machine is doing and skips parked one
   const parked = hireAt(s, "truck", 12, 42);
   parked.operator = false;
   parked.status = "";
-  const hud = buildHud(s, 0);
+  const hud = buildHud(s, false);
   const lines = crewBoard(hud.crew, "ridge").map((row) => row.line);
   assert.ok(lines.some((line) => /Payloader|Loader/i.test(line) && /Scooping Gold gravel/.test(line)));
   assert.equal(lines.some((line) => /Dump truck/i.test(line)), false);
