@@ -188,6 +188,9 @@ export type CrewCard = {
   repairLabel: string | null;
   affordableRepair: boolean;
   damageLabel: string;
+  wearLabel: string;
+  overhaulLabel: string | null;
+  affordableOverhaul: boolean;
   upgrades: UpgradeCard[];
 };
 
@@ -322,6 +325,7 @@ export type GameApi = {
   testHole: () => void;
   blast: () => void;
   repair: (index: number) => void;
+  overhaul: (index: number) => void;
   practice: (on: boolean) => void;
   loadTruck: () => void;
   /** Step out so hired operators drive, or sit back down. */

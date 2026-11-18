@@ -21,6 +21,7 @@ import {
   freshGame,
   loadTruck,
   repairVehicle,
+  overhaulVehicle,
   opsAction,
   sellVehicle,
   setActive,
@@ -323,6 +324,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     repair(index) {
       repairVehicle(state, index);
+      saveGame(books());
+      push();
+    },
+    overhaul(index) {
+      overhaulVehicle(state, index);
       saveGame(books());
       push();
     },

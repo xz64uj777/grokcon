@@ -4,9 +4,11 @@
  * the safety inspector. Pure rules plus small hooks the sim calls.
  */
 import type { GameState, OreId, PadKind, VehicleState } from "@/game/types";
+import { DEFS } from "@/game/catalog";
 import { gradeAt } from "@/game/terrain";
 import { X0, areaOf } from "@/game/river";
-import { X1 } from "@/game/mountain";
+import { MOUNTAIN_CLAIM, X1 } from "@/game/mountain";
+import { MOUNTAIN_LINK, onHaulRoad, onMountainRoad } from "@/game/lowboy";
 import * as C from "@/game/career";
 
 export const DAY = 300;
@@ -43,6 +45,18 @@ export const PRICES = {
   fine: 1200,
 };
 
+/** Haul routes you can grade so machines run faster and burn less on that road. */
+export const ROAD_IDS = ["ridge", "north", "mountain"] as const;
+export type RoadId = (typeof ROAD_IDS)[number];
+export const ROAD_PRICES: Record<RoadId, number> = { ridge: 8000, north: 12000, mountain: 14000 };
+export const ROAD_SPEED = 1.22;
+export const ROAD_FUEL = 0.75;
+const ROAD_NAMES: Record<RoadId, string> = { ridge: "Ridge pit road", north: "North road", mountain: "Mountain road" };
+const ROAD_DETAILS: Record<RoadId, string> = {
+  ridge: "Smoother haul from the pit to the crusher. Machines run faster and burn less on that road.",
+  north: "Grade the pass between Ridge and River Valley. Trucks run faster and burn less on the gravel.",
+  mountain: "Grade the road up to the summit. Machines run faster and burn less on the climb.",
+};
 export type Event = { kind: "flood" | "double" | "breakdown" | "rockslide"; day: number; ore?: OreId; uid?: string; gap?: number };
 
 export type Ops = {
@@ -73,6 +87,8 @@ export type Ops = {
   story: number;
   lotTaken: { day: number; ids: string[] };
   brakeHeat: Record<string, number>;
+  /** Graded haul routes: ridge pit, north road, mountain road. */
+  roads: RoadId[];
 };
 
 export function freshOps(): Ops {
@@ -101,6 +117,7 @@ export function freshOps(): Ops {
     story: 0,
     lotTaken: { day: -1, ids: [] },
     brakeHeat: {},
+    roads: [],
   };
 }
 
@@ -141,6 +158,8 @@ export function readOps(raw: unknown): Ops {
   o.nextInspect = n(r.nextInspect, 4, 0, 1e7);
   o.brakeHeat = numMap(r.brakeHeat, 0, 1);
   o.lastInspect = typeof r.lastInspect === "string" ? r.lastInspect.slice(0, 120) : "";
+  const rawRoads = Array.isArray(r.roads) ? r.roads : [];
+  o.roads = rawRoads.filter((id): id is RoadId => ROAD_IDS.includes(id as RoadId));
   return o;
 }
 
@@ -162,6 +181,27 @@ function hash(a: number, b: number, c = 0) {
 }
 const isPlant = (v: VehicleState) => v.defId === "crusher";
 const onWheels = (v: VehicleState) => !isPlant(v) && v.defId !== "dozer" && v.defId !== "excavator";
+
+
+/** The three marked yard and pit roads on the ridge, with a little shoulder. */
+const RIDGE_HAUL = [
+  { minX: -6, maxX: 5, minZ: 15, maxZ: 53 },
+  { minX: 6, maxX: 38, minZ: 22, maxZ: 38 },
+  { minX: -81, maxX: 2, minZ: 16, maxZ: 28 },
+];
+function inRoadBox(x: number, z: number, b: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+  return x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
+}
+/** Which haul route a point is on, if any. */
+export function roadAt(x: number, z: number): RoadId | null {
+  if (onMountainRoad(x, z) || inRoadBox(x, z, MOUNTAIN_LINK)) return "mountain";
+  if (onHaulRoad(x, z)) return "north";
+  if (RIDGE_HAUL.some((b) => inRoadBox(x, z, b))) return "ridge";
+  return null;
+}
+export function roadGraded(state: GameState, id: RoadId | null) {
+  return !!id && ops(state).roads.includes(id);
+}
 
 // ---- Round 1: tipping removed ------------------------------------------------
 /** Trucks used to roll on a fast loaded turn, dump the ore, and take damage. They don't anymore. */
@@ -414,7 +454,8 @@ export function tick(
     const player = i === state.active && !state.watching;
     let stop = "";
     if (on(9)) {
-      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * C.wearFuel(o.wear[v.uid] ?? 0) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1);
+      const road = roadAt(v.x, v.z);
+      const f = (o.fuel[v.uid] ?? 1) - burn(v, dt) * C.wearFuel(o.wear[v.uid] ?? 0) * (o.ramp && v.cargo > 0.3 ? 0.65 : 1) * (roadGraded(state, road) ? ROAD_FUEL : 1);
       o.fuel[v.uid] = Math.max(0, f);
       // The fuel truck is an emergency delivery. The pumps are cheaper, so it only rolls when a tank is nearly dry.
       if (o.fuelTruck && o.fuel[v.uid] < 0.1) {
@@ -471,13 +512,13 @@ export function tick(
       if (working && Math.random() < C.breakChance(w) * dt) {
         o.broke.push(v.uid);
         stop = "Broken down";
-        say(state, `A worn ${v.defId} broke down. Overhaul it at the repair shop.`);
+        say(state, `A worn ${DEFS[v.defId]?.name ?? v.defId} broke down. Overhaul it at the repair shop.`);
       }
     }
     const moved = Math.hypot(v.x - p.x, v.z - p.z);
     if (!stop && moved > 0) {
-      const share = C.wearSpeed(w) * C.seasonSpeed(C.seasonOf(state.market.day));
-      if (share < 0.999) {
+      const share = C.wearSpeed(w) * C.seasonSpeed(C.seasonOf(state.market.day)) * (roadGraded(state, roadAt(v.x, v.z)) ? ROAD_SPEED : 1);
+      if (Math.abs(share - 1) > 0.001) {
         v.x = p.x + (v.x - p.x) * share;
         v.z = p.z + (v.z - p.z) * share;
       }
@@ -554,6 +595,11 @@ export function shopButtons(state: GameState): OpsButton[] {
   add(6, "screen", "Screening deck", PRICES.screen, "Screens gravel before the wash plant. Wash plant pays 12% more.", state.washPlant);
   add(8, "lights", "Work lights", PRICES.lights, "A brighter pool on the machine you are driving. Yard light plants and every machine's own lamps already come on at night.");
   add(9, "fuelTruck", "Fuel truck", PRICES.fuelTruck, "Emergency diesel delivery when a tank is nearly empty. The yard pumps are cheaper. The claim truck and light plants take gas. The skid steer takes diesel.");
+  for (const id of ROAD_IDS) {
+    if (id === "mountain" && !state.claims.includes(MOUNTAIN_CLAIM)) continue;
+    if (o.roads.includes(id)) continue;
+    b.push({ id: `buy:road:${id}`, label: `Grade ${ROAD_NAMES[id]} · ${money(ROAD_PRICES[id])}`, detail: ROAD_DETAILS[id], enabled: state.cash >= ROAD_PRICES[id] });
+  }
   return b;
 }
 
@@ -585,6 +631,21 @@ export function overhaulPrice(v: VehicleState, w: number) {
   return C.overhaulCost(priceOf(v), Math.max(w, 0.2));
 }
 
+/** Overhaul a machine by roster index (the one in your seat, or one in the yard office). */
+export function overhaulAt(state: GameState, index: number) {
+  const o = ops(state);
+  const v = state.vehicles[index];
+  if (!v || !C.isWorker(v)) return "";
+  const c = overhaulPrice(v, o.wear[v.uid] ?? 0);
+  if (state.cash < c) return "Not enough cash.";
+  state.cash -= c;
+  o.upkeep += c;
+  o.wear[v.uid] = 0;
+  o.broke = o.broke.filter((u) => u !== v.uid);
+  if (v.status === "Broken down") v.status = "";
+  return `Repair shop overhauled the ${DEFS[v.defId]?.name ?? v.defId} for ${money(c)}. Like new.`;
+}
+
 export function refuelCost(state: GameState, v: VehicleState) {
   return Math.round((1 - (ops(state).fuel[v.uid] ?? 1)) * tankGallons(v) * PRICES.diesel + PRICES.callout);
 }
@@ -600,6 +661,17 @@ export function nuggetValue(seed: number, day: number, faceId: string, ore: OreI
 export function act(state: GameState, id: string, ctx: Ctx): string {
   const o = ops(state);
   const v = state.vehicles[state.active];
+  if (id.startsWith("buy:road:")) {
+    const route = id.slice(9) as RoadId;
+    if (!ROAD_IDS.includes(route)) return "";
+    if (route === "mountain" && !state.claims.includes(MOUNTAIN_CLAIM)) return "Lease the mountain first.";
+    if (o.roads.includes(route)) return "That road is already graded.";
+    const price = ROAD_PRICES[route];
+    if (state.cash < price) return "Not enough cash.";
+    state.cash -= price;
+    o.roads.push(route);
+    return `Graded the ${ROAD_NAMES[route].toLowerCase()}. Machines run faster and burn less on it.`;
+  }
   if (id.startsWith("buy:")) {
     const key = id.slice(4) as keyof typeof PRICES & keyof Ops;
     const price = PRICES[key];
@@ -651,16 +723,7 @@ export function act(state: GameState, id: string, ctx: Ctx): string {
     if (v.status === "Out of fuel") v.status = "";
     return `Tank filled. ${money(c)} with the delivery call-out.`;
   }
-  if (id === "overhaul") {
-    const c = overhaulPrice(v, o.wear[v.uid] ?? 0);
-    if (state.cash < c) return "Not enough cash.";
-    state.cash -= c;
-    o.upkeep += c;
-    o.wear[v.uid] = 0;
-    o.broke = o.broke.filter((u) => u !== v.uid);
-    if (v.status === "Broken down") v.status = "";
-    return `Repair shop overhauled it for ${money(c)}. Like new.`;
-  }
+  if (id === "overhaul") return overhaulAt(state, state.vehicles.indexOf(v));
   if (id === "photo") {
     o.photo = !o.photo;
     return "";
@@ -696,6 +759,8 @@ export function statusLine(state: GameState) {
   const v = state.vehicles[state.active];
   const parts: string[] = [C.seasonLabel(state.market.day)];
   if (v && C.isWorker(v)) parts.push(o.broke?.includes(v.uid) ? "BROKEN" : `Wear ${Math.round(((o.wear ?? {})[v.uid] ?? 0) * 100)}%`);
+  const route = v ? roadAt(v.x, v.z) : null;
+  if (route && o.roads.includes(route)) parts.push(`Graded ${ROAD_NAMES[route].toLowerCase()}`);
   if (on(4)) parts.push(`Rep ${REP_NAMES[repLevel(o.rep)]}`);
   if (on(5) && o.event && o.event.day === state.market.day)
     parts.push(o.event.kind === "flood" ? bridgeClock(state) : o.event.kind === "double" ? `${o.event.ore} pays 2×` : "Breakdown today");

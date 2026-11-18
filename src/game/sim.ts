@@ -3591,6 +3591,12 @@ export function repairVehicle(state: GameState, index: number) {
   return "";
 }
 
+export function overhaulVehicle(state: GameState, index: number) {
+  const msg = Ops.overhaulAt(state, index);
+  if (msg) log(state, msg);
+  return msg;
+}
+
 function spend(state: GameState, cost: number, msg: string) {
   if (state.cash < cost) {
     log(state, "Not enough cash.");
@@ -4279,6 +4285,16 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       repairLabel: (veh.damage ?? 0) > 0.001 ? `Repair · ${formatMoney(repairCost(def.price, veh.damage))}` : null,
       affordableRepair: state.cash >= repairCost(def.price, veh.damage ?? 0),
       damageLabel: (veh.damage ?? 0) > 0.001 ? `Damaged ${Math.round(veh.damage * 100)}%` : "",
+      ...(() => {
+        const w = Ops.ops(state).wear[veh.uid] ?? 0;
+        const broke = (Ops.ops(state).broke ?? []).includes(veh.uid);
+        const cost = Career.isWorker(veh) ? Ops.overhaulPrice(veh, w) : 0;
+        return {
+          wearLabel: !Career.isWorker(veh) || (w < 0.05 && !broke) ? "" : broke ? `Broken down · wear ${Math.round(w * 100)}%` : `Wear ${Math.round(w * 100)}%`,
+          overhaulLabel: Career.isWorker(veh) && (broke || w > 0.25) ? `${broke ? "Fix" : "Overhaul"} · ${formatMoney(cost)}` : null,
+          affordableOverhaul: state.cash >= cost,
+        };
+      })(),
       upgrades: kinds.map((k) => {
         const cost = upgradeCost(veh.defId, k.kind, veh.upgrades[k.kind]);
         return {
