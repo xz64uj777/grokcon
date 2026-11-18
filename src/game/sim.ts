@@ -808,7 +808,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
   const pinned = facePin(state, v);
   if (pinned && (!ore || pinned.ore === ore)) return pinned;
   let best: Deposit | null = null;
-  let score = -1;
+  let score = -Infinity;
   for (const d of state.deposits) {
     if (d.kind !== "vein" || d.tons < 1) continue;
     if (!ownsClaim(state, d.claim)) continue;
@@ -836,9 +836,26 @@ function slotOf(v: VehicleState) {
 /** A spot on the near edge of a pile, locked so the machine does not orbit it. */
 const approachLatch = new WeakMap<VehicleState, { id: string; x: number; z: number }>();
 
-function pileApproach(v: VehicleState, pile: Deposit) {
+function approachBusy(state: GameState, v: VehicleState, x: number, z: number) {
+  for (const o of state.vehicles) {
+    if (o === v || !o.operator) continue;
+    const od = DEFS[o.defId];
+    if (od.dig <= 0 && od.scoop <= 0 && !od.receives) continue;
+    if (distTo(o.x, o.z, x, z) < vehicleStats(v).radius + vehicleStats(o).radius + 2.8) return true;
+  }
+  return false;
+}
+
+function pileApproach(state: GameState, v: VehicleState, pile: Deposit) {
   const prev = approachLatch.get(v);
-  if (prev && prev.id === pile.id && distTo(v.x, v.z, pile.x, pile.z) < 22) return { x: prev.x, z: prev.z };
+  if (
+    prev &&
+    prev.id === pile.id &&
+    distTo(v.x, v.z, pile.x, pile.z) < 22 &&
+    !approachBusy(state, v, prev.x, prev.z)
+  ) {
+    return { x: prev.x, z: prev.z };
+  }
   const foot = pileFootprint(Math.max(pile.tons, 0.4));
   if (!wheelLoader(v.defId)) {
     const dx = v.x - pile.x;
@@ -865,6 +882,7 @@ function pileApproach(v: VehicleState, pile: Deposit) {
     const pocketZ = z + Math.sin(ang) * 12;
     let score = spotOpen(pocketX, pocketZ, x, z, pile.x, pile.z, 24) ? 100 : -20;
     if (bank !== 0) score += Math.cos(ang) * bank * 28;
+    if (approachBusy(state, v, x, z)) score -= 80;
     if (score > bestS) {
       bestS = score;
       bestX = x;
@@ -914,7 +932,7 @@ const truckPartner = new WeakMap<VehicleState, string>();
 
 function bestPile(state: GameState, v: VehicleState) {
   let best: Deposit | null = null;
-  let score = -1;
+  let score = -Infinity;
   let prev: Deposit | null = null;
   let prevScore = -1;
   for (const d of state.deposits) {
@@ -1202,7 +1220,7 @@ function workAnchor(state: GameState, digger: VehicleState) {
   const planned = plannedDeposit(state, digger);
   if (planned && planned.tons > 0.2) {
     if (planned.kind === "pile") {
-      const spot = pileApproach(digger, planned);
+      const spot = pileApproach(state, digger, planned);
       return { id: planned.id, standX: spot.x, standZ: spot.z, keepX: planned.x, keepZ: planned.z };
     }
     const face = wheelLoader(digger.defId) ? loaderStand(digger, planned) : driveFace(planned);
@@ -1212,7 +1230,7 @@ function workAnchor(state: GameState, digger: VehicleState) {
   if (def.scoop > 0) {
     const pile = (digger.cargo > 0.15 && digger.cargoOre ? pileInReach(state, digger) : null) ?? bestPile(state, digger);
     if (pile) {
-      const spot = pileApproach(digger, pile);
+      const spot = pileApproach(state, digger, pile);
       return { id: pile.id, standX: spot.x, standZ: spot.z, keepX: pile.x, keepZ: pile.z };
     }
   }
@@ -1727,6 +1745,8 @@ function crewWatchdog(state: GameState, v: VehicleState) {
   bayReady.delete(v);
   pileJob.delete(v);
   lineTicket.delete(v);
+  approachLatch.delete(v);
+  standLatch.delete(v);
   if (/^(Out of fuel|Needs a pile|At the|Lights|Light plant|Plant)/.test(v.status)) return;
   // A bucket that stopped filling at the face counts as full, so it goes and tips.
   if (/^Working/.test(v.status) && v.cargo > vehicleStats(v).capacity * 0.5) {
@@ -2197,7 +2217,7 @@ function aiControl(state: GameState, index: number): Control {
     else {
       const pile = bestPile(state, v);
       if (pile) {
-        const spot = pileApproach(v, pile);
+        const spot = pileApproach(state, v, pile);
         if (distTo(v.x, v.z, spot.x, spot.z) < 2.4 && Math.abs(v.speed) < 1.1 && pileInReach(state, v)) {
           v.status = `Scooping ${ORES[pile.ore].name}`;
           return { throttle: 0, steer: 0, action: true, brake: 1 };
@@ -2261,7 +2281,7 @@ function aiControl(state: GameState, index: number): Control {
     const washPile = pile != null && (prefersSluice(state, pile.ore) || dirtToSluice(state, pile.ore, pile.x));
     const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD && (!washVein || washPile);
     if (takePile && pile) {
-      const spot = pileApproach(v, pile);
+      const spot = pileApproach(state, v, pile);
       if (distTo(v.x, v.z, spot.x, spot.z) < 2.4 && Math.abs(v.speed) < 1.1 && pileInReach(state, v)) {
         v.status = `Scooping ${ORES[pile.ore].name}`;
         return { throttle: 0, steer: 0, action: true, brake: 1 };
