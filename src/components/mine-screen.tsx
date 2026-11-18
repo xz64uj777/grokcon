@@ -3,7 +3,7 @@ import { CircleDollarSign, Gauge, Mountain, Pickaxe, TrendingDown, TrendingUp, M
 import type { GameApi, UpgradeKind, ViewModel } from "@/game/types";
 import { usDist } from "@/game/catalog";
 import { BLAST_RADIUS } from "@/game/mining";
-import { crewExplanation } from "@/game/crew-help";
+import { crewBoard, crewExplanation } from "@/game/crew-help";
 
 export function MineScreen() {
   const worldRef = useRef<HTMLDivElement>(null);
@@ -376,7 +376,7 @@ export function MineScreen() {
                         <button
                           key={id}
                           type="button"
-                          className={`h-9 w-[4.5rem] font-display text-xs uppercase tracking-wide ${on ? "bg-primary text-primary-fg" : "border border-border bg-surface text-fg"}`}
+                          className={`h-11 w-[4.5rem] font-display text-xs uppercase tracking-wide ${on ? "bg-primary text-primary-fg" : "border border-border bg-surface text-fg"}`}
                           onClick={() => {
                             setWatchMap(id);
                             const first = hud.crew.find((c) => c.area === id);
@@ -403,8 +403,8 @@ export function MineScreen() {
                       onClick={() => apiRef.current?.look(c.index)}
                     >
                       <span className="block truncate font-display text-base uppercase leading-none tracking-wide">{c.name}</span>
-                      <span className="mt-1 block truncate text-xs">{c.operator ? c.status || "On duty" : "Off shift"}</span>
-                      <span className="mt-0.5 block truncate text-xs opacity-80">{c.cargo}</span>
+                      <span className="mt-1 block truncate text-sm leading-tight">{c.operator ? c.status || "On duty" : "Off shift"}</span>
+                      <span className="mt-0.5 block truncate text-sm leading-tight opacity-80">{c.cargo}</span>
                     </button>
                   ))}
                 </div>
@@ -727,6 +727,16 @@ export function MineScreen() {
                       )}
                     </article>
                   ))}
+                {panel === "crew" && crewBoard(hud.crew, hud.valleyOpen ? crewArea : "ridge").length > 0 && (
+                  <section className="border-b border-border py-4">
+                    <h2 className="font-display text-xl uppercase tracking-wide text-fg">On duty</h2>
+                    <ul className="mt-2 space-y-2">
+                      {crewBoard(hud.crew, hud.valleyOpen ? crewArea : "ridge").map((row) => (
+                        <li key={row.index} className="text-sm leading-relaxed text-fg">{row.line}</li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
                 {panel === "crew" && (
                   <section className="border-b border-border py-4">
                     <h2 className="font-display text-xl uppercase tracking-wide text-fg">Plant stockpile crew</h2>

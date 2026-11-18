@@ -2,6 +2,23 @@ import type { CrewCard } from "@/game/types";
 
 type CrewStatus = Pick<CrewCard, "status" | "where" | "hired" | "operator" | "active">;
 
+/** One line on the crew board: what a hired machine is doing. */
+export function crewBoardLine(c: Pick<CrewCard, "name" | "status" | "cargo" | "where" | "hired" | "operator">) {
+  if (!c.hired || !c.operator) return "";
+  const bits = [c.name, c.status || "On duty"];
+  if (c.cargo) bits.push(c.cargo);
+  if (c.where) bits.push(c.where);
+  return bits.join(" · ");
+}
+
+/** On-duty hired machines on one yard, for the crew list board. */
+export function crewBoard(crew: CrewCard[], area?: CrewCard["area"]) {
+  return crew
+    .filter((c) => c.hired && c.operator && (area == null || c.area === area))
+    .map((c) => ({ index: c.index, line: crewBoardLine(c) }))
+    .filter((row) => row.line);
+}
+
 /** Explain only states that commonly leave players unsure what to do next. */
 export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.where === "On the lowboy") return "This machine is on the trailer and will be unloaded at its assigned map.";
