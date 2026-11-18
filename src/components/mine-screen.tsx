@@ -594,7 +594,7 @@ export function MineScreen() {
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {panel === "crew" && (
                   <div className="border-b border-border py-3">
-                    <p className="text-sm leading-relaxed text-muted">Each map has its own crew. Hire an operator for each machine you want running on that yard. Tap Watch to step out of the seat: they keep working, and you can tap a machine to follow it. Set Work source to Any leased source or choose a claim on that map, such as Copper Bench.</p>
+                    <p className="text-sm leading-relaxed text-muted">Each map has its own crew. Hire an operator for each machine you want running on that yard. Tap Watch to step out of the seat: they keep working, and you can tap a machine to follow it. Set Work source to Any leased source or choose a claim on that map, such as Copper Bench. Tap a machine to put it on a team, then tap the team to pick a pile, face, or plant. Leave Auto if you want the planner to decide.</p>
                     {hud.valleyOpen && (
                       <div className="mt-3 flex gap-2">
                         {(
@@ -727,6 +727,46 @@ export function MineScreen() {
                       )}
                     </article>
                   ))}
+                {panel === "crew" && hud.teams.filter((t) => t.area === (hud.valleyOpen ? crewArea : "ridge")).length > 0 && (
+                  <section className="border-b border-border py-4">
+                    <h2 className="font-display text-xl uppercase tracking-wide text-fg">Teams</h2>
+                    <p className="mt-1 text-sm leading-relaxed text-muted">
+                      Put a loader or excavator and trucks on the same team. Pick a pile or face and a plant, or leave Auto.
+                    </p>
+                    {hud.teams.filter((t) => t.area === (hud.valleyOpen ? crewArea : "ridge")).map((t) => (
+                      <article key={t.id} className="mt-3 border-t border-border pt-3">
+                        <h3 className="font-display text-lg uppercase tracking-wide text-fg">{t.name}</h3>
+                        <p className="mt-1 text-sm text-muted">{t.members}</p>
+                        <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
+                          Work
+                          <select
+                            className="h-11 border border-border bg-surface px-3 text-fg"
+                            value={t.sourceValue}
+                            onChange={(e) => apiRef.current?.setCrewSource(t.id, e.target.value === "auto" ? null : e.target.value)}
+                          >
+                            <option value="auto">Auto</option>
+                            {t.sources.map((g) => (
+                              <option key={g.value} value={g.value}>{g.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
+                          Plant
+                          <select
+                            className="h-11 border border-border bg-surface px-3 text-fg"
+                            value={t.destValue}
+                            onChange={(e) => apiRef.current?.setCrewDest(t.id, e.target.value === "auto" ? null : e.target.value)}
+                          >
+                            <option value="auto">Auto</option>
+                            {t.dests.map((g) => (
+                              <option key={g.value} value={g.value}>{g.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </article>
+                    ))}
+                  </section>
+                )}
                 {panel === "crew" && crewBoard(hud.crew, hud.valleyOpen ? crewArea : "ridge").length > 0 && (
                   <section className="border-b border-border py-4">
                     <h2 className="font-display text-xl uppercase tracking-wide text-fg">On duty</h2>
@@ -795,6 +835,20 @@ export function MineScreen() {
                           ))}
                         </select>
                       </label>
+                      {c.crewOptions.length > 0 && (
+                        <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
+                          Team
+                          <select
+                            className="h-11 border border-border bg-surface px-3 text-fg"
+                            value={c.crewValue}
+                            onChange={(e) => apiRef.current?.assignCrew(c.index, e.target.value)}
+                          >
+                            {c.crewOptions.map((g) => (
+                              <option key={g.value} value={g.value}>{g.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

@@ -30,6 +30,9 @@ import {
   startBlast,
   step,
   toggleCrew,
+  assignCrew as assignVehicleCrew,
+  setCrewSource as assignCrewSource,
+  setCrewDest as assignCrewDest,
   toggleDeck,
   valleyOpen,
   mountainOpen,
@@ -225,6 +228,33 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         v.workFace = null;
         v.workClaim = claim;
         v.status = `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
+      }
+      saveGame(books());
+      push();
+    },
+    assignCrew(index, crew) {
+      const msg = assignVehicleCrew(state, index, crew);
+      if (msg) {
+        state.log.unshift(msg);
+        if (state.log.length > 5) state.log.length = 5;
+      }
+      saveGame(books());
+      push();
+    },
+    setCrewSource(crewId, sourceId) {
+      const msg = assignCrewSource(state, crewId, sourceId);
+      if (msg) {
+        state.log.unshift(msg);
+        if (state.log.length > 5) state.log.length = 5;
+      }
+      saveGame(books());
+      push();
+    },
+    setCrewDest(crewId, destKind) {
+      const msg = assignCrewDest(state, crewId, destKind);
+      if (msg) {
+        state.log.unshift(msg);
+        if (state.log.length > 5) state.log.length = 5;
       }
       saveGame(books());
       push();
