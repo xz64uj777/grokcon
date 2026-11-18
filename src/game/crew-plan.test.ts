@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planCrewJobs, type PlanJob, type PlanMachine } from "@/game/crew-plan";
+import { planCrewJobs, honorTeamDest, type PlanJob, type PlanMachine } from "@/game/crew-plan";
 
 function machine(uid: string, defId: string, x: number, z: number): PlanMachine {
   return { uid, defId, x, z, area: "ridge", cargo: 0, cargoOre: null, workClaim: null, workFace: null };
@@ -198,4 +198,31 @@ test("auto machines do not reuse a reserved manual team number", () => {
   assert.equal(plan.get("L1")!.team, 1);
   assert.notEqual(plan.get("L2")!.team, 1);
   assert.equal(plan.get("T2")!.team, plan.get("L2")!.team);
+});
+
+test("a team railroad dest is ignored when the job already goes to a plant", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+  ];
+  const jobs = [job("gold-a", "pile", "gold", 24, 0, 0, { destKind: "wash", destName: "Wash plant" })];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1"], sourceId: "gold-a", destKind: "loadout", destName: "Rail loadout" }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.destKind, "wash");
+  assert.equal(plan.get("T1")!.destKind, "wash");
+  assert.equal(plan.get("L1")!.destName, "Wash plant");
+  assert.equal(honorTeamDest("wash", "loadout"), null);
+  assert.equal(honorTeamDest("loadout", "loadout"), "loadout");
+  assert.equal(honorTeamDest("sluice", "crusher"), "crusher");
+});
+
+test("iron still hauls to the railroad when that is the auto dest", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+  ];
+  const jobs = [job("iron-a", "pile", "iron", 24, 0, 0, { destKind: "loadout", destName: "Rail loadout" })];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1"], sourceId: "iron-a", destKind: "loadout", destName: "Rail loadout" }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("T1")!.destKind, "loadout");
 });
