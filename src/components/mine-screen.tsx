@@ -399,12 +399,12 @@ export function MineScreen() {
                     <button
                       key={c.index}
                       type="button"
-                      className={`h-20 w-40 shrink-0 border px-2 text-left ${c.active ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
+                      className={`min-h-20 w-40 shrink-0 border px-2 py-1 text-left ${c.active ? "border-primary bg-primary text-primary-fg" : "border-border bg-surface text-fg"}`}
                       onClick={() => apiRef.current?.look(c.index)}
                     >
-                      <span className="block truncate font-display text-base uppercase leading-none tracking-wide">{c.name}</span>
-                      <span className="mt-1 block truncate text-sm leading-tight">{c.operator ? c.status || "On duty" : "Off shift"}</span>
-                      <span className="mt-0.5 block truncate text-sm leading-tight opacity-80">{c.cargo}</span>
+                      <span className="block font-display text-base uppercase leading-tight tracking-wide [overflow-wrap:anywhere]">{c.name}</span>
+                      <span className="mt-1 block text-sm leading-snug [overflow-wrap:anywhere]">{c.operator ? c.status || "On duty" : "Off shift"}</span>
+                      <span className="mt-0.5 block text-sm leading-snug opacity-80 [overflow-wrap:anywhere]">{c.cargo}</span>
                     </button>
                   ))}
                 </div>
@@ -772,7 +772,7 @@ export function MineScreen() {
                     <h2 className="font-display text-xl uppercase tracking-wide text-fg">On duty</h2>
                     <ul className="mt-2 space-y-2">
                       {crewBoard(hud.crew, hud.valleyOpen ? crewArea : "ridge").map((row) => (
-                        <li key={row.index} className="text-sm leading-relaxed text-fg">{row.line}</li>
+                        <li key={row.index} className="text-sm leading-relaxed text-fg [overflow-wrap:anywhere]">{row.line}</li>
                       ))}
                     </ul>
                   </section>
@@ -817,7 +817,7 @@ export function MineScreen() {
                         <p className="text-sm text-muted">{c.cargo}</p>
                       </div>
                       {c.where && <p className="mt-1 text-sm text-muted">{c.where}</p>}
-                      <p className="mt-1 text-sm text-fg">{c.status}</p>
+                      <p className="mt-1 text-sm leading-relaxed text-fg [overflow-wrap:anywhere]">{c.status}</p>
                       {explanation && <p className="mt-1 text-sm leading-relaxed text-cash">{explanation}</p>}
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
                       {c.wearLabel && <p className="mt-1 text-sm text-fg">{c.wearLabel}{c.wearLabel.startsWith("Broken") ? " · overhaul at the repair shop" : " · slower and thirstier until overhauled"}</p>}

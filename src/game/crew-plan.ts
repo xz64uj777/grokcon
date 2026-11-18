@@ -134,12 +134,24 @@ export type ManualCrew = {
   destName: string | null;
 };
 
+/** Rail loadout, barge, and the fill buyer are sell points, not recovery plants. */
+const SELL_POINT_KINDS = new Set<string>(["loadout", "barge", "reclaim"]);
+const PLANT_KINDS = new Set<string>(["wash", "sluice", "crusher", "mill"]);
+
+/** Keep a chosen plant, but do not send a haul to the railroad (or barge) when a recovery plant is already the job destination. */
+export function honorTeamDest(jobDest: PadKind, crewDest: string | null): string | null {
+  if (!crewDest) return null;
+  if (SELL_POINT_KINDS.has(crewDest) && PLANT_KINDS.has(jobDest)) return null;
+  return crewDest;
+}
+
 function withDest(job: PlanJob, crew: ManualCrew): PlanJob {
-  if (!crew.destKind) return job;
+  const dest = honorTeamDest(job.destKind, crew.destKind);
+  if (!dest) return job;
   return {
     ...job,
-    destKind: crew.destKind as PlanJob["destKind"],
-    destName: crew.destName || job.destName,
+    destKind: dest as PlanJob["destKind"],
+    destName: dest === crew.destKind ? crew.destName || job.destName : job.destName,
   };
 }
 

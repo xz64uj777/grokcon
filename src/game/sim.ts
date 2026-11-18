@@ -67,6 +67,7 @@ import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSa
 import { AXLE_BACK, HITCH_Z, MOUNTAIN_GATE_X, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, onMountainRoad, spotsUsed, stepHitch } from "@/game/lowboy";
 import {
   planCrewJobs,
+  honorTeamDest,
   type ManualCrew,
   jobStillValid,
   isPlanDigger,
@@ -3668,6 +3669,8 @@ function plannedPadFor(state: GameState, v: VehicleState) {
   if (!pad || !padOpen(state, pad.kind)) return null;
   if (unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0) return null;
   if (areaOf(pad.x) !== areaOf(v.x) && !canReach(v, pad.x)) return null;
+  const auto = bestPad(state, v.cargoOre, v.x, v.z, v);
+  if (auto && honorTeamDest(auto.kind, pad.kind) == null) return null;
   return pad;
 }
 
