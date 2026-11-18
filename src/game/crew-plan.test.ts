@@ -105,3 +105,97 @@ test("a skid with no crumbs self-hauls a leftover face", () => {
   assert.equal(plan.get("S1")!.sourceId, "gold");
   assert.equal(plan.get("S1")!.role, "skid");
 });
+
+test("a manual crew of one loader and two trucks stays on the chosen pile and plant", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+    { ...machine("T2", "truck", 6, 0), crewId: 1 },
+    machine("L2", "loader", 80, 0),
+    machine("T3", "truck", 84, 0),
+  ];
+  const jobs = [
+    job("dirt-a", "pile", "dirt", 24, 0, 0, { score: 100, destKind: "sluice", destName: "Sluice" }),
+    job("gold-b", "pile", "gold", 24, 80, 0, { score: 9000, destKind: "sluice", destName: "Sluice" }),
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1", "T2"], sourceId: "dirt-a", destKind: "crusher", destName: "Crusher" }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.team, 1);
+  assert.equal(plan.get("T1")!.team, 1);
+  assert.equal(plan.get("T2")!.team, 1);
+  assert.equal(plan.get("L1")!.sourceId, "dirt-a");
+  assert.equal(plan.get("T1")!.sourceId, "dirt-a");
+  assert.equal(plan.get("T2")!.sourceId, "dirt-a");
+  assert.equal(plan.get("L1")!.destKind, "crusher");
+  assert.equal(plan.get("T2")!.destName, "Crusher");
+  assert.equal(plan.get("L2")!.sourceId, "gold-b");
+  assert.notEqual(plan.get("L2")!.team, 1);
+  assert.equal(plan.get("T3")!.team, plan.get("L2")!.team);
+});
+
+test("when a chosen pile is gone the same crew auto-picks another job", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+    { ...machine("T2", "truck", 6, 0), crewId: 1 },
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1", "T2"], sourceId: "dirt-a", destKind: null, destName: null }];
+  const jobs = [job("gold-b", "pile", "gold", 24, 10, 0, { score: 9000 })];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.team, 1);
+  assert.equal(plan.get("T1")!.team, 1);
+  assert.equal(plan.get("T2")!.team, 1);
+  assert.equal(plan.get("L1")!.sourceId, "gold-b");
+  assert.ok(plan.get("T1")!.partnerUids.includes("L1"));
+  assert.ok(plan.get("T1")!.partnerUids.includes("T2"));
+});
+
+test("an invalid plant on a manual crew uses the job's usual dest", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1"], sourceId: "dirt-a", destKind: null, destName: null }];
+  const jobs = [job("dirt-a", "pile", "dirt", 24, 0, 0, { destKind: "sluice", destName: "Sluice" })];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.sourceId, "dirt-a");
+  assert.equal(plan.get("L1")!.destKind, "sluice");
+  assert.equal(plan.get("L1")!.destName, "Sluice");
+});
+
+test("two diggers on one manual crew share one job", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("L2", "loader", 8, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "L2", "T1"], sourceId: "dirt-a", destKind: null, destName: null }];
+  const jobs = [
+    job("dirt-a", "pile", "dirt", 24, 0, 0, { score: 100 }),
+    job("gold-b", "pile", "gold", 24, 80, 0, { score: 9000 }),
+  ];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.team, 1);
+  assert.equal(plan.get("L2")!.team, 1);
+  assert.equal(plan.get("L1")!.sourceId, "dirt-a");
+  assert.equal(plan.get("L2")!.sourceId, "dirt-a");
+  assert.equal(plan.get("T1")!.sourceId, "dirt-a");
+});
+
+test("auto machines do not reuse a reserved manual team number", () => {
+  const machines = [
+    { ...machine("L1", "loader", 0, 0), crewId: 1 },
+    { ...machine("T1", "truck", 4, 0), crewId: 1 },
+    machine("L2", "loader", 80, 0),
+    machine("T2", "truck", 84, 0),
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1"], sourceId: "dirt-a", destKind: null, destName: null }];
+  const jobs = [
+    job("dirt-a", "pile", "dirt", 24, 0, 0, { score: 100 }),
+    job("gold-b", "pile", "gold", 24, 80, 0, { score: 9000 }),
+  ];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")!.team, 1);
+  assert.notEqual(plan.get("L2")!.team, 1);
+  assert.equal(plan.get("T2")!.team, plan.get("L2")!.team);
+});
