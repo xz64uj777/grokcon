@@ -22,6 +22,7 @@ export type PlanMachine = {
   cargoOre: OreId | null;
   workClaim: number | null;
   workFace: string | null;
+  crewId?: number | null;
 };
 
 export type PlanJob = {
@@ -125,14 +126,31 @@ type Team = { team: number; digger: PlanMachine; trucks: PlanMachine[]; job: Pla
  * Sticky: a team keeps its pile or face until that source is gone or the destination
  * drops out of the job list. Not saved; the caller recomputes from world state.
  */
+export type ManualCrew = {
+  id: number;
+  memberUids: string[];
+  sourceId: string | null;
+  destKind: string | null;
+  destName: string | null;
+};
+
+function withDest(job: PlanJob, crew: ManualCrew): PlanJob {
+  if (!crew.destKind) return job;
+  return {
+    ...job,
+    destKind: crew.destKind as PlanJob["destKind"],
+    destName: crew.destName || job.destName,
+  };
+}
+
 export function planCrewJobs(
   machines: PlanMachine[],
   jobs: PlanJob[],
   prev: Map<string, CrewAssignment> | null,
+  manuals: ManualCrew[] = [],
 ): Map<string, CrewAssignment> {
   const result = new Map<string, CrewAssignment>();
   const areas = [...new Set(machines.map((m) => m.area))];
-  let nextTeam = 1;
 
   for (const area of areas) {
     const ms = machines.filter((m) => m.area === area);
@@ -145,12 +163,71 @@ export function planCrewJobs(
     const usedDiggers = new Set<string>();
     const usedTrucks = new Set<string>();
     const teams: Team[] = [];
+    const reserved = new Set(manuals.map((c) => c.id));
+    const allocTeam = (prefer?: number) => {
+      if (prefer && prefer > 0 && !reserved.has(prefer) && !teams.some((x) => x.team === prefer)) return prefer;
+      let n = 1;
+      while (reserved.has(n) || teams.some((x) => x.team === n)) n += 1;
+      return n;
+    };
+
+    const workJobs = areaJobs.filter((j) => j.kind !== "crumb" && jobStillValid(j.kind, j.tons));
+    const jobScore = (d: PlanMachine, j: PlanJob) => {
+      const d0 = dist(d, j);
+      return j.score / (d0 + 10) + (j.kind === "vein" && d0 < 16 ? 5000 : d0 < 40 ? 200 : 0);
+    };
+
+    // Player-made crews first: keep their members together, honor a valid
+    // chosen pile or plant, and auto-pick a job for the crew if that target is gone.
+    for (const crew of [...manuals].sort((a, b) => a.id - b.id)) {
+      const members = ms.filter((m) => crew.memberUids.includes(m.uid));
+      if (!members.length) continue;
+      const ds = members.filter((m) => isPlanDigger(m.defId));
+      const ts = members.filter((m) => isPlanTruck(m.defId));
+      const ss = members.filter((m) => m.defId === "skid");
+      let job: PlanJob | null = null;
+      if (crew.sourceId) {
+        const wanted = jobById.get(crew.sourceId);
+        if (wanted && jobStillValid(wanted.kind, wanted.tons) && wanted.area === members[0].area) {
+          job = withDest(wanted, crew);
+        }
+      }
+      if (!job) {
+        const workers = ds.length ? ds : ss;
+        let best: PlanJob | null = null;
+        let bestS = -Infinity;
+        for (const d of workers) {
+          for (const j of workJobs) {
+            if (takenJobs.has(j.id)) continue;
+            if (d.defId === "excavator" && j.kind !== "vein") continue;
+            if (isPlanDigger(d.defId) && d.defId !== "excavator") {
+              const pilesOpen = workJobs.some((p) => p.kind === "pile" && !takenJobs.has(p.id));
+              if (pilesOpen ? j.kind !== "pile" : j.kind !== "vein") continue;
+            }
+            const s = jobScore(d, j);
+            if (s > bestS) {
+              bestS = s;
+              best = j;
+            }
+          }
+        }
+        if (best) job = withDest(best, crew);
+      }
+      for (const d of ds) usedDiggers.add(d.uid);
+      for (const t of ts) usedTrucks.add(t.uid);
+      const partners = members.map((m) => m.uid);
+      if (job) takenJobs.add(job.id);
+      for (const d of ds) result.set(d.uid, assignment(crew.id, "digger", job, partners, d.uid));
+      for (const t of ts) result.set(t.uid, assignment(crew.id, "truck", job, partners, t.uid));
+      for (const s of ss) result.set(s.uid, assignment(crew.id, "skid", job, partners, s.uid));
+    }
 
     const sticky = new Map<number, { digger?: PlanMachine; trucks: PlanMachine[]; job?: PlanJob }>();
     if (prev) {
       for (const d of diggers) {
+        if (usedDiggers.has(d.uid) || d.crewId) continue;
         const a = prev.get(d.uid);
-        if (!a || a.role !== "digger" || !a.sourceId) continue;
+        if (!a || a.role !== "digger" || !a.sourceId || reserved.has(a.team)) continue;
         const job = jobById.get(a.sourceId);
         if (!job || !jobStillValid(job.kind, job.tons) || !allowedJob(d, job)) continue;
         // A loader only sits on a face when there is no pile to haul. If a pile
@@ -165,8 +242,9 @@ export function planCrewJobs(
         sticky.set(a.team, slot);
       }
       for (const t of trucks) {
+        if (usedTrucks.has(t.uid) || t.crewId) continue;
         const a = prev.get(t.uid);
-        if (!a || a.role !== "truck") continue;
+        if (!a || a.role !== "truck" || reserved.has(a.team)) continue;
         const slot = sticky.get(a.team);
         if (!slot?.digger) continue;
         slot.trucks.push(t);
@@ -180,8 +258,7 @@ export function planCrewJobs(
       takenJobs.add(slot.job.id);
       usedDiggers.add(slot.digger.uid);
       for (const t of keep) usedTrucks.add(t.uid);
-      teams.push({ team: n, digger: slot.digger, trucks: keep, job: slot.job });
-      nextTeam = Math.max(nextTeam, n + 1);
+      teams.push({ team: allocTeam(n), digger: slot.digger, trucks: keep, job: slot.job });
     }
 
     const fits = (d: PlanMachine, j: PlanJob) => {
@@ -192,7 +269,6 @@ export function planCrewJobs(
       return pilesOpen ? j.kind === "pile" : j.kind === "vein";
     };
 
-    const workJobs = areaJobs.filter((j) => j.kind !== "crumb" && jobStillValid(j.kind, j.tons));
     for (;;) {
       let best: { d: PlanMachine; j: PlanJob; s: number } | null = null;
       for (const d of diggers) {
@@ -207,7 +283,7 @@ export function planCrewJobs(
         }
       }
       if (!best) break;
-      teams.push({ team: nextTeam++, digger: best.d, trucks: [], job: best.j });
+      teams.push({ team: allocTeam(), digger: best.d, trucks: [], job: best.j });
       usedDiggers.add(best.d.uid);
       takenJobs.add(best.j.id);
     }
@@ -255,6 +331,7 @@ export function planCrewJobs(
       .sort((a, b) => b.score - a.score || b.tons - a.tons);
     const takenCrumbs = new Set<string>();
     for (const s of skids) {
+      if (result.has(s.uid) || s.crewId) continue;
       const prevA = prev?.get(s.uid);
       let job: PlanJob | undefined;
       if (prevA?.role === "skid" && prevA.sourceId) {

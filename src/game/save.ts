@@ -100,6 +100,7 @@ function sanitize(raw: unknown): GameState | null {
         bias: 1,
         workClaim: typeof v.workClaim === "number" ? Math.round(num(v.workClaim, 0, 0, 99)) : null,
         workFace: typeof v.workFace === "string" && v.workFace.length < 40 ? v.workFace : null,
+        crewId: typeof v.crewId === "number" && Number.isFinite(v.crewId) ? Math.round(num(v.crewId, 0, 1, 20)) : null,
         busy: false,
         ...(v.defId === "lowboy" && typeof v.trailerYaw === "number" && typeof v.axleX === "number" && typeof v.axleZ === "number"
           ? { trailerYaw: num(v.trailerYaw, 0, -40, 40), axleX: posX(v.axleX, 0), axleZ: posZ(v.axleZ, v.axleX, 96) }
@@ -129,6 +130,7 @@ function sanitize(raw: unknown): GameState | null {
         bias: 1,
         workClaim: null,
         workFace: null,
+        crewId: null,
         busy: false,
       });
     }
@@ -137,6 +139,27 @@ function sanitize(raw: unknown): GameState | null {
       state.active = Math.round(num(o.active, 0, 0, vehicles.length - 1));
     }
   }
+  const PAD_KINDS = ["crusher", "reclaim", "sluice", "loadout", "wash", "barge", "mill"];
+  const crews: GameState["crews"] = [];
+  if (Array.isArray(o.crews)) {
+    const seen = new Set<number>();
+    for (const item of o.crews) {
+      if (!item || typeof item !== "object") continue;
+      const c = item as Record<string, unknown>;
+      const id = Math.round(num(c.id, 0, 1, 20));
+      if (id < 1 || seen.has(id)) continue;
+      seen.add(id);
+      const sourceId = typeof c.sourceId === "string" && c.sourceId.length > 0 && c.sourceId.length < 40 ? c.sourceId : null;
+      const destKind = typeof c.destKind === "string" && PAD_KINDS.includes(c.destKind) ? (c.destKind as GameState["crews"][number]["destKind"]) : null;
+      crews.push({ id, sourceId, destKind });
+    }
+  }
+  for (const v of state.vehicles) {
+    if (v.crewId == null) continue;
+    if (!crews.some((c) => c.id === v.crewId)) crews.push({ id: v.crewId, sourceId: null, destKind: null });
+  }
+  crews.sort((a, b) => a.id - b.id);
+  state.crews = crews;
   if (Array.isArray(o.deposits)) {
     const saved = new Map<string, Record<string, unknown>>();
     for (const item of o.deposits) {

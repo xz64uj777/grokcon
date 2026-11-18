@@ -46,6 +46,14 @@ export type Deposit = {
   lastBlastDay: number;
 };
 
+export type CrewSetup = {
+  id: number;
+  /** Deposit id for a pile or face, or null for Auto. */
+  sourceId: string | null;
+  /** Plant the team hauls to, or null for Auto. */
+  destKind: PadKind | null;
+};
+
 export type VehicleState = {
   uid: string;
   defId: VehicleId;
@@ -66,6 +74,8 @@ export type VehicleState = {
   workClaim: number | null;
   /** A single face, such as Summit gold. Empty means any face on the work claim. */
   workFace: string | null;
+  /** Manual crew id (Team 1, 2, …), or null for Auto. */
+  crewId: number | null;
   status: string;
   stuck: number;
   unstick: number;
@@ -127,6 +137,8 @@ export type GameState = {
   wet: number;
   muted: boolean;
   vehicles: VehicleState[];
+  /** Player-made crews. Empty means every machine is on Auto. */
+  crews: CrewSetup[];
   /** Uids strapped to the lowboy deck, load order. */
   deck: string[];
   active: number;
@@ -182,6 +194,8 @@ export type CrewCard = {
   /** Select value: "any", a claim id, or "face:<deposit id>". */
   workSource: string;
   sources: { value: string; label: string }[];
+  crewValue: string;
+  crewOptions: { value: string; label: string }[];
   hireLabel: string;
   sellLabel: string | null;
   affordableHire: boolean;
@@ -231,6 +245,16 @@ export type HudModel = {
   log: string[];
   machines: MachineCard[];
   crew: CrewCard[];
+  teams: {
+    id: number;
+    name: string;
+    members: string;
+    area: "ridge" | "river" | "mountain";
+    sourceValue: string;
+    destValue: string;
+    sources: { value: string; label: string }[];
+    dests: { value: string; label: string }[];
+  }[];
   grounds: GroundCard[];
   hadSave: boolean;
   savedBlurb: string;
@@ -310,6 +334,9 @@ export type GameApi = {
   upgrade: (index: number, kind: UpgradeKind) => void;
   crew: (index: number) => void;
   assignSource: (index: number, source: string | null) => void;
+  assignCrew: (index: number, crew: string) => void;
+  setCrewSource: (crewId: number, sourceId: string | null) => void;
+  setCrewDest: (crewId: number, destKind: string | null) => void;
   setFeedLimit: (limit: 1 | 2 | "all") => void;
   setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;

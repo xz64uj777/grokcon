@@ -67,6 +67,7 @@ import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSa
 import { AXLE_BACK, HITCH_Z, MOUNTAIN_GATE_X, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, onMountainRoad, spotsUsed, stepHitch } from "@/game/lowboy";
 import {
   planCrewJobs,
+  type ManualCrew,
   jobStillValid,
   isPlanDigger,
   isPlanTruck,
@@ -380,6 +381,7 @@ export function freshGame(company: string): GameState {
     muted: false,
     deck: [],
     watching: false,
+    crews: [],
     vehicles: (() => {
       const pickup = makeVehicle("pickup", 0);
       const plant = makeVehicle("crusher", 1);
@@ -418,6 +420,7 @@ function makeVehicle(id: VehicleId, slot: number): VehicleState {
     operator: false,
     workClaim: null,
     workFace: null,
+    crewId: null,
     status: "Parked",
     stuck: 0,
     unstick: 0,
@@ -3368,11 +3371,13 @@ export const SHORT_CARRY_RANGE = 60;
 const crewPlans = new WeakMap<GameState, { at: number; jobs: Map<string, CrewAssignment>; uids: string }>();
 
 function crewKey(state: GameState) {
-  return state.vehicles
+  const roster = state.vehicles
     .filter((v) => v.hired && v.operator && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
-    .map((v) => v.uid)
+    .map((v) => `${v.uid}:${v.crewId ?? "auto"}`)
     .sort()
     .join(",");
+  const targets = (state.crews ?? []).map((c) => `${c.id}:${c.sourceId ?? ""}:${c.destKind ?? ""}`).join(",");
+  return `${roster}|${targets}`;
 }
 
 function collectCrewJobs(state: GameState): PlanJob[] {
@@ -3413,6 +3418,164 @@ function collectCrewJobs(state: GameState): PlanJob[] {
   return out;
 }
 
+
+const PAD_KINDS: import("@/game/types").PadKind[] = ["crusher", "reclaim", "sluice", "loadout", "wash", "barge", "mill"];
+
+function isPadKind(v: unknown): v is import("@/game/types").PadKind {
+  return typeof v === "string" && (PAD_KINDS as string[]).includes(v);
+}
+
+function pruneCrews(state: GameState) {
+  if (!state.crews) state.crews = [];
+  const used = new Set(state.vehicles.map((v) => v.crewId).filter((id): id is number => id != null));
+  state.crews = state.crews.filter((c) => used.has(c.id) || c.sourceId || c.destKind);
+  for (const v of state.vehicles) {
+    if (v.crewId == null) continue;
+    if (!state.crews.some((c) => c.id === v.crewId)) state.crews.push({ id: v.crewId, sourceId: null, destKind: null });
+  }
+  state.crews.sort((a, b) => a.id - b.id);
+}
+
+function ensureCrew(state: GameState, id: number) {
+  pruneCrews(state);
+  let c = state.crews.find((o) => o.id === id);
+  if (!c) {
+    c = { id, sourceId: null, destKind: null };
+    state.crews.push(c);
+    state.crews.sort((a, b) => a.id - b.id);
+  }
+  return c;
+}
+
+function nextCrewId(state: GameState) {
+  pruneCrews(state);
+  let n = 1;
+  while (state.crews.some((c) => c.id === n) || state.vehicles.some((v) => v.crewId === n)) n += 1;
+  return n;
+}
+
+function manualsFromState(state: GameState): ManualCrew[] {
+  pruneCrews(state);
+  return state.crews
+    .map((c) => {
+      const memberUids = state.vehicles.filter((v) => v.crewId === c.id && v.hired && v.operator).map((v) => v.uid);
+      let destKind = c.destKind;
+      let destName: string | null = null;
+      if (destKind) {
+        const pad = livePads(state).find((p) => p.kind === destKind);
+        if (!pad || !padOpen(state, pad.kind)) destKind = null;
+        else destName = pad.name;
+      }
+      let sourceId = c.sourceId;
+      if (sourceId && !state.deposits.some((d) => d.id === sourceId && d.tons >= 0.4 && ownsClaim(state, d.claim))) {
+        sourceId = null;
+      }
+      return { id: c.id, memberUids, sourceId, destKind, destName };
+    })
+    .filter((c) => c.memberUids.length);
+}
+
+export function assignCrew(state: GameState, index: number, crew: string) {
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid") {
+    return "That machine does not join a haul crew.";
+  }
+  if (crew === "auto" || crew == null || crew === "") {
+    v.crewId = null;
+    pruneCrews(state);
+    refreshCrewPlan(state, true);
+    v.status = "Assigned to Auto";
+    return "";
+  }
+  const id = crew === "new" ? nextCrewId(state) : Math.round(Number(crew));
+  if (!Number.isFinite(id) || id < 1 || id > 20) return "No such team.";
+  v.crewId = id;
+  ensureCrew(state, id);
+  refreshCrewPlan(state, true);
+  v.status = `Assigned to Team ${id}`;
+  return "";
+}
+
+export function setCrewSource(state: GameState, crewId: number, sourceId: string | null) {
+  const c = state.crews.find((o) => o.id === crewId);
+  if (!c) return "No such team.";
+  if (!sourceId || sourceId === "auto") {
+    c.sourceId = null;
+  } else {
+    const d = state.deposits.find((o) => o.id === sourceId);
+    if (!d || d.id.startsWith("feed-") || !ownsClaim(state, d.claim)) return "That pile is gone.";
+    c.sourceId = d.id;
+  }
+  refreshCrewPlan(state, true);
+  return "";
+}
+
+export function setCrewDest(state: GameState, crewId: number, destKind: string | null) {
+  const c = state.crews.find((o) => o.id === crewId);
+  if (!c) return "No such team.";
+  if (!destKind || destKind === "auto") {
+    c.destKind = null;
+  } else {
+    if (!isPadKind(destKind) || !padOpen(state, destKind)) return "That plant is not open.";
+    c.destKind = destKind;
+  }
+  refreshCrewPlan(state, true);
+  return "";
+}
+
+export function teamSourceOptions(state: GameState, area: AreaId) {
+  const options: { value: string; label: string }[] = [];
+  for (const d of state.deposits) {
+    if (!ownsClaim(state, d.claim) || areaOf(d.x) !== area) continue;
+    if (d.kind === "pile" && (d.id.startsWith("feed-") || d.tons < 0.4)) continue;
+    if (d.kind === "vein" && d.tons < 0.5) continue;
+    const place = CLAIMS.find((c) => c.id === d.claim)?.name ?? prettySign(d.sign);
+    const what = d.kind === "vein" ? prettySign(d.sign) : `${d.tons >= 1 ? d.tons.toFixed(0) : d.tons.toFixed(1)} t ${ORES[d.ore].name}`;
+    options.push({ value: d.id, label: `${what} · ${place}` });
+  }
+  return options;
+}
+
+export function teamDestOptions(state: GameState, area: AreaId) {
+  return livePads(state)
+    .filter((p) => padOpen(state, p.kind) && areaOf(p.x) === area)
+    .map((p) => ({ value: p.kind, label: p.name }));
+}
+
+function teamMemberLine(state: GameState, id: number) {
+  const names = state.vehicles
+    .filter((v) => v.crewId === id)
+    .map((v) => DEFS[v.defId].name);
+  return names.length ? names.join(", ") : "No machines";
+}
+
+function crewSelectOptions(state: GameState, v: VehicleState) {
+  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid") return [];
+  pruneCrews(state);
+  const options = [{ value: "auto", label: "Auto" }, ...state.crews.map((c) => ({ value: String(c.id), label: `Team ${c.id}` }))];
+  options.push({ value: "new", label: "New team" });
+  return options;
+}
+
+function buildHudTeams(state: GameState): import("@/game/types").HudModel["teams"] {
+  pruneCrews(state);
+  return state.crews.map((c) => {
+    const members = state.vehicles.filter((v) => v.crewId === c.id);
+    const area = members.length ? areaIn(members[0].x, members[0].z) : currentArea(state);
+    return {
+      id: c.id,
+      name: `Team ${c.id}`,
+      members: teamMemberLine(state, c.id),
+      area,
+      sourceValue: c.sourceId && state.deposits.some((d) => d.id === c.sourceId) ? c.sourceId : "auto",
+      destValue: c.destKind && padOpen(state, c.destKind) ? c.destKind : "auto",
+      sources: teamSourceOptions(state, area),
+      dests: teamDestOptions(state, area),
+    };
+  });
+}
+
 function collectCrewMachines(state: GameState) {
   return state.vehicles
     .filter((v) => v.hired && v.operator && !aboard(v) && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
@@ -3426,6 +3589,7 @@ function collectCrewMachines(state: GameState) {
       cargoOre: v.cargoOre,
       workClaim: assignedClaim(v),
       workFace: facePin(state, v)?.id ?? null,
+      crewId: v.crewId ?? null,
     }));
 }
 
@@ -3456,7 +3620,7 @@ export function refreshCrewPlan(state: GameState, force = false) {
   const uids = crewKey(state);
   const stale = force || !prev || state.seconds - prev.at >= 1 || prev.uids !== uids || sourcesGone(state, prev.jobs);
   if (!stale) return prev.jobs;
-  const jobs = planCrewJobs(collectCrewMachines(state), collectCrewJobs(state), prev?.jobs ?? null);
+  const jobs = planCrewJobs(collectCrewMachines(state), collectCrewJobs(state), prev?.jobs ?? null, manualsFromState(state));
   crewPlans.set(state, { at: state.seconds, jobs, uids });
   syncTeamPartners(state, jobs);
   return jobs;
@@ -4241,6 +4405,7 @@ export function sellVehicle(state: GameState, index: number) {
   state.vehicles.splice(index, 1);
   if (state.active > index) state.active -= 1;
   if (state.active >= state.vehicles.length) state.active = state.vehicles.length - 1;
+  pruneCrews(state);
   state.cash += refund;
   log(state, `Sold the ${name} for ${formatMoney(refund)}.`);
   return "";
@@ -4546,6 +4711,8 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
         ? lowboyDest(veh) ? `map:${lowboyDest(veh)}` : "any"
         : veh.workFace ? `face:${veh.workFace}` : veh.workClaim != null ? String(veh.workClaim) : "any",
       sources: sourceOptions(state, area, veh.defId),
+      crewValue: veh.crewId != null ? String(veh.crewId) : "auto",
+      crewOptions: crewSelectOptions(state, veh),
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
       sellLabel: state.vehicles.length > 1 ? `Sell · ${formatMoney(resale(veh))}` : null,
       affordableHire: veh.hired || state.cash >= HIRE_COST,
@@ -4618,6 +4785,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     log: state.log.slice(0, 4),
     machines,
     crew,
+    teams: buildHudTeams(state),
     grounds,
     hadSave,
     savedBlurb,
