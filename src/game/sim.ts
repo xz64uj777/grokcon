@@ -217,9 +217,18 @@ function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
   if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
   if (d.id === "starter" && assignedClaim(v) != null) return false;
-  if (v.workClaim == null && state.sluice && state.preferSluice && d.kind === "pile" && !prefersSluice(state, d.ore)) {
+  // Sluice work comes first, but only while a washable pile is actually waiting.
+  // A live gold or copper vein used to block dirt and iron piles for the whole
+  // shift, so claim stock sat untouched. Dirt still counts as sluice work.
+  if (v.workClaim == null && state.sluice && state.preferSluice && d.kind === "pile" && !prefersSluice(state, d.ore) && !dirtToSluice(state, d.ore, d.x)) {
     const washing = state.deposits.some(
-      (o) => o.kind === "vein" && o.tons > 1 && ownsClaim(state, o.claim) && prefersSluice(state, o.ore),
+      (o) =>
+        o.kind === "pile" &&
+        o.tons >= 1.5 &&
+        !o.id.startsWith("feed-") &&
+        ownsClaim(state, o.claim) &&
+        sameArea(o, v) &&
+        (prefersSluice(state, o.ore) || dirtToSluice(state, o.ore, o.x)),
     );
     if (washing) return false;
   }
@@ -891,13 +900,15 @@ function bestPile(state: GameState, v: VehicleState) {
   let prev: Deposit | null = null;
   let prevScore = -1;
   for (const d of state.deposits) {
-    if (d.kind !== "pile" || d.tons < 0.4 || d.id.startsWith("feed-")) continue;
+    // 1.5 t is the scoop cutoff. A smaller leftover must not outrank a real
+    // pile, or the loader walks off to the gold face and claim stock sits.
+    if (d.kind !== "pile" || d.tons < 1.5 || d.id.startsWith("feed-")) continue;
     if (!ownsClaim(state, d.claim)) continue;
     if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
     if (v.defId === "skid" && loaderInArea(state, v) && d.tons < 8) continue;
-    const unit = prefersSluice(state, d.ore) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
+    const unit = prefersSluice(state, d.ore) || dirtToSluice(state, d.ore, d.x) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
     const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) - crewNear(state, v, d.x, d.z, 14) * 2200;
     if (d.id === pileJob.get(v)) {
@@ -2190,7 +2201,7 @@ function aiControl(state: GameState, index: number): Control {
     const veinD = vein ? distTo(v.x, v.z, vein.x, vein.z) : Infinity;
     // The iron pile sits on the gate. Take it when it is closer than a face.
     const washVein = vein != null && prefersSluice(state, vein.ore);
-    const washPile = pile != null && prefersSluice(state, pile.ore);
+    const washPile = pile != null && (prefersSluice(state, pile.ore) || dirtToSluice(state, pile.ore, pile.x));
     const takePile = pile != null && pile.tons >= 1.5 && pileD + 4 < veinD && (!washVein || washPile);
     if (takePile && pile) {
       const spot = pileApproach(v, pile);

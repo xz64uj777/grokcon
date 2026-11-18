@@ -255,6 +255,13 @@ test("Gold Creek jobs route around the west wall when assigned or sluice-preferr
     s.sluice = true;
     s.preferSluice = true;
     s.watching = true;
+    // This test is the west-wall route to Gold Gravel, not pile work. Clear the
+    // gate iron pile so an unassigned loader is not kept in the yard.
+    const starter = s.deposits.find((d) => d.id === "starter");
+    if (starter) {
+      starter.tons = 0;
+      starter.regen = 0;
+    }
     assert.equal(buyVehicle(s, "loader"), "");
     const loader = s.vehicles.at(-1)!;
     loader.x = -10;
