@@ -212,6 +212,10 @@ test("a team railroad dest is ignored when the job already goes to a plant", () 
   assert.equal(plan.get("T1")!.destKind, "wash");
   assert.equal(plan.get("L1")!.destName, "Wash plant");
   assert.equal(honorTeamDest("wash", "loadout"), null);
+  assert.equal(honorTeamDest("sluice", "loadout"), null);
+  assert.equal(honorTeamDest("crusher", "barge"), null);
+  assert.equal(honorTeamDest("mill", "loadout"), null);
+  assert.equal(honorTeamDest("sluice", "reclaim"), null);
   assert.equal(honorTeamDest("loadout", "loadout"), "loadout");
   assert.equal(honorTeamDest("sluice", "crusher"), "crusher");
 });
