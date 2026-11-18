@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice, vehicleStats } from "@/game/sim";
+import { freshGame, step, addFeedPile, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice, vehicleStats, nearPileLabel, buildHud } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -791,3 +791,21 @@ test("a crew heavy loader beside the crusher fills a waiting dump truck instead 
   assert.ok(loaded > 8, `truck never received a load (${truck.cargo.toFixed(1)} t, ${truck.status}; loader ${loader.cargo.toFixed(1)} t ${loader.status})`);
   assert.ok(cashBeforeLoad < 200, `sold scoops at the crusher instead of loading the truck (+${cashBeforeLoad.toFixed(0)})`);
 }));
+
+test("a nearby pile tells you how many tons are left, and the line goes away when the pile does", () => {
+  const s = freshGame("Pile");
+  const pile = s.deposits.find((d) => d.id === "starter")!;
+  const v = s.vehicles[s.active]!;
+  v.x = pile.x;
+  v.z = pile.z + 3;
+  pile.tons = 12;
+  assert.equal(nearPileLabel(s, v), "Iron Pile · 12 t");
+  assert.match(buildHud(s, false).faceLabel, /Iron Pile · 12 t/);
+  pile.tons = 3.4;
+  assert.equal(nearPileLabel(s, v), "Iron Pile · 3.4 t");
+  pile.tons = 0.05;
+  assert.equal(nearPileLabel(s, v), "");
+  pile.tons = 12;
+  v.z = pile.z + 80;
+  assert.equal(nearPileLabel(s, v), "");
+});

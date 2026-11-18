@@ -4146,6 +4146,26 @@ function toolLabel(v: VehicleState, mode: ControlMode) {
   return "";
 }
 
+
+/** Short pile readout when you are close enough to work it, e.g. "Iron Pile · 12 t". */
+export function nearPileLabel(state: GameState, v: VehicleState) {
+  let best: Deposit | null = null;
+  let bestD = Infinity;
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || d.tons <= 0.15) continue;
+    const foot = pileFootprint(d.tons);
+    const reach = Math.max(foot.rx, foot.rz) + 8;
+    const dist = distTo(v.x, v.z, d.x, d.z);
+    if (dist <= reach && dist < bestD) {
+      bestD = dist;
+      best = d;
+    }
+  }
+  if (!best) return "";
+  const tons = best.tons >= 10 ? best.tons.toFixed(0) : best.tons.toFixed(1);
+  return `${prettySign(best.sign)} · ${tons} t`;
+}
+
 function faceLabel(state: GameState, v: VehicleState) {
   const d = faceNearPlayer(state, v, 10);
   if (!d) return "";
@@ -4324,7 +4344,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     gearLabel: v && state.controlMode === "real" && usesGears(v.defId) ? `Gear ${gearName(v.tool.gear)}` : null,
     toolLabel: v ? toolLabel(v, state.controlMode) : "",
     purityLabel: v && v.cargo > 0.05 && v.cargoOre && v.cargoOre !== "dirt" ? `Purity ${Math.round((v.cargoPurity ?? 1) * 100)}%` : "",
-    faceLabel: v ? faceLabel(state, v) : "",
+    faceLabel: v ? nearPileLabel(state, v) || faceLabel(state, v) : "",
     help: controlHelp(v?.defId ?? "pickup", excDrive),
     twoSticks: state.controlMode === "real" && !!v && machineKind(v.defId) !== "car",
     prices: priceRows(state, currentArea(state)),
