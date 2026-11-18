@@ -715,3 +715,79 @@ test("a dump truck stays clear of gold gravel when no payloader is hired", () =>
   assert.equal(truck.status, "Needs a payloader");
   assert.ok(truck.x < -88, `truck entered the gravel without a loading bay at ${truck.x.toFixed(0)},${truck.z.toFixed(0)}`);
 });
+
+function loosePile(s: ReturnType<typeof freshGame>, ore: "iron", tons: number, x: number, z: number) {
+  s.pileSeq += 1;
+  s.deposits.push({
+    id: `pile-${s.pileSeq}`, kind: "pile", ore, tons, max: tons, x, z, regen: 0,
+    claim: 1, radius: 6, sign: "IRON", purity: 1, overburden: 0, grade: 1,
+    stress: 0, bench: 1, benchProgress: 0, hard: false, tested: true, lastBlastDay: -1,
+  });
+}
+
+test("a heavy loader scooping beside the ridge crusher keeps the bucket until it is full", () => {
+  const s = freshGame("Bucket");
+  s.cash = 1e6;
+  buyVehicle(s, "hloader");
+  const loader = s.vehicles.find((v) => v.defId === "hloader")!;
+  const plant = s.vehicles.find((v) => v.defId === "crusher")!;
+  loosePile(s, "iron", 40, plant.x - 8, plant.z);
+  loader.x = plant.x - 8;
+  loader.z = plant.z + 3;
+  s.active = s.vehicles.indexOf(loader);
+  const cash0 = s.cash;
+  const dig = { throttle: 0, steer: 0, action: true };
+  for (let i = 0; i < 30; i++) step(s, dig, 0.1, true);
+  assert.ok(loader.cargo >= 14, `bucket emptied beside the crusher (${loader.cargo.toFixed(1)} t, ${loader.status})`);
+  assert.equal(loader.cargoOre, "iron");
+  assert.ok(s.cash - cash0 < 1, `sold each scoop at the crusher (+${(s.cash - cash0).toFixed(0)})`);
+});
+
+test("a heavy loader can still dump a load at the crusher once the pile is gone", () => {
+  const s = freshGame("Dump");
+  s.cash = 1e6;
+  buyVehicle(s, "hloader");
+  const loader = s.vehicles.find((v) => v.defId === "hloader")!;
+  const plant = s.vehicles.find((v) => v.defId === "crusher")!;
+  loader.x = plant.x + 2;
+  loader.z = plant.z;
+  loader.cargo = 8;
+  loader.cargoOre = "iron";
+  s.active = s.vehicles.indexOf(loader);
+  const cash0 = s.cash;
+  for (let i = 0; i < 8; i++) step(s, { throttle: 0, steer: 0, action: true }, 0.1, true);
+  assert.ok(loader.cargo < 0.1, `still holding ${loader.cargo.toFixed(1)} t`);
+  assert.ok(s.cash > cash0, "crusher did not pay for the dump");
+});
+
+test("a crew heavy loader beside the crusher fills a waiting dump truck instead of selling each scoop", () => withSeededRandom(7, () => {
+  const s = freshGame("Crew");
+  s.cash = 1e6;
+  s.watching = true;
+  buyVehicle(s, "hloader");
+  buyVehicle(s, "truck");
+  const loader = s.vehicles.find((v) => v.defId === "hloader")!;
+  const truck = s.vehicles.find((v) => v.defId === "truck")!;
+  const plant = s.vehicles.find((v) => v.defId === "crusher")!;
+  const pileX = plant.x - 8;
+  const pileZ = plant.z;
+  loosePile(s, "iron", 80, pileX, pileZ);
+  loader.x = pileX;
+  loader.z = pileZ + 3;
+  loader.hired = true;
+  loader.operator = true;
+  truck.x = pileX - 14;
+  truck.z = pileZ - 8;
+  truck.hired = true;
+  truck.operator = true;
+  const cash0 = s.cash;
+  let loaded = 0;
+  let cashBeforeLoad = 0;
+  for (let i = 0; i < 30 * 25; i++) {
+    step(s, idle, 1 / 30, false);
+    if (loaded <= 8) cashBeforeLoad = s.cash - cash0;
+    loaded = Math.max(loaded, truck.cargo);
+  }
+  assert.ok(loaded > 8, `truck never received a load (${truck.cargo.toFixed(1)} t, ${truck.status}; loader ${loader.cargo.toFixed(1)} t ${loader.status})`);
+  assert.ok(cashBeforeLoad < 200, `sold scoops at the crusher instead of loading the truck (+${cashBeforeLoad.toFixed(0)})`);
+}));

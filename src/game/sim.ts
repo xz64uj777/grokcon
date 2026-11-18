@@ -1953,7 +1953,7 @@ function aiControl(state: GameState, index: number): Control {
 
   if (v.cargo < 0.25) plantTicket.delete(v);
 
-  if (v.cargoOre && v.cargo > 0.35) {
+  if (v.cargoOre && v.cargo > 0.35 && !keepBucketAtPad(state, v, cap, "auto")) {
     const pad = nearestPad(state, v.x, v.z);
     const planned = bestPad(state, v.cargoOre, v.x, v.z, v);
     if (pad && planned && pad.id === planned.id && unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) > 0) {
@@ -2199,7 +2199,7 @@ function aiControl(state: GameState, index: number): Control {
   }
 
   v.status = label;
-  if (has && v.cargoOre && full) {
+  if (has && v.cargoOre && full && !keepBucketAtPad(state, v, cap, "auto")) {
     const pad = nearestPad(state, v.x, v.z);
     const wrongPlant =
       (prefersSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
@@ -2293,6 +2293,36 @@ function truckNear(state: GameState, v: VehicleState, x: number, z: number, reac
   return best;
 }
 
+
+/** A pile or face this machine can still scoop or dig. */
+function fillSourceInReach(state: GameState, v: VehicleState) {
+  const def = DEFS[v.defId];
+  if (def.scoop > 0 && pileInReach(state, v)) return true;
+  if (def.dig > 0) {
+    const tip = v.defId === "excavator" ? bucketPoint(v.x, v.z, v.yaw, v.tool) : { x: v.x, z: v.z };
+    if (closestFace(state, tip.x, tip.z, v)) return true;
+  }
+  if (wheelLoader(def.id) && v.operator && v.workClaim != null) {
+    const spot = bestVein(state, v, null);
+    if (!spot) return false;
+    const stand = loaderStand(v, spot);
+    if (distTo(v.x, v.z, stand.x, stand.z) <= stand.reach + 1.4) return true;
+    const cut = faceOf(spot);
+    return distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
+  }
+  return false;
+}
+
+/** Keep the bucket when still filling, or when a truck is in line for it. Trucks at a pad still dump. */
+function keepBucketAtPad(state: GameState, v: VehicleState, cap: number, phase: WorkOpts["phase"], seated = false) {
+  if (DEFS[v.defId].receives || phase === "dump") return false;
+  if (fillsHaulers(v.defId) && lineFor(state, v).length > 0) return true;
+  if (!fillSourceInReach(state, v)) return false;
+  // A player still on the pile should keep a full bucket too, instead of selling the instant it fills.
+  if (seated) return true;
+  return cap > 0 && v.cargo < cap * 0.9;
+}
+
 function performAction(
   state: GameState,
   index: number,
@@ -2312,6 +2342,7 @@ function performAction(
   if (opts.phase !== "fill") {
     const pad = v.cargoOre ? nearestPad(state, v.x, v.z) : null;
     const planned = v.cargoOre ? bestPad(state, v.cargoOre, v.x, v.z, v) : null;
+    const keepBucket = keepBucketAtPad(state, v, st.capacity, opts.phase, player);
     const onPlan = !!pad && !!planned && pad.id === planned.id;
     const washStop = !!v.cargoOre && !!pad && pad.kind === "wash" && prefersWash(state, v.cargoOre, v.x);
     const precious = v.cargoOre === "gold" || v.cargoOre === "copper";
@@ -2340,7 +2371,7 @@ function performAction(
               : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
-    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind) && (player || pad.kind !== "wash" || plantLine(state)[0] === v)) {
+    } else if (!keepBucket && !excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind) && (player || pad.kind !== "wash" || plantLine(state)[0] === v)) {
       // The check is paid on the dump. The pile is only what's left for the plant to chew through.
       const tons = v.cargo;
       const ore = v.cargoOre;
@@ -2370,7 +2401,7 @@ function performAction(
       const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
       if (player) log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}.`);
       return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${ORES[ore].name} ${tons.toFixed(1)}t${extra}`, player };
-    } else if (!excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
+    } else if (!keepBucket && !excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
       const unit = unitPrice(v.cargoOre, pad.kind, state.sluice, state.market);
       const sold = v.cargo;
       const soldOre = v.cargoOre;
