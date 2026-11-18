@@ -770,6 +770,7 @@ export function MineScreen() {
                       <p className="mt-1 text-sm text-fg">{c.status}</p>
                       {explanation && <p className="mt-1 text-sm leading-relaxed text-cash">{explanation}</p>}
                       {c.damageLabel && <p className="mt-1 text-sm text-red-400">{c.damageLabel} · slower until fixed</p>}
+                      {c.wearLabel && <p className="mt-1 text-sm text-fg">{c.wearLabel}{c.wearLabel.startsWith("Broken") ? " · overhaul at the repair shop" : " · slower and thirstier until overhauled"}</p>}
                       <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
                         {c.sources[0]?.value.startsWith("map:") ? "Haul to" : "Work source"}
                         <select
@@ -812,6 +813,16 @@ export function MineScreen() {
                             onClick={() => apiRef.current?.repair(c.index)}
                           >
                             {c.repairLabel}
+                          </button>
+                        )}
+                        {c.overhaulLabel && (
+                          <button
+                            type="button"
+                            disabled={!c.affordableOverhaul}
+                            className="h-11 border border-border px-3 font-display text-lg uppercase tracking-wide text-fg disabled:opacity-40"
+                            onClick={() => apiRef.current?.overhaul(c.index)}
+                          >
+                            {c.overhaulLabel}
                           </button>
                         )}
                         {c.sellLabel && (

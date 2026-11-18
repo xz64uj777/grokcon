@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as O from "@/game/ops";
 import { freshGame, step, opsAction } from "@/game/sim";
-import { bookWorth } from "@/game/save";
+import { bookWorth, saveGame, currentSaveText, readSaveText } from "@/game/save";
 import type { VehicleState } from "@/game/types";
 
 const truck = (cargo: number, speed: number) => ({ defId: "truck", cargo, speed } as unknown as VehicleState);
@@ -233,4 +233,55 @@ test("graded haul ramp cuts fuel use on a loaded machine", () => {
   const graded = burnFor(true);
   assert.ok(plain > 0.01);
   assert.ok(graded < plain * 0.75, `graded ${graded} plain ${plain}`);
+});
+
+test("roadAt names the ridge pit, north road, and mountain road", () => {
+  assert.equal(O.roadAt(0, 34), "ridge");
+  assert.equal(O.roadAt(0, 96), "north");
+  assert.equal(O.roadAt(1100, 96), "mountain");
+  assert.equal(O.roadAt(0, 0), null);
+});
+
+test("grading a haul road is saved, speeds a truck, and burns less fuel", () => {
+  const s = freshGame("Road");
+  s.cash = 20000;
+  s.market.day = 0;
+  const shop = O.shopButtons(s).map((b) => b.id);
+  assert.ok(shop.includes("buy:road:ridge"));
+  assert.ok(shop.includes("buy:road:north"));
+  assert.ok(!shop.includes("buy:road:mountain"));
+  assert.match(opsAction(s, "buy:road:north"), /Graded the north road/);
+  assert.equal(s.cash, 8000);
+  assert.ok(O.roadGraded(s, "north"));
+  saveGame(s);
+  const back = readSaveText(currentSaveText()!)!;
+  assert.ok(O.ops(back).roads.includes("north"));
+
+  const run = (graded: boolean) => {
+    const g = freshGame("Road");
+    const v = g.vehicles[0]!;
+    v.x = 0;
+    v.z = 96;
+    v.speed = 6;
+    v.cargo = 0;
+    O.ops(g).fuel[v.uid] = 1;
+    O.ops(g).roads = graded ? ["north"] : [];
+    const prev = O.before(g);
+    v.x += 10;
+    O.tick(g, prev, 1, () => 8, () => {});
+    return { moved: v.x, used: 1 - O.ops(g).fuel[v.uid] };
+  };
+  const plain = run(false);
+  const graded = run(true);
+  assert.ok(graded.moved - 0 > (plain.moved - 0) * 1.1, `speed plain ${plain.moved} graded ${graded.moved}`);
+  assert.ok(graded.used < plain.used * 0.85, `fuel plain ${plain.used} graded ${graded.used}`);
+});
+
+test("the mountain road can be graded once that lease is yours", () => {
+  const s = freshGame("Peak");
+  s.cash = 20000;
+  s.claims.push(8);
+  assert.ok(O.shopButtons(s).some((b) => b.id === "buy:road:mountain"));
+  assert.match(opsAction(s, "buy:road:mountain"), /mountain road/);
+  assert.ok(O.roadGraded(s, "mountain"));
 });

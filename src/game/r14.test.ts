@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ROAD_CLEAR_BONUS, buyVehicle, ensureLowboy, freshGame, step, opsAction, lotButtons, buildHud, spawnRockslide, toggleCrew } from "@/game/sim";
+import { ROAD_CLEAR_BONUS, buyVehicle, ensureLowboy, freshGame, step, opsAction, lotButtons, buildHud, spawnRockslide, toggleCrew, overhaulVehicle } from "@/game/sim";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 import * as C from "@/game/career";
 import { ops, saleMult } from "@/game/ops";
@@ -42,6 +42,25 @@ test("wear slows, burns more and can break; overhaul fixes and saves", () => {
   assert.match(opsAction(s, "overhaul"), /overhaul/i);
   assert.equal(ops(s).wear[v.uid], 0);
   assert.equal(ops(s).broke.length, 0);
+});
+
+test("a worn hired machine can be overhauled from the crew list", () => {
+  const s = freshGame("Shop");
+  s.cash = 1e6;
+  buyVehicle(s, "loader");
+  const v = s.vehicles.find((m) => m.defId === "loader")!;
+  v.hired = true;
+  v.operator = true;
+  ops(s).wear[v.uid] = 0.8;
+  ops(s).broke.push(v.uid);
+  v.status = "Broken down";
+  const card = buildHud(s, true).crew.find((c) => c.name === "Payloader")!;
+  assert.match(card.wearLabel, /Broken down · wear 80%/);
+  assert.match(card.overhaulLabel ?? "", /Fix/);
+  assert.match(overhaulVehicle(s, card.index), /Payloader/);
+  assert.equal(ops(s).wear[v.uid], 0);
+  assert.equal(ops(s).broke.length, 0);
+  assert.equal(v.status, "");
 });
 
 test("broken machine stays put", () => {
