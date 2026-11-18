@@ -68,6 +68,8 @@ import { AXLE_BACK, HITCH_Z, MOUNTAIN_GATE_X, PASS_SUMMIT_X, VALLEY_GATE_X, area
 import {
   planCrewJobs,
   honorTeamDest,
+  isPlantKind,
+  isSellPointKind,
   type ManualCrew,
   jobStillValid,
   isPlanDigger,
@@ -766,6 +768,7 @@ function canReach(v: VehicleState, padX: number) {
 function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: VehicleState) {
   let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
+  const open: ReturnType<typeof livePads> = [];
   for (const pad of livePads(state)) {
     if (!padOpen(state, pad.kind)) continue;
     if (areaOf(pad.x) !== areaOf(x)) continue;
@@ -777,6 +780,13 @@ function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: Vehicle
     // When the sluice is purchased, route copper/gold there first: it is the
     // intended recovery plant, not a distance-scored fallback to the crusher.
     if (pad.kind === "sluice" && (prefersSluice(state, ore) || dirtToSluice(state, ore, x))) return pad;
+    open.push(pad);
+  }
+  // An owned plant that pays for this ore beats the railroad and the barge.
+  const plantFirst = open.some((p) => isPlantKind(p.kind));
+  for (const pad of open) {
+    if (plantFirst && (pad.kind === "loadout" || pad.kind === "barge")) continue;
+    const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
     // A bridge crossing is a price choice, not a long haul. Metres must not
     // talk a dump truck into the cheaper barge.
     const d = distTo(x, z, pad.x, pad.z);
@@ -3561,6 +3571,7 @@ export function teamSourceOptions(state: GameState, area: AreaId) {
 export function teamDestOptions(state: GameState, area: AreaId) {
   return livePads(state)
     .filter((p) => padOpen(state, p.kind) && areaOf(p.x) === area)
+    .sort((a, b) => Number(isSellPointKind(a.kind)) - Number(isSellPointKind(b.kind)))
     .map((p) => ({ value: p.kind, label: p.name }));
 }
 

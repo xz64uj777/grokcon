@@ -138,6 +138,14 @@ export type ManualCrew = {
 const SELL_POINT_KINDS = new Set<string>(["loadout", "barge", "reclaim"]);
 const PLANT_KINDS = new Set<string>(["wash", "sluice", "crusher", "mill"]);
 
+export function isPlantKind(kind: string) {
+  return PLANT_KINDS.has(kind);
+}
+
+export function isSellPointKind(kind: string) {
+  return SELL_POINT_KINDS.has(kind);
+}
+
 /** Keep a chosen plant, but do not send a haul to the railroad (or barge) when a recovery plant is already the job destination. */
 export function honorTeamDest(jobDest: PadKind, crewDest: string | null): string | null {
   if (!crewDest) return null;
