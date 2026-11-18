@@ -30,8 +30,10 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status === "Making room") return "Another machine is in the way. It will pull aside and go around.";
   if (crew.status.startsWith("Backing off ")) return "Backing away from the face is part of the dozer's normal push cycle; it should push again shortly.";
   if (crew.status === "Backed out of the west cliff") return "The west wall blocked its route, so it was moved back to safe ground.";
-  if (crew.status === "Needs a payloader") return "This truck drives to the loader. The loader stays at the face.";
-  if (crew.status === "Waiting for a ready dump truck" || crew.status === "Waiting for the heavy haul") return "The loader stays at the face until the truck backs into the bay.";
+  if (crew.status === "Needs a payloader" || crew.status === "Waiting for a loader") return "This truck drives to the loader. The loader stays at the face.";
+  if (crew.status === "Waiting for a ready dump truck" || crew.status === "Waiting for the heavy haul" || crew.status === "Waiting for truck" || crew.status.endsWith("waiting for truck")) return "The loader stays at the pile until its team truck backs into the bay.";
+  if (crew.status === "Waiting for a job") return "The crew planner has no pile or face for this machine right now.";
+  if (crew.status === "Looking for crumbs") return "This skid steer clears leftover crumbs once a pile is mostly hauled.";
   if (crew.status === "Waiting to load" || crew.status === "Waiting off the pile" || crew.status.startsWith("Waiting beside")) return "The truck is parked off to the side and stays there until the bed is loaded.";
   if (crew.status.startsWith("In line")) return "This truck is waiting its turn. It stays back until the one ahead is loaded.";
   if (crew.status.startsWith("Wash line")) return "Waiting its turn at the wash plant. Only one machine dumps at a time.";

@@ -66,6 +66,16 @@ import {
 import { DAY_SECONDS, advanceMarket, freshMarket, marketKey, priceMult, recordSale, trend } from "@/game/market";
 import { AXLE_BACK, HITCH_Z, MOUNTAIN_GATE_X, PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, blockRoadGate, deckFit, deckSpots, inDropYard, onHaulRoad, onMountainRoad, spotsUsed, stepHitch } from "@/game/lowboy";
 import {
+  planCrewJobs,
+  jobStillValid,
+  isPlanDigger,
+  isPlanTruck,
+  PILE_JOB_TONS,
+  CRUMB_TONS,
+  type CrewAssignment,
+  type PlanJob,
+} from "@/game/crew-plan";
+import {
   BLAST_RADIUS,
   BLAST_COST,
   canBlastToday,
@@ -217,6 +227,8 @@ function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
   if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
   if (d.id === "starter" && assignedClaim(v) != null) return false;
+  const planned = peekCrewJob(state, v);
+  if (planned?.sourceId) return d.id === planned.sourceId;
   // Sluice work comes first, but only while a washable pile is actually waiting.
   // A live gold or copper vein used to block dirt and iron piles for the whole
   // shift, so claim stock sat untouched. Dirt still counts as sluice work.
@@ -458,7 +470,9 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
   // If it is still out on the road, take the closest truck that is.
   let best: VehicleState | null = null;
   let bestD = maxDist;
+  const team = peekCrewJob(state, v)?.partnerUids;
   for (const t of line) {
+    if (team && team.length > 0 && !team.includes(t.uid)) continue;
     if (!sameArea(t, v) || !bayReady.has(t)) continue;
     if (operatedOnly && !t.operator && !handsOn(state, t)) continue;
     const room = vehicleStats(t).capacity - t.cargo;
@@ -798,6 +812,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
     if (ore && d.ore !== ore) continue;
     if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
+    if (!acceptsJob(state, v, d)) continue;
     const s = veinScore(state, v, d);
     if (s > score) {
       score = s;
@@ -900,14 +915,16 @@ function bestPile(state: GameState, v: VehicleState) {
   let prev: Deposit | null = null;
   let prevScore = -1;
   for (const d of state.deposits) {
-    // 1.5 t is the scoop cutoff. A smaller leftover must not outrank a real
-    // pile, or the loader walks off to the gold face and claim stock sits.
-    if (d.kind !== "pile" || d.tons < 1.5 || d.id.startsWith("feed-")) continue;
+    // 1.5 t is the scoop cutoff, except a skid given a crumb by the planner.
+    if (d.kind !== "pile" || d.id.startsWith("feed-")) continue;
+    const planned = peekCrewJob(state, v);
+    const crumb = planned?.sourceId === d.id && planned.jobKind === "crumb";
+    if (d.tons < (crumb ? CRUMB_TONS : PILE_JOB_TONS)) continue;
     if (!ownsClaim(state, d.claim)) continue;
     if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
-    if (v.defId === "skid" && loaderInArea(state, v) && d.tons < 8) continue;
+    if (v.defId === "skid" && !crumb && loaderInArea(state, v) && d.tons < 8) continue;
     const unit = prefersSluice(state, d.ore) || dirtToSluice(state, d.ore, d.x) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
     const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) - crewNear(state, v, d.x, d.z, 14) * 2200;
@@ -1042,7 +1059,8 @@ function holdForTruck(state: GameState, v: VehicleState): Control {
     }
   }
   // Nobody has taken this bucket for a while: tip it beside the machine as a pile.
-  if (fillsHaulers(v.defId) && v.cargoOre && v.cargo > 0.15 && idleFor(state, v) > DIGGER_HOLD_SECONDS) {
+  // A planned team waits with the bucket; tipping just made more claim piles.
+  if (fillsHaulers(v.defId) && v.cargoOre && v.cargo > 0.15 && idleFor(state, v) > DIGGER_HOLD_SECONDS && !teamHasTruck(state, v) && !peekCrewJob(state, v)?.sourceId) {
     addPile(state, v.cargoOre, v.cargo, v.x + Math.sin(v.yaw) * 5, v.z + Math.cos(v.yaw) * 5, homeClaim(areaOf(v.x)), v.cargoPurity ?? 1);
     v.cargo = 0;
     v.cargoOre = null;
@@ -1083,6 +1101,7 @@ function truckWaitStatus(state: GameState, v: VehicleState) {
     else dump = true;
   }
   if (heavy && !dump) return "Waiting for the heavy haul";
+  if (peekCrewJob(state, v)?.team) return "Waiting for truck";
   return "Waiting for a ready dump truck";
 }
 
@@ -1102,6 +1121,19 @@ function lineFor(state: GameState, digger: VehicleState) {
 }
 
 function diggerForTruck(state: GameState, v: VehicleState) {
+  const job = peekCrewJob(state, v);
+  if (job?.role === "truck") {
+    const digger = state.vehicles.find(
+      (o) => job.partnerUids.includes(o.uid) && isPlanDigger(o.defId) && (o.operator || handsOn(state, o)) && heavyReaches(v, o),
+    );
+    if (digger) {
+      truckPartner.set(v, digger.uid);
+      if (!lineTicket.has(v)) lineTicket.set(v, lineNo++);
+      return digger;
+    }
+    truckPartner.delete(v);
+    return null;
+  }
   const isDigger = (o: VehicleState) =>
     (o.defId === "loader" || o.defId === "hloader" || o.defId === "excavator") &&
     (o.operator || handsOn(state, o)) &&
@@ -1164,6 +1196,15 @@ const KEEP_CLEAR = 16;
 const SPOT_GAP = 13;
 
 function workAnchor(state: GameState, digger: VehicleState) {
+  const planned = plannedDeposit(state, digger);
+  if (planned && planned.tons > 0.2) {
+    if (planned.kind === "pile") {
+      const spot = pileApproach(digger, planned);
+      return { id: planned.id, standX: spot.x, standZ: spot.z, keepX: planned.x, keepZ: planned.z };
+    }
+    const face = wheelLoader(digger.defId) ? loaderStand(digger, planned) : driveFace(planned);
+    return { id: planned.id, standX: face.x, standZ: face.z, keepX: planned.x, keepZ: planned.z };
+  }
   const def = DEFS[digger.defId];
   if (def.scoop > 0) {
     const pile = (digger.cargo > 0.15 && digger.cargoOre ? pileInReach(state, digger) : null) ?? bestPile(state, digger);
@@ -1584,7 +1625,7 @@ const crewJob = new WeakMap<VehicleState, string>();
 const crewPush = new WeakMap<VehicleState, { phase: "in" | "out"; t: number }>();
 
 function veinUsable(state: GameState, v: VehicleState, d: Deposit | null | undefined): d is Deposit {
-  return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (assignedClaim(v) == null || d.claim === assignedClaim(v));
+  return !!d && d.kind === "vein" && d.tons >= 0.35 && ownsClaim(state, d.claim) && sameArea(d, v) && (assignedClaim(v) == null || d.claim === assignedClaim(v)) && acceptsJob(state, v, d);
 }
 
 /** Stay on the face you already chose unless another one is clearly better. Stops gold and silver swapping every frame. */
@@ -1671,6 +1712,9 @@ function crewWatchdog(state: GameState, v: VehicleState) {
   }
   // A truck already parked in its bay or line stall is waiting to be loaded, not stuck.
   if (bayReady.has(v)) return;
+  // A team waiting on its truck, or a machine with no job yet, is idle on purpose.
+  if (/^Waiting for (truck|a job|a loader)|Looking for crumbs/.test(v.status)) return;
+  if (fillsHaulers(v.defId) && teamHasTruck(state, v) && /Waiting for/.test(v.status)) return;
   // Lining up is a turn-and-roll, not a short heading. Give it the default window.
   const limit = PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing)/.test(v.status) ? 15 : 30;
   if (now - e.t < limit) return;
@@ -2024,7 +2068,15 @@ function aiControl(state: GameState, index: number): Control {
     if (!v.cargoOre) return;
     const loadsTrucks = fillsHaulers(def.id);
     if (loadsTrucks) {
-      // The truck drives into the bay. The loader stays on the face.
+      // Stay put while a team truck is on the way. Only a lone loader with
+      // the plant in reach does a short self-haul.
+      if (teamHasTruck(state, v)) return;
+      const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
+      if (pad && distTo(v.x, v.z, pad.x, pad.z) <= SHORT_CARRY_RANGE) {
+        target = pad;
+        arrive = Math.max(5, pad.r * 0.62);
+        label = `Hauling to ${pad.name}`;
+      }
       return;
     }
     const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
@@ -2096,14 +2148,16 @@ function aiControl(state: GameState, index: number): Control {
       return seek(v, digHaul.x, digHaul.z, arrive);
     }
     const pinned = facePin(state, v);
-    let vein: Deposit | null = pinned;
-    if (!pinned) {
+    const plannedVein = plannedDeposit(state, v);
+    let vein: Deposit | null = pinned ?? (plannedVein?.kind === "vein" ? plannedVein : null);
+    if (!vein) {
       let veinS = -Infinity;
       for (const d of state.deposits) {
         if (d.kind !== "vein" || d.tons < 0.35) continue;
         if (!ownsClaim(state, d.claim)) continue;
         if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
         if (offHeavyBank(state, v, d.x) || (assignedClaim(v) == null && !sameArea(d, v))) continue;
+        if (!acceptsJob(state, v, d)) continue;
         const dist = distTo(v.x, v.z, d.x, d.z);
         const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist - crewNear(state, v, d.x, d.z, 14) * 2000;
         if (s > veinS) {
@@ -2163,7 +2217,7 @@ function aiControl(state: GameState, index: number): Control {
       bayCommit.delete(v);
       truckSpot.delete(v);
       dumpAnyway.add(v);
-      const pad = bestPad(state, v.cargoOre, v.x, v.z, v);
+      const pad = plannedPadFor(state, v) ?? bestPad(state, v.cargoOre, v.x, v.z, v);
       if (pad) {
         target = pad;
         arrive = Math.min(6, Math.max(5, pad.r * 0.62));
@@ -3308,10 +3362,168 @@ function notePass(state: GameState) {
 
 Ops.setPriceOf((v) => DEFS[v.defId]?.price ?? 20000);
 
+
+export const SHORT_CARRY_RANGE = 60;
+
+const crewPlans = new WeakMap<GameState, { at: number; jobs: Map<string, CrewAssignment>; uids: string }>();
+
+function crewKey(state: GameState) {
+  return state.vehicles
+    .filter((v) => v.hired && v.operator && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
+    .map((v) => v.uid)
+    .sort()
+    .join(",");
+}
+
+function collectCrewJobs(state: GameState): PlanJob[] {
+  const out: PlanJob[] = [];
+  for (const d of state.deposits) {
+    if (!ownsClaim(state, d.claim)) continue;
+    if (d.kind === "pile" && d.id.startsWith("feed-")) continue;
+    const crumb = d.kind === "pile" && d.tons >= CRUMB_TONS && d.tons < PILE_JOB_TONS;
+    const pile = d.kind === "pile" && d.tons >= PILE_JOB_TONS;
+    const vein = d.kind === "vein" && d.tons >= 0.5;
+    if (!crumb && !pile && !vein) continue;
+    const pad = bestPad(state, d.ore, d.x, d.z);
+    if (!pad) continue;
+    const sluiceBound = prefersSluice(state, d.ore) || dirtToSluice(state, d.ore, d.x);
+    const unit = sluiceBound ? ORES[d.ore].sluice : prefersWash(state, d.ore, d.x) ? ORES[d.ore].wash : ORES[d.ore].crusher;
+    if (unit <= 0) continue;
+    let score = unit * Math.min(d.tons, 50);
+    if (d.ore !== "dirt") score += washScore(state, d.ore);
+    if (pile) score += 400;
+    if (vein && d.ore === "dirt") score *= 0.15;
+    const claimName = CLAIMS.find((c) => c.id === d.claim)?.name ?? `Claim ${d.claim}`;
+    out.push({
+      id: d.id,
+      kind: crumb ? "crumb" : d.kind === "vein" ? "vein" : "pile",
+      ore: d.ore,
+      oreName: ORES[d.ore].name,
+      tons: d.tons,
+      x: d.x,
+      z: d.z,
+      area: areaOf(d.x),
+      claim: d.claim,
+      destKind: pad.kind,
+      destName: pad.name,
+      claimName,
+      score,
+    });
+  }
+  return out;
+}
+
+function collectCrewMachines(state: GameState) {
+  return state.vehicles
+    .filter((v) => v.hired && v.operator && !aboard(v) && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
+    .map((v) => ({
+      uid: v.uid,
+      defId: v.defId,
+      x: v.x,
+      z: v.z,
+      area: areaOf(v.x),
+      cargo: v.cargo,
+      cargoOre: v.cargoOre,
+      workClaim: assignedClaim(v),
+      workFace: facePin(state, v)?.id ?? null,
+    }));
+}
+
+function sourcesGone(state: GameState, jobs: Map<string, CrewAssignment>) {
+  for (const a of jobs.values()) {
+    if (!a.sourceId) continue;
+    const d = state.deposits.find((o) => o.id === a.sourceId);
+    if (!jobStillValid(a.jobKind, d?.tons ?? null)) return true;
+  }
+  return false;
+}
+
+function syncTeamPartners(state: GameState, jobs: Map<string, CrewAssignment>) {
+  for (const v of state.vehicles) {
+    const a = jobs.get(v.uid);
+    if (a?.role !== "truck") continue;
+    const digger = a.partnerUids.find((uid) => {
+      const o = state.vehicles.find((x) => x.uid === uid);
+      return !!o && isPlanDigger(o.defId);
+    });
+    if (digger) truckPartner.set(v, digger);
+  }
+}
+
+/** Rebuild team jobs about once a second, or sooner if a source runs out or the roster changes. */
+export function refreshCrewPlan(state: GameState, force = false) {
+  const prev = crewPlans.get(state);
+  const uids = crewKey(state);
+  const stale = force || !prev || state.seconds - prev.at >= 1 || prev.uids !== uids || sourcesGone(state, prev.jobs);
+  if (!stale) return prev.jobs;
+  const jobs = planCrewJobs(collectCrewMachines(state), collectCrewJobs(state), prev?.jobs ?? null);
+  crewPlans.set(state, { at: state.seconds, jobs, uids });
+  syncTeamPartners(state, jobs);
+  return jobs;
+}
+
+function peekCrewJob(state: GameState, v: VehicleState): CrewAssignment | undefined {
+  return crewPlans.get(state)?.jobs.get(v.uid);
+}
+
+export function crewAssignment(state: GameState, v: VehicleState) {
+  refreshCrewPlan(state);
+  return peekCrewJob(state, v);
+}
+
+function plannedDeposit(state: GameState, v: VehicleState) {
+  const job = peekCrewJob(state, v);
+  if (!job?.sourceId) return null;
+  return state.deposits.find((d) => d.id === job.sourceId) ?? null;
+}
+
+function plannedPadFor(state: GameState, v: VehicleState) {
+  const job = peekCrewJob(state, v);
+  if (!job?.destKind || !v.cargoOre) return null;
+  const pad = livePads(state).find((p) => p.kind === job.destKind);
+  if (!pad || !padOpen(state, pad.kind)) return null;
+  if (unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0) return null;
+  if (areaOf(pad.x) !== areaOf(v.x) && !canReach(v, pad.x)) return null;
+  return pad;
+}
+
+function teamHasTruck(state: GameState, v: VehicleState) {
+  const job = peekCrewJob(state, v);
+  if (!job || job.role !== "digger") return false;
+  return job.partnerUids.some((uid) => {
+    const t = state.vehicles.find((o) => o.uid === uid);
+    return !!t && isPlanTruck(t.defId) && (t.operator || handsOn(state, t)) && sameArea(t, v);
+  });
+}
+
+const SAFETY_STATUS =
+  /^(Heading to the fuel|At the gas|At the diesel|Towed|Out of fuel|Hot brakes|Bridge flooded|Too heavy|Backing off|Backed out|Making room|Clearing the rockslide|Heading to the rockslide|Heading to feed|Feeding the|Lights|Light plant|Plant parked)/;
+
+/** On-duty board text: the team job, unless the machine is fueling, stuck, or in another safety state. */
+export function crewDisplayStatus(state: GameState, v: VehicleState) {
+  const status = v.status || "On duty";
+  if (SAFETY_STATUS.test(status)) return status;
+  const job = peekCrewJob(state, v);
+  if (!job) return status;
+  if (/^(Hauling|Dumping|Wash line)/.test(status) && job.team && job.destName) {
+    const ore = job.ore ? ORES[job.ore].name.toLowerCase() : "material";
+    return `Team ${job.team}: hauling ${ore} to ${job.destName}`;
+  }
+  if (/Waiting for (a ready dump truck|the heavy haul|truck)/.test(status) && job.team) {
+    return `Team ${job.team}: waiting for truck`;
+  }
+  if (job.sourceId && job.label) return job.label;
+  if (!job.sourceId && job.label && /^(Looking for work|Needs a payloader|Waiting for|Face is dug|No material|No face)/.test(status)) {
+    return job.label;
+  }
+  return status;
+}
+
 export function step(state: GameState, input: Input, dt: number, playerEnabled: boolean): StepFX {
   if (!state.deck) state.deck = [];
   bindDeck(state);
   regen(state, dt);
+  refreshCrewPlan(state);
   const opsBefore = Ops.before(state);
   const dayBefore = state.market.day;
   const wasRaining = rainNow(state) > 0.05;
@@ -4324,7 +4536,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       name: def.name,
       area,
       where: onDeck ? "On the lowboy" : onHaulRoad(veh.x, veh.z) && !inDropYard(veh.x, veh.z) ? "On the north road" : "",
-      status: index === state.active && !state.watching ? "In your seat" : veh.operator ? veh.status || "On duty" : "Parked",
+      status: index === state.active && !state.watching ? "In your seat" : veh.operator ? crewDisplayStatus(state, veh) : "Parked",
       cargo: cargoLine(state, veh),
       active: index === state.active,
       hired: veh.hired,

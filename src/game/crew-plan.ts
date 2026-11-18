@@ -1,0 +1,289 @@
+import type { OreId, PadKind } from "@/game/types";
+
+/** Loose piles at or above this are a loader/truck job, not a crumb. */
+export const PILE_JOB_TONS = 1.5;
+/** Small leftovers a skid steer should clear. */
+export const CRUMB_TONS = 0.4;
+/** A face still worth a team until it is effectively dug out. */
+export const VEIN_JOB_TONS = 0.5;
+/** Max dump trucks (or heavies) on one digger. */
+export const MAX_TEAM_TRUCKS = 3;
+
+export type PlanRole = "digger" | "truck" | "skid";
+export type JobKind = "pile" | "vein" | "crumb";
+
+export type PlanMachine = {
+  uid: string;
+  defId: string;
+  x: number;
+  z: number;
+  area: string;
+  cargo: number;
+  cargoOre: OreId | null;
+  workClaim: number | null;
+  workFace: string | null;
+};
+
+export type PlanJob = {
+  id: string;
+  kind: JobKind;
+  ore: OreId;
+  oreName: string;
+  tons: number;
+  x: number;
+  z: number;
+  area: string;
+  claim: number;
+  claimName: string;
+  destKind: PadKind;
+  destName: string;
+  score: number;
+};
+
+export type CrewAssignment = {
+  team: number;
+  role: PlanRole;
+  sourceId: string | null;
+  jobKind: JobKind | null;
+  ore: OreId | null;
+  claimName: string;
+  destKind: PadKind | null;
+  destName: string;
+  partnerUids: string[];
+  label: string;
+};
+
+export function isPlanDigger(defId: string) {
+  return defId === "loader" || defId === "hloader" || defId === "excavator";
+}
+
+export function isPlanTruck(defId: string) {
+  return defId === "truck" || defId === "heavy";
+}
+
+export function jobStillValid(kind: JobKind | null, tons: number | null) {
+  if (tons == null || kind == null) return false;
+  if (kind === "crumb") return tons >= CRUMB_TONS;
+  if (kind === "vein") return tons >= VEIN_JOB_TONS;
+  return tons >= PILE_JOB_TONS;
+}
+
+function dist(a: { x: number; z: number }, b: { x: number; z: number }) {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function allowedJob(m: PlanMachine, j: PlanJob) {
+  if (m.area !== j.area) return false;
+  if (m.workClaim != null && j.claim !== m.workClaim) return false;
+  if (m.workFace && j.kind === "vein" && j.id !== m.workFace) return false;
+  return true;
+}
+
+export function teamLabel(team: number, role: PlanRole, job: PlanJob | null) {
+  if (!job) {
+    if (role === "truck") return "Waiting for a loader";
+    if (role === "skid") return "Looking for crumbs";
+    return "Waiting for a job";
+  }
+  const ore = job.oreName.toLowerCase();
+  const dest = job.destName;
+  const at = job.claimName;
+  if (role === "skid") {
+    if (job.kind === "crumb") return `Clearing crumbs at ${at} -> ${dest}`;
+    const skidVerb = job.kind === "vein" ? "digging" : "loading";
+    return `${skidVerb} ${ore} at ${at} -> ${dest}`;
+  }
+  const verb = job.kind === "vein" ? "digging" : "loading";
+  return `Team ${team}: ${verb} ${ore} at ${at} -> ${dest}`;
+}
+
+function assignment(
+  team: number,
+  role: PlanRole,
+  job: PlanJob | null,
+  partners: string[],
+  uid: string,
+): CrewAssignment {
+  return {
+    team,
+    role,
+    sourceId: job?.id ?? null,
+    jobKind: job?.kind ?? null,
+    ore: job?.ore ?? null,
+    claimName: job?.claimName ?? "",
+    destKind: job?.destKind ?? null,
+    destName: job?.destName ?? "",
+    partnerUids: partners.filter((id) => id !== uid),
+    label: teamLabel(team, role, job),
+  };
+}
+
+type Team = { team: number; digger: PlanMachine; trucks: PlanMachine[]; job: PlanJob };
+
+/**
+ * Assign hired loaders, excavators, trucks, and skids to jobs.
+ * Sticky: a team keeps its pile or face until that source is gone or the destination
+ * drops out of the job list. Not saved; the caller recomputes from world state.
+ */
+export function planCrewJobs(
+  machines: PlanMachine[],
+  jobs: PlanJob[],
+  prev: Map<string, CrewAssignment> | null,
+): Map<string, CrewAssignment> {
+  const result = new Map<string, CrewAssignment>();
+  const areas = [...new Set(machines.map((m) => m.area))];
+  let nextTeam = 1;
+
+  for (const area of areas) {
+    const ms = machines.filter((m) => m.area === area);
+    const areaJobs = jobs.filter((j) => j.area === area);
+    const jobById = new Map(areaJobs.map((j) => [j.id, j]));
+    const diggers = ms.filter((m) => isPlanDigger(m.defId));
+    const trucks = ms.filter((m) => isPlanTruck(m.defId));
+    const skids = ms.filter((m) => m.defId === "skid");
+    const takenJobs = new Set<string>();
+    const usedDiggers = new Set<string>();
+    const usedTrucks = new Set<string>();
+    const teams: Team[] = [];
+
+    const sticky = new Map<number, { digger?: PlanMachine; trucks: PlanMachine[]; job?: PlanJob }>();
+    if (prev) {
+      for (const d of diggers) {
+        const a = prev.get(d.uid);
+        if (!a || a.role !== "digger" || !a.sourceId) continue;
+        const job = jobById.get(a.sourceId);
+        if (!job || !jobStillValid(job.kind, job.tons) || !allowedJob(d, job)) continue;
+        // A loader only sits on a face when there is no pile to haul. If a pile
+        // shows up, drop the face so the team can go load it.
+        if (d.defId !== "excavator" && job.kind === "vein") {
+          const pileReady = areaJobs.some((j) => j.kind === "pile" && jobStillValid(j.kind, j.tons) && allowedJob(d, j));
+          if (pileReady) continue;
+        }
+        const slot = sticky.get(a.team) ?? { trucks: [], job };
+        slot.digger = d;
+        slot.job = job;
+        sticky.set(a.team, slot);
+      }
+      for (const t of trucks) {
+        const a = prev.get(t.uid);
+        if (!a || a.role !== "truck") continue;
+        const slot = sticky.get(a.team);
+        if (!slot?.digger) continue;
+        slot.trucks.push(t);
+      }
+    }
+
+    for (const n of [...sticky.keys()].sort((a, b) => a - b)) {
+      const slot = sticky.get(n)!;
+      if (!slot.digger || !slot.job || takenJobs.has(slot.job.id) || usedDiggers.has(slot.digger.uid)) continue;
+      const keep = slot.trucks.filter((t) => !usedTrucks.has(t.uid));
+      takenJobs.add(slot.job.id);
+      usedDiggers.add(slot.digger.uid);
+      for (const t of keep) usedTrucks.add(t.uid);
+      teams.push({ team: n, digger: slot.digger, trucks: keep, job: slot.job });
+      nextTeam = Math.max(nextTeam, n + 1);
+    }
+
+    const fits = (d: PlanMachine, j: PlanJob) => {
+      if (takenJobs.has(j.id) || !allowedJob(d, j)) return false;
+      if (d.workFace && j.kind === "vein") return j.id === d.workFace;
+      if (d.defId === "excavator") return j.kind === "vein";
+      const pilesOpen = workJobs.some((p) => p.kind === "pile" && !takenJobs.has(p.id) && allowedJob(d, p));
+      return pilesOpen ? j.kind === "pile" : j.kind === "vein";
+    };
+
+    const workJobs = areaJobs.filter((j) => j.kind !== "crumb" && jobStillValid(j.kind, j.tons));
+    for (;;) {
+      let best: { d: PlanMachine; j: PlanJob; s: number } | null = null;
+      for (const d of diggers) {
+        if (usedDiggers.has(d.uid)) continue;
+        for (const j of workJobs) {
+          if (!fits(d, j)) continue;
+          const d0 = dist(d, j);
+          // Only a machine already on a face should stick there. A nearby
+          // low-value pile must not beat a washable pile across the yard.
+          const s = j.score / (d0 + 10) + (j.kind === "vein" && d0 < 16 ? 5000 : d0 < 40 ? 200 : 0);
+          if (!best || s > best.s) best = { d, j, s };
+        }
+      }
+      if (!best) break;
+      teams.push({ team: nextTeam++, digger: best.d, trucks: [], job: best.j });
+      usedDiggers.add(best.d.uid);
+      takenJobs.add(best.j.id);
+    }
+
+    const truckScore = (team: Team, t: PlanMachine) => {
+      if (team.trucks.length >= MAX_TEAM_TRUCKS) return -Infinity;
+      if (t.workClaim != null && team.job.claim !== t.workClaim) return -Infinity;
+      if (t.cargo > 0.15 && t.cargoOre && t.cargoOre !== team.job.ore) return -Infinity;
+      return -team.trucks.length * 10_000 + team.job.score - dist(t, team.digger) + (t.cargoOre === team.job.ore ? 500 : 0);
+    };
+    for (const t of trucks) {
+      if (usedTrucks.has(t.uid)) continue;
+      let best: Team | null = null;
+      let bestS = -Infinity;
+      for (const team of teams) {
+        const s = truckScore(team, t);
+        if (s > bestS) {
+          bestS = s;
+          best = team;
+        }
+      }
+      if (best && bestS > -Infinity) {
+        best.trucks.push(t);
+        usedTrucks.add(t.uid);
+      }
+    }
+
+    for (const team of teams) {
+      const partners = [team.digger.uid, ...team.trucks.map((t) => t.uid)];
+      result.set(team.digger.uid, assignment(team.team, "digger", team.job, partners, team.digger.uid));
+      for (const t of team.trucks) {
+        result.set(t.uid, assignment(team.team, "truck", team.job, partners, t.uid));
+      }
+    }
+
+    for (const d of diggers) {
+      if (!result.has(d.uid)) result.set(d.uid, assignment(0, "digger", null, [], d.uid));
+    }
+    for (const t of trucks) {
+      if (!result.has(t.uid)) result.set(t.uid, assignment(0, "truck", null, [], t.uid));
+    }
+
+    const crumbs = areaJobs
+      .filter((j) => j.kind === "crumb" && jobStillValid(j.kind, j.tons))
+      .sort((a, b) => b.score - a.score || b.tons - a.tons);
+    const takenCrumbs = new Set<string>();
+    for (const s of skids) {
+      const prevA = prev?.get(s.uid);
+      let job: PlanJob | undefined;
+      if (prevA?.role === "skid" && prevA.sourceId) {
+        const held = jobById.get(prevA.sourceId);
+        if (held && held.kind === "crumb" && jobStillValid(held.kind, held.tons) && allowedJob(s, held)) job = held;
+      }
+      if (!job) job = crumbs.find((j) => !takenCrumbs.has(j.id) && allowedJob(s, j));
+      if (job) {
+        takenCrumbs.add(job.id);
+        result.set(s.uid, assignment(0, "skid", job, [], s.uid));
+        continue;
+      }
+      // No crumb to sweep: a skid can self-haul a leftover face, such as a river bar.
+      const veins = areaJobs
+        .filter((j) => j.kind === "vein" && jobStillValid(j.kind, j.tons) && allowedJob(s, j))
+        .sort((a, b) => {
+          const da = dist(s, a);
+          const db = dist(s, b);
+          if (da < 16 !== db < 16) return da < 16 ? -1 : 1;
+          return Number(takenJobs.has(a.id)) - Number(takenJobs.has(b.id)) || b.score - a.score;
+        });
+      const vein = veins[0];
+      if (vein) {
+        result.set(s.uid, assignment(0, "skid", vein, [], s.uid));
+      } else {
+        result.set(s.uid, assignment(0, "skid", null, [], s.uid));
+      }
+    }
+  }
+
+  return result;
+}
