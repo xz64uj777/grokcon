@@ -3660,22 +3660,36 @@ function crewSelectOptions(state: GameState, v: VehicleState) {
   return options;
 }
 
+function machineArea(state: GameState, v: VehicleState): AreaId {
+  const lowboy = state.vehicles.find((o) => o.defId === "lowboy");
+  const onDeck = (state.deck ?? []).includes(v.uid);
+  return onDeck && lowboy ? areaIn(lowboy.x, lowboy.z) : areaIn(v.x, v.z);
+}
+
 function buildHudTeams(state: GameState): import("@/game/types").HudModel["teams"] {
   pruneCrews(state);
-  return state.crews.map((c) => {
+  const order: AreaId[] = ["ridge", "river", "mountain"];
+  const out: import("@/game/types").HudModel["teams"] = [];
+  for (const c of state.crews) {
     const members = state.vehicles.filter((v) => v.crewId === c.id);
-    const area = members.length ? areaIn(members[0].x, members[0].z) : currentArea(state);
-    return {
-      id: c.id,
-      name: `Team ${c.id}`,
-      members: teamMemberLine(state, c.id),
-      area,
-      sourceValue: c.sourceId && state.deposits.some((d) => d.id === c.sourceId) ? c.sourceId : "auto",
-      destValue: c.destKind && padOpen(state, c.destKind) ? c.destKind : "auto",
-      sources: teamSourceOptions(state, area),
-      dests: teamDestOptions(state, area),
-    };
-  });
+    if (!members.length) continue;
+    const areas = [...new Set(members.map((v) => machineArea(state, v)))].sort(
+      (a, b) => order.indexOf(a) - order.indexOf(b),
+    );
+    for (const area of areas) {
+      out.push({
+        id: c.id,
+        name: `Team ${c.id}`,
+        members: teamMemberLine(state, c.id),
+        area,
+        sourceValue: c.sourceId && state.deposits.some((d) => d.id === c.sourceId) ? c.sourceId : "auto",
+        destValue: c.destKind && padOpen(state, c.destKind) ? c.destKind : "auto",
+        sources: teamSourceOptions(state, area),
+        dests: teamDestOptions(state, area),
+      });
+    }
+  }
+  return out;
 }
 
 function collectCrewMachines(state: GameState) {
