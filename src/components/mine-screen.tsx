@@ -849,6 +849,21 @@ export function MineScreen() {
                           </select>
                         </label>
                       )}
+                      {c.feederOptions.length > 1 && (
+                        <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
+                          Plant feeder
+                          <select
+                            className="h-11 border border-border bg-surface px-3 text-fg"
+                            value={c.feederValue}
+                            disabled={!c.operator && !c.active}
+                            onChange={(e) => apiRef.current?.setFeeder(c.index, e.target.value === "auto" ? null : e.target.value)}
+                          >
+                            {c.feederOptions.map((g) => (
+                              <option key={g.value} value={g.value}>{g.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

@@ -53,5 +53,6 @@ export function crewExplanation(crew: CrewStatus): string | null {
   if (crew.status.startsWith("Hot brakes")) return "The brakes heated up on a steep loaded drop. It will slow down until they cool.";
   if (crew.status === "Heading to the rockslide" || crew.status === "Clearing the rockslide") return "One idle dozer or loader is opening the switchback. Assigned faces stay on the dig.";
   if (crew.status === "Heading to feed the plant" || crew.status.startsWith("Feeding the ")) return "It is one of the machines you sent to feed a plant. The rest stay on their job.";
+  if (crew.status === "Feeding sluice" || crew.status === "Feeding wash plant") return "This machine stays at the plant and feeds the pile trucks dump there.";
   return null;
 }

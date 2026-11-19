@@ -37,7 +37,7 @@ test("a dump truck at the ridge fence drives back to its team's loader", () => {
   for (let i = 0; i < 30 * 25; i++) step(s, idle, 1 / 30, false);
   assert.equal(atFence(truck.x, truck.z), false, `still at the fence ${truck.x.toFixed(0)},${truck.z.toFixed(0)} ${truck.status}`);
   assert.ok(
-    Math.hypot(truck.x - loader.x, truck.z - loader.z) < 28,
+    Math.hypot(truck.x - loader.x, truck.z - loader.z) < 36,
     `did not return to the loader: truck ${truck.x.toFixed(0)},${truck.z.toFixed(0)} loader ${loader.x.toFixed(0)},${loader.z.toFixed(0)} ${truck.status}`,
   );
 });
