@@ -33,6 +33,7 @@ import {
   assignCrew as assignVehicleCrew,
   setCrewSource as assignCrewSource,
   setCrewDest as assignCrewDest,
+  setFeeder as assignFeeder,
   toggleDeck,
   valleyOpen,
   mountainOpen,
@@ -252,6 +253,15 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
     setCrewDest(crewId, destKind) {
       const msg = assignCrewDest(state, crewId, destKind);
+      if (msg) {
+        state.log.unshift(msg);
+        if (state.log.length > 5) state.log.length = 5;
+      }
+      saveGame(books());
+      push();
+    },
+    setFeeder(index, pad) {
+      const msg = assignFeeder(state, index, pad);
       if (msg) {
         state.log.unshift(msg);
         if (state.log.length > 5) state.log.length = 5;

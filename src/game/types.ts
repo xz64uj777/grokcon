@@ -76,6 +76,8 @@ export type VehicleState = {
   workFace: string | null;
   /** Manual crew id (Team 1, 2, …), or null for Auto. */
   crewId: number | null;
+  /** Stays at this plant and feeds its dump pile. Null means Auto. */
+  feederPad?: "sluice" | "wash" | null;
   status: string;
   stuck: number;
   unstick: number;
@@ -196,6 +198,8 @@ export type CrewCard = {
   sources: { value: string; label: string }[];
   crewValue: string;
   crewOptions: { value: string; label: string }[];
+  feederValue: string;
+  feederOptions: { value: string; label: string }[];
   hireLabel: string;
   sellLabel: string | null;
   affordableHire: boolean;
@@ -338,6 +342,7 @@ export type GameApi = {
   setCrewSource: (crewId: number, sourceId: string | null) => void;
   setCrewDest: (crewId: number, destKind: string | null) => void;
   setFeedLimit: (limit: 1 | 2 | "all") => void;
+  setFeeder: (index: number, pad: string | null) => void;
   setHaulSluice: (on: boolean) => void;
   drive: (index: number) => void;
   sell: (index: number) => void;

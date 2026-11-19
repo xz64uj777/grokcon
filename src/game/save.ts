@@ -101,6 +101,7 @@ function sanitize(raw: unknown): GameState | null {
         workClaim: typeof v.workClaim === "number" ? Math.round(num(v.workClaim, 0, 0, 99)) : null,
         workFace: typeof v.workFace === "string" && v.workFace.length < 40 ? v.workFace : null,
         crewId: typeof v.crewId === "number" && Number.isFinite(v.crewId) ? Math.round(num(v.crewId, 0, 1, 20)) : null,
+        feederPad: v.feederPad === "sluice" || v.feederPad === "wash" ? v.feederPad : null,
         busy: false,
         ...(v.defId === "lowboy" && typeof v.trailerYaw === "number" && typeof v.axleX === "number" && typeof v.axleZ === "number"
           ? { trailerYaw: num(v.trailerYaw, 0, -40, 40), axleX: posX(v.axleX, 0), axleZ: posZ(v.axleZ, v.axleX, 96) }
@@ -131,6 +132,7 @@ function sanitize(raw: unknown): GameState | null {
         workClaim: null,
         workFace: null,
         crewId: null,
+        feederPad: null,
         busy: false,
       });
     }

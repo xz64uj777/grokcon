@@ -424,6 +424,7 @@ function makeVehicle(id: VehicleId, slot: number): VehicleState {
     workClaim: null,
     workFace: null,
     crewId: null,
+    feederPad: null,
     status: "Parked",
     stuck: 0,
     unstick: 0,
@@ -531,17 +532,29 @@ export function homeClaim(area: AreaId) {
 
 /** Machines that can feed a plant's pile, in tons per second. */
 export const FEED_RATES: Partial<Record<VehicleId, number>> = { excavator: 1.8, loader: 1.4, hloader: 2.4, skid: 0.5 };
+function padKindForFeed(pile: Deposit) {
+  return PADS.find((p) => feedId(p.id) === pile.id)?.kind ?? null;
+}
+
 function feedCrewFor(state: GameState, pile: Deposit) {
+  const padKind = padKindForFeed(pile);
+  const open = (v: VehicleState, index: number, rate: number | undefined) =>
+    !!rate && v.operator && sameArea(v, pile) && !otherBank(v.x, pile.x) &&
+    !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid);
+  const dedicated = state.vehicles
+    .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
+    .filter(({ v, index, rate }) => open(v, index, rate) && (v.feederPad === padKind && (padKind === "sluice" || padKind === "wash")));
+  const taken = new Set(dedicated.map(({ index }) => index));
   const candidates = state.vehicles
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
     .filter(({ v, index, rate }) =>
-      !!rate && v.operator && v.cargo <= 0.25 && sameArea(v, pile) && !otherBank(v.x, pile.x) &&
+      !taken.has(index) && open(v, index, rate) && v.cargo <= 0.25 &&
       !(fillsHaulers(v.defId) && lineFor(state, v).length > 0) &&
-      distTo(v.x, v.z, pile.x, pile.z) < (v.defId === "excavator" ? FEED_CALL_RANGE : 120) &&
-      !(index === state.active && !state.watching) && !(state.deck ?? []).includes(v.uid),
+      distTo(v.x, v.z, pile.x, pile.z) < (v.defId === "excavator" ? FEED_CALL_RANGE : 120),
     )
     .sort((a, b) => distTo(a.v.x, a.v.z, pile.x, pile.z) - distTo(b.v.x, b.v.z, pile.x, pile.z));
-  return candidates.slice(0, state.feedLimit === "all" ? candidates.length : state.feedLimit);
+  const extra = state.feedLimit === "all" ? candidates : candidates.slice(0, state.feedLimit);
+  return [...dedicated, ...extra];
 }
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 export const YARD_FEED_RATE = 0.1;
@@ -600,7 +613,7 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
       const player = i === state.active && !state.watching;
       if (player ? !playerAction : !crew.has(i)) return;
       v.busy = true;
-      v.status = `Feeding the ${pad.name.toLowerCase()}`;
+      v.status = v.feederPad === "sluice" ? "Feeding sluice" : v.feederPad === "wash" ? "Feeding wash plant" : `Feeding the ${pad.name.toLowerCase()}`;
       feeders.push({ rate, keep: player ? 1 : CREW_KEEP, player });
     });
     if (!feeders.length) feeders.push({ rate: YARD_FEED_RATE, keep: YARD_FEED_KEEP, player: false });
@@ -647,8 +660,29 @@ function feedTick(state: GameState, dt: number, playerAction: boolean, sales: St
 }
 
 /** Crew loader/excavator job: go feed the nearest plant pile in this area. */
+function feederStatus(kind: "sluice" | "wash") {
+  return kind === "sluice" ? "Feeding sluice" : "Feeding wash plant";
+}
+
+function assignedFeederPad(state: GameState, v: VehicleState) {
+  const kind = v.feederPad;
+  if (kind !== "sluice" && kind !== "wash") return null;
+  if (!padOpen(state, kind)) return null;
+  return livePads(state).find((p) => p.kind === kind && areaOf(p.x) === areaOf(v.x)) ?? null;
+}
+
 function feedJob(state: GameState, v: VehicleState): Control | null {
-  if (!FEED_RATES[v.defId] || v.cargo > 0.25) return null;
+  if (!FEED_RATES[v.defId]) return null;
+  const assigned = assignedFeederPad(state, v);
+  if (assigned) {
+    v.status = feederStatus(assigned.kind === "wash" ? "wash" : "sluice");
+    if (distTo(v.x, v.z, assigned.x, assigned.z) > FEED_REACH - 2) {
+      return seek(v, assigned.x, assigned.z, FEED_REACH - 3);
+    }
+    if (v.cargo > 0.25 && v.cargoOre) return { throttle: 0, steer: 0, action: true, brake: 1 };
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
+  }
+  if (v.cargo > 0.25) return null;
   // Trucks waiting on this machine come first; the plant feeds itself meanwhile.
   if (fillsHaulers(v.defId) && lineFor(state, v).length > 0) return null;
   const index = state.vehicles.indexOf(v);
@@ -3559,7 +3593,7 @@ function manualsFromState(state: GameState): ManualCrew[] {
   pruneCrews(state);
   return state.crews
     .map((c) => {
-      const memberUids = state.vehicles.filter((v) => v.crewId === c.id && v.hired && v.operator).map((v) => v.uid);
+      const memberUids = state.vehicles.filter((v) => v.crewId === c.id && v.hired && v.operator && !v.feederPad).map((v) => v.uid);
       let destKind = c.destKind;
       let destName: string | null = null;
       if (destKind) {
@@ -3592,6 +3626,7 @@ export function assignCrew(state: GameState, index: number, crew: string) {
   const id = crew === "new" ? nextCrewId(state) : Math.round(Number(crew));
   if (!Number.isFinite(id) || id < 1 || id > 20) return "No such team.";
   v.crewId = id;
+  v.feederPad = null;
   ensureCrew(state, id);
   refreshCrewPlan(state, true);
   v.status = `Assigned to Team ${id}`;
@@ -3623,6 +3658,37 @@ export function setCrewDest(state: GameState, crewId: number, destKind: string |
   }
   refreshCrewPlan(state, true);
   return "";
+}
+
+export function setFeeder(state: GameState, index: number, pad: string | null) {
+  const v = state.vehicles[index];
+  if (!v) return "No machine.";
+  if (!FEED_RATES[v.defId]) return "That machine cannot feed a plant.";
+  if (!pad || pad === "auto") {
+    v.feederPad = null;
+    refreshCrewPlan(state, true);
+    return "";
+  }
+  if (pad !== "sluice" && pad !== "wash") return "No such plant.";
+  if (!padOpen(state, pad)) return "That plant is not open.";
+  const plant = livePads(state).find((p) => p.kind === pad);
+  if (!plant || areaOf(plant.x) !== areaOf(v.x)) return "That plant is not on this map.";
+  for (const o of state.vehicles) {
+    if (o !== v && o.feederPad === pad) o.feederPad = null;
+  }
+  v.feederPad = pad;
+  v.crewId = null;
+  pruneCrews(state);
+  refreshCrewPlan(state, true);
+  v.status = feederStatus(pad);
+  return "";
+}
+
+export function feederOptions(state: GameState, area: AreaId) {
+  const options: { value: string; label: string }[] = [{ value: "auto", label: "Auto" }];
+  if (state.sluice && area === "ridge") options.push({ value: "sluice", label: "Sluice feeder" });
+  if (state.washPlant && area === "river") options.push({ value: "wash", label: "Wash feeder" });
+  return options;
 }
 
 export function teamSourceOptions(state: GameState, area: AreaId) {
@@ -3694,7 +3760,7 @@ function buildHudTeams(state: GameState): import("@/game/types").HudModel["teams
 
 function collectCrewMachines(state: GameState) {
   return state.vehicles
-    .filter((v) => v.hired && v.operator && !aboard(v) && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
+    .filter((v) => v.hired && v.operator && !aboard(v) && !v.feederPad && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
     .map((v) => ({
       uid: v.uid,
       defId: v.defId,
@@ -3779,11 +3845,12 @@ function teamHasTruck(state: GameState, v: VehicleState) {
 }
 
 const SAFETY_STATUS =
-  /^(Heading to the fuel|At the gas|At the diesel|Towed|Out of fuel|Hot brakes|Bridge flooded|Too heavy|Backing off|Backed out|Making room|Clearing the rockslide|Heading to the rockslide|Heading to feed|Feeding the|Lights|Light plant|Plant parked)/;
+  /^(Heading to the fuel|At the gas|At the diesel|Towed|Out of fuel|Hot brakes|Bridge flooded|Too heavy|Backing off|Backed out|Making room|Clearing the rockslide|Heading to the rockslide|Heading to feed|Feeding the|Feeding sluice|Feeding wash|Lights|Light plant|Plant parked)/;
 
 /** On-duty board text: the team job, unless the machine is fueling, stuck, or in another safety state. */
 export function crewDisplayStatus(state: GameState, v: VehicleState) {
   const status = v.status || "On duty";
+  if (v.feederPad === "sluice" || v.feederPad === "wash") return status || feederStatus(v.feederPad);
   if (SAFETY_STATUS.test(status)) return status;
   const job = peekCrewJob(state, v);
   if (!job) return status;
@@ -4831,6 +4898,8 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       sources: sourceOptions(state, area, veh.defId),
       crewValue: veh.crewId != null ? String(veh.crewId) : "auto",
       crewOptions: crewSelectOptions(state, veh),
+      feederValue: veh.feederPad && padOpen(state, veh.feederPad) ? veh.feederPad : "auto",
+      feederOptions: feederOptions(state, area),
       hireLabel: veh.hired ? (veh.operator ? "On duty" : "Off shift") : `Hire · ${formatMoney(HIRE_COST)}`,
       sellLabel: state.vehicles.length > 1 ? `Sell · ${formatMoney(resale(veh))}` : null,
       affordableHire: veh.hired || state.cash >= HIRE_COST,
