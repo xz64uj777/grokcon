@@ -25,6 +25,7 @@ export function MineScreen() {
   // Info card: one compact line while driving; full card when stopped or tapped open.
   const [cardOpen, setCardOpen] = useState(false);
   const [settled, setSettled] = useState(true);
+  const [truckHint, setTruckHint] = useState<number | null>(null);
   const moving = hud?.moving ?? false;
   useEffect(() => {
     // Small delay so the card doesn't flicker on every tiny stop/start.
@@ -735,7 +736,28 @@ export function MineScreen() {
                     </p>
                     {hud.teams.filter((t) => t.area === (hud.valleyOpen ? crewArea : "ridge")).map((t) => (
                       <article key={t.id} className="mt-3 border-t border-border pt-3">
-                        <h3 className="font-display text-lg uppercase tracking-wide text-fg">{t.name}</h3>
+                        {t.truckLight && t.truckHint ? (
+                          <button
+                            type="button"
+                            className="flex min-h-11 w-full items-center gap-3 text-left"
+                            aria-expanded={truckHint === t.id}
+                            aria-label={`${t.name}. ${t.truckHint}`}
+                            onClick={() => setTruckHint((id) => (id === t.id ? null : t.id))}
+                          >
+                            <span
+                              className={`size-4 shrink-0 rounded-full shadow-[0_0_0_1px_rgba(244,239,230,0.45)] ${
+                                t.truckLight === "green" ? "bg-[#3dce6a]" : t.truckLight === "yellow" ? "bg-cash" : "bg-[#f06a5a]"
+                              }`}
+                              aria-hidden="true"
+                            />
+                            <h3 className="font-display text-lg uppercase tracking-wide text-fg">{t.name}</h3>
+                          </button>
+                        ) : (
+                          <h3 className="flex min-h-11 items-center font-display text-lg uppercase tracking-wide text-fg">{t.name}</h3>
+                        )}
+                        {t.truckHint && truckHint === t.id && (
+                          <p className="mt-1 text-sm leading-relaxed text-cash">{t.truckHint}</p>
+                        )}
                         <p className="mt-1 text-sm text-muted">{t.members}</p>
                         <label className="mt-3 flex flex-col gap-1 text-sm text-muted">
                           Work
