@@ -126,14 +126,14 @@ function realHint(state: GameState): string | null {
   const face = faceNearPlayer(state, v, 2);
   if (face && face.stress > 0.5) return `The ${face.sign} wall is getting steep! Lift the bucket halfway and strip the dirt off the top first.`;
   if (k === "skid" || k === "loader") {
-    const arms = k === "skid" ? "left stick right" : "right stick up";
+    const arms = "right stick up";
     const curl = "right stick left";
     if (v.cargo > 0.08 && (pad || truckNear(state, v, v.x, v.z, 9))) {
       if (t.lift < 0.45) return `Raise the arms (${arms}), then dump (right stick right).`;
       return "Dump the bucket: right stick right.";
     }
     if (full) return "Bucket full. Lift it a little and drive to a truck, the crusher or the waste pile.";
-    if (t.lift > 0.5) return `Lower the arms to the ground (${k === "skid" ? "left stick left" : "right stick down"}).`;
+    if (t.lift > 0.5) return "Lower the arms to the ground (right stick down).";
     return `Roll in slowly with the bucket low, then curl it back (${curl}). Too fast spills.`;
   }
   if (k === "excavator") {
@@ -144,7 +144,7 @@ function realHint(state: GameState): string | null {
       return "Swing (left stick sideways) until the bucket is over a truck, boom up and dump.";
     }
     if (closestFace(state, tip.x, tip.z, v)) return "Boom down (right stick forward), arm out (left stick forward), curl slowly (right stick left). Don't swing while curling.";
-    return "Tap Sticks: tracks to drive. Swing and reach the bucket into a face.";
+    return "Tap Park to lock the tracks. Then swing and reach the bucket into a face.";
   }
   if (k === "dozer") {
     if (t.lift < 0.08) return "Blade is buried and stalling. Lift it a little (right stick up).";
@@ -367,7 +367,9 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
     tierProgress: info.progress,
     tierDetail: info.nextAt != null ? `${formatMoney(state.lifetime)} earned · ${formatMoney(info.nextAt)} to ${info.next}` : "The books are closed on a full company.",
     shift: `Shift ${mm}:${ss.toString().padStart(2, "0")}`,
-    hint: state.watching
+    hint: state.seconds < 60 && !state.tutorial.loaded
+      ? "Drive to the orange pile and hold Dig."
+      : state.watching
       ? "You stepped out. On-duty operators keep working. Tap a machine to watch it, or Sit to drive."
       : realHint(state) ?? hint(state),
     objective: objective(state),
@@ -506,6 +508,7 @@ function areaHud(state: GameState) {
     washPlant: state.washPlant,
     deckLabel: deck.label,
     deckButton: deck.button,
+    showLoad: !!v && (v.defId === "lowboy" || (!DEFS[v.defId].receives && !!nearestHauler(state, v, 32, false))),
     watching: state.watching,
     opsLine: Ops.statusLine(state),
     shop: [...Ops.shopButtons(state), ...lotButtons(state)],

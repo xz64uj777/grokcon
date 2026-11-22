@@ -210,12 +210,6 @@ export function MineScreen() {
                   <p className="mt-1 max-w-56 text-sm text-muted">{hud.tierDetail}</p>
                 </div>
               </div>
-              <div className="desk-only pointer-events-auto max-w-sm border border-border bg-surface px-3 py-2">
-                <p className="text-[10px] uppercase tracking-widest text-cash">Good next move</p>
-                <p className="font-display text-lg uppercase leading-tight tracking-wide text-fg">{hud.objective}</p>
-                {hud.contractLabel && <p className="mt-1 text-sm text-cash">{hud.contractLabel}</p>}
-                <p className="mt-1 text-sm text-muted">{hud.shift}</p>
-              </div>
               <button
                 type="button"
                 className="desk-only pointer-events-auto ml-auto inline-flex h-11 items-center border border-border bg-surface px-3 font-display text-base uppercase tracking-wide text-fg"
@@ -415,7 +409,7 @@ export function MineScreen() {
             <div ref={padRef} key={`twin-${screen}`} className="twin-pad pointer-events-none absolute inset-x-0 bottom-0 z-10 gap-2 p-3 pb-4">
               <div className="twin-btns pointer-events-auto flex flex-wrap content-end justify-center gap-2">
                 <SmallBtn onClick={() => apiRef.current?.cycle(1)}>Next</SmallBtn>
-                <SmallBtn onClick={() => apiRef.current?.loadTruck()}>{hud.deckButton ?? "Load"}</SmallBtn>
+                {hud.showLoad && <SmallBtn onClick={() => apiRef.current?.loadTruck()}>{hud.deckButton ?? "Load"}</SmallBtn>}
                 {hud.machineId === "excavator" && (
                   <SmallBtn active={hud.excDrive} onClick={() => apiRef.current?.toggleExcDrive()}>{hud.excDrive ? "Park on" : "Park"}</SmallBtn>
                 )}
@@ -461,6 +455,7 @@ export function MineScreen() {
                 >
                   Next
                 </button>
+                {hud.showLoad && (
                 <button
                   type="button"
                   className="h-14 border border-border bg-surface px-4 font-display text-lg uppercase tracking-wide text-fg"
@@ -468,6 +463,7 @@ export function MineScreen() {
                 >
                   {hud.deckButton ?? "Load"}
                 </button>
+                )}
                 <button
                   type="button"
                   className="flex h-20 w-20 items-center justify-center bg-primary font-display text-xl uppercase tracking-wide text-primary-fg"

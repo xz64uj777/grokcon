@@ -758,15 +758,23 @@ export function statusLine(state: GameState) {
   const o = ops(state);
   const v = state.vehicles[state.active];
   const parts: string[] = [C.seasonLabel(state.market.day)];
-  if (v && C.isWorker(v)) parts.push(o.broke?.includes(v.uid) ? "BROKEN" : `Wear ${Math.round(((o.wear ?? {})[v.uid] ?? 0) * 100)}%`);
+  if (v && C.isWorker(v)) {
+    const w = (o.wear ?? {})[v.uid] ?? 0;
+    if (o.broke?.includes(v.uid)) parts.push("BROKEN");
+    else if (w > 0.001) parts.push(`Wear ${Math.round(w * 100)}%`);
+  }
   const route = v ? roadAt(v.x, v.z) : null;
   if (route && o.roads.includes(route)) parts.push(`Graded ${ROAD_NAMES[route].toLowerCase()}`);
   if (on(4)) parts.push(`Rep ${REP_NAMES[repLevel(o.rep)]}`);
   if (on(5) && o.event && o.event.day === state.market.day)
     parts.push(o.event.kind === "flood" ? bridgeClock(state) : o.event.kind === "double" ? `${o.event.ore} pays 2×` : "Breakdown today");
   if (on(8) && nightness(state.seconds) > 0.5) parts.push(o.lights ? "Night shift" : "Night");
-  if (v && on(9) && !isPlant(v)) parts.push(`Fuel ${Math.round((o.fuel[v.uid] ?? 1) * 100)}%`);
-  if (v && on(7) && onWheels(v)) parts.push(o.flat.includes(v.uid) ? "FLAT" : `Tread ${Math.round((o.tread[v.uid] ?? 1) * 100)}%`);
+  if (v && on(9) && !isPlant(v) && (o.fuel[v.uid] ?? 1) < 0.995) parts.push(`Fuel ${Math.round((o.fuel[v.uid] ?? 1) * 100)}%`);
+  if (v && on(7) && onWheels(v)) {
+    const tread = o.tread[v.uid] ?? 1;
+    if (o.flat.includes(v.uid)) parts.push("FLAT");
+    else if (tread < 0.995) parts.push(`Tread ${Math.round(tread * 100)}%`);
+  }
   return parts.join(" · ");
 }
 

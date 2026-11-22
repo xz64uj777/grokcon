@@ -217,6 +217,7 @@ function sanitize(raw: unknown): GameState | null {
         hard: false,
         tested: true,
         lastBlastDay: -1,
+        paidTons: num(s.paidTons, 0, 0, 2000),
       };
       if (pile.tons >= 0.2) state.deposits.push(pile);
     }

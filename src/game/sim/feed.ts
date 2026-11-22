@@ -125,6 +125,12 @@ const feedAcc = new Map<string, number>();
 
 /** Tons already paid when a truck dumped them. The feeder still clears the pile, but does not pay twice. */
 export const feedPaid = new WeakMap<Deposit, number>();
+
+/** Remember tons already paid on the pile itself, so a save does not pay them again. */
+export function markFeedPaid(pile: Deposit, tons: number) {
+  pile.paidTons = (pile.paidTons ?? 0) + tons;
+  feedPaid.set(pile, pile.paidTons);
+}
 /**
  * Feed plant piles. Machines parked at the pile feed at their rate (the player only while
  * holding the work button); with nobody there the plant's yard feeder trickles it in.
@@ -157,7 +163,7 @@ export function feedTick(state: GameState, dt: number, playerAction: boolean, sa
     let paid = 0;
     let tons = 0;
     let byPlayer = false;
-    let prepaid = feedPaid.get(d) ?? 0;
+    let prepaid = d.paidTons ?? feedPaid.get(d) ?? 0;
     for (const f of feeders) {
       let room = f.rate * dt;
       if (prepaid > 0 && d.tons > 0) {
@@ -173,8 +179,13 @@ export function feedTick(state: GameState, dt: number, playerAction: boolean, sa
       paid += t * unit * f.keep;
       byPlayer ||= f.player;
     }
-    if (prepaid <= 0) feedPaid.delete(d);
-    else feedPaid.set(d, prepaid);
+    if (prepaid <= 0) {
+      feedPaid.delete(d);
+      d.paidTons = 0;
+    } else {
+      feedPaid.set(d, prepaid);
+      d.paidTons = prepaid;
+    }
     const done = d.tons <= 1e-3;
     if (done) {
       state.deposits = state.deposits.filter((o) => o !== d);

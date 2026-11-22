@@ -14,6 +14,14 @@ import { repriceContract } from "./economy.ts";
 import { areaName, claimAreaOf, currentArea, distTo, haulFee, haulTarget, hypot, log, makeVehicle, mountainOpen, mountainUnlockable, ownsClaim, prettySign, valleyOpen, vehicleStats } from "./world.ts";
 import { bindDeck, hitsBlock, pointBlocked, snapDeck } from "./motion.ts";
 import { pruneCrews } from "./crew.ts";
+import { addPile } from "./feed.ts";
+
+function dropLoad(state: GameState, v: VehicleState) {
+  if (!v.cargoOre || v.cargo < 0.05) return;
+  addPile(state, v.cargoOre, v.cargo, v.x, v.z, v.workClaim ?? 1, v.cargoPurity ?? 1);
+  v.cargo = 0;
+  v.cargoOre = null;
+}
 
 
 export function storyTick(state: GameState) {
@@ -79,6 +87,7 @@ export function lotBuy(state: GameState, id: VehicleId, tradeIn: boolean) {
     if (canAdd(state, id, me.defId)) return canAdd(state, id, me.defId);
     credit = Career.tradeValue(resale(me), o.wear[me.uid] ?? 0);
     if (state.cash + credit < it.price) return "Not enough cash.";
+    dropLoad(state, me);
     delete o.wear[me.uid];
     state.vehicles.splice(state.active, 1);
     state.active = Math.min(state.active, state.vehicles.length - 1);
@@ -437,6 +446,7 @@ export function sellVehicle(state: GameState, index: number) {
   if (!v) return "No machine.";
   if (v.defId === "lowboy") return "The lowboy stays with the company.";
   if (state.deck?.includes(v.uid)) return "Unload it from the lowboy first.";
+  dropLoad(state, v);
   const refund = resale(v);
   const name = DEFS[v.defId].name;
   state.vehicles.splice(index, 1);

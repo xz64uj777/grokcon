@@ -76,13 +76,10 @@
   .desk-only {
     display: none;
   }
-  .next-move-phone {
-    display: block;
-  }
 }
 
 .next-move-phone {
-  display: none;
+  display: block;
 }
 
 /* Stick sizes. Cover screen / phone: thumb-sized. Unfolded inner screen: a bit
@@ -155,8 +152,8 @@
 }
 .game-shell[data-screen="inner"] .hud-foot,
 .game-shell[data-screen="inner-land"] .hud-foot {
-  /* Big screen: card at the top left so it never sits over your own machine. */
-  top: calc(3.75rem + var(--sa-t));
+  /* Big screen: one card under the money row, never over it or the machine. */
+  top: calc(11.5rem + var(--sa-t));
   bottom: auto;
   right: auto;
   width: min(26rem, 46vw);
