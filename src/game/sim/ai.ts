@@ -10,7 +10,7 @@ import type { Control, StepFX, WorkOpts } from "./types.ts";
 import { ZERO } from "./types.ts";
 import { fillContract, unitPrice } from "./economy.ts";
 import { clamp, closestFace, distTo, faceOf, handsOn, haulTarget, hypot, livePads, log, nearestPad, ownsClaim, prettySign, sameArea, vehicleStats } from "./world.ts";
-import { addFeedPile, addPile, dumpsToFeed, feedId, feedJob, feedPaid, sideFeedId } from "./feed.ts";
+import { addFeedPile, addPile, dumpsToFeed, feedId, feedJob, markFeedPaid, sideFeedId } from "./feed.ts";
 import { SHORT_CARRY_RANGE, acceptsJob, assignedClaim, bestPad, bestPile, bestVein, canReach, cannotCrossTo, commitVein, crewNear, dirtToSluice, driveFace, faceOutput, facePin, loaderFillVein, loaderMayCut, pileApproach, pileInReach, prefersSluice, prefersWash, takeBite, washScore, workHere } from "./jobs.ts";
 import { TRUCK_IDLE_SECONDS, cargoInto, diggerAboutToFill, diggerForTruck, dropInFront, emptyCargo, fillsHaulers, hasPile, holdForReadyHauler, holdForTruck, idleFor, lineFor, lineTicket, nextLineTicket, loadTruck, loaderInArea, loaderToOrphanHeavy, nearestHauler, offHeavyBank, stockLatch, stockSpot, truckLeaving, truckNear, truckPartner, wheelLoader } from "./haulers.ts";
 import { BAY_YIELD_BUSY_SECONDS, BAY_YIELD_SECONDS, bayCommit, bayReady, enterBay, jobStand, loaderStand, loadingZone, parkInPour, safeWaitSpot, spotForTruck, truckSpot } from "./bay.ts";
@@ -587,7 +587,7 @@ export function performAction(
       state.lifetime += net;
       const id = sidePile ? sideFeedId(pad.id, ore) : feedId(pad.id);
       const pile = state.deposits.find((d) => d.id === id);
-      if (pile) feedPaid.set(pile, (feedPaid.get(pile) ?? 0) + tons);
+      if (pile) markFeedPaid(pile, tons);
       const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
       if (player) {
         if (sidePile) log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}. The hopper was full of something else, so it was dropped beside the plant.`);

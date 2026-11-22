@@ -44,6 +44,8 @@ export type Deposit = {
   tested: boolean;
   /** In-game day of the last blast here, or -1. */
   lastBlastDay: number;
+  /** Tons of a plant pile already paid for. The feeder clears them and does not pay again. */
+  paidTons?: number;
 };
 
 export type CrewSetup = {
@@ -315,6 +317,8 @@ export type HudModel = {
   washPlant: boolean;
   deckLabel: string;
   deckButton: string | null;
+  /** Load is on screen for the lowboy, or when a dump truck is close enough to fill. */
+  showLoad: boolean;
   /** You stepped out. The crew is driving and the camera is only watching. */
   watching: boolean;
   opsLine: string;

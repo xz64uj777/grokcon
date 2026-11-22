@@ -249,7 +249,11 @@ export function controlHelp(defId: string, parked = false): HelpCard {
     case "dozer":
       return { title: "Bulldozer", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Blade ↕ · angle ↔" };
     case "truck":
-      return { title: "Dump truck", phoneLeft: "Drive/reverse ↕ · steer ↔", phoneRight: "Bed up/down ↕" };
+      return {
+        title: defId === "heavy" ? "Heavy haul" : "Dump truck",
+        phoneLeft: "Drive/reverse ↕ · steer ↔",
+        phoneRight: "Bed up/down ↕",
+      };
     default:
       return { title: "Drive", phoneLeft: "Drive", phoneRight: "" };
   }
