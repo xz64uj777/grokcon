@@ -3,6 +3,7 @@ import { BORE_SECONDS, DRILL_SECONDS } from "@/game/mining";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { createAdaptiveResolution } from "@/game/frame-quality";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
@@ -51,6 +52,8 @@ type DepositView = {
   leaseTex: THREE.Texture;
   cut: THREE.Mesh | null;
   lastDug: number;
+  lastOwned?: boolean;
+  lastOre?: string;
 };
 
 const _look = new THREE.Vector3();
@@ -70,7 +73,7 @@ export type World = {
   blast: (x: number, z: number) => void;
   resize: () => void;
   /** Draw calls and triangles of the last frame (QA/perf only). */
-  stats: () => { calls: number; triangles: number; dpr: number; cam: [number, number] };
+  stats: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; cam: [number, number] };
   dispose: () => void;
 };
 
@@ -86,12 +89,18 @@ export function createWorld(host: HTMLElement): World {
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   const quality = qualityTier();
+  const resolution = createAdaptiveResolution();
   renderer.shadowMap.type = quality.rich ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.setClearColor(0xe2bd9a, 1);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const room = new RoomEnvironment();
+  const environmentTarget = pmrem.fromScene(room, 0.04);
+  scene.environment = environmentTarget.texture;
+  // fromScene keeps the resulting render target alive; PMREMGenerator.dispose
+  // only releases its internal shader/geometry resources.
+  room.dispose();
   pmrem.dispose();
   scene.environmentIntensity = 0.42;
   scene.background = new THREE.Color(0xe2bd9a);
@@ -120,11 +129,37 @@ export function createWorld(host: HTMLElement): World {
   fill.position.set(-40, 30, -20);
   scene.add(fill);
 
-  const disposables: { dispose: () => void }[] = [];
-  const track = <T extends { dispose: () => void }>(g: T) => {
-    disposables.push(g);
-    return g;
+  type Resource = { dispose: () => void };
+  const disposables = new Set<Resource>();
+  let activeResources: Set<Resource> | null = null;
+  const track = <T extends Resource>(resource: T): T => {
+    disposables.add(resource);
+    activeResources?.add(resource);
+    return resource;
   };
+  const release = (resource: Resource) => {
+    if (disposables.delete(resource)) resource.dispose();
+  };
+  const releaseAll = (resources: Set<Resource> | undefined) => {
+    if (!resources) return;
+    for (const resource of resources) release(resource);
+    resources.clear();
+  };
+  // Track allocations made by each vehicle/deposit separately, so selling a
+  // machine or consuming a pile returns GPU memory without waiting for unmount.
+  function captureResources<T>(create: () => T): { value: T; resources: Set<Resource> } {
+    const previous = activeResources;
+    const resources = new Set<Resource>();
+    activeResources = resources;
+    try {
+      return { value: create(), resources };
+    } catch (error) {
+      releaseAll(resources);
+      throw error;
+    } finally {
+      activeResources = previous;
+    }
+  }
 
   const std = (color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) => {
     const m = new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.04, ...opts });
@@ -203,15 +238,15 @@ export function createWorld(host: HTMLElement): World {
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
-  const roadSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("NORTH ROAD", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  const roadSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: track(textTexture("NORTH ROAD", "#e6b325")), transparent: true, depthWrite: false, fog: false })));
   roadSign.position.set(0, 5, 62);
   roadSign.scale.set(8, 3, 1);
   scene.add(roadSign);
-  const summitSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("PASS SUMMIT", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  const summitSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: track(textTexture("PASS SUMMIT", "#e6b325")), transparent: true, depthWrite: false, fog: false })));
   summitSign.position.set(PASS_SUMMIT_X, 5, 114);
   summitSign.scale.set(9, 3.2, 1);
   scene.add(summitSign);
-  const gateSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture("RIVER VALLEY", "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+  const gateSign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: track(textTexture("RIVER VALLEY", "#e6b325")), transparent: true, depthWrite: false, fog: false })));
   gateSign.position.set(VALLEY_GATE_X, 5, 118);
   gateSign.scale.set(9, 3.2, 1);
   scene.add(gateSign);
@@ -287,7 +322,7 @@ export function createWorld(host: HTMLElement): World {
     mountainLink.add(g);
   }
   const addSign = (text: string, x: number, z: number) => {
-    const sprite = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: textTexture(text, "#e6b325"), transparent: true, depthWrite: false, fog: false })));
+    const sprite = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: track(textTexture(text, "#e6b325")), transparent: true, depthWrite: false, fog: false })));
     sprite.position.set(x, 6, z);
     sprite.scale.set(11, 3.6, 1);
     mountainLink.add(sprite);
@@ -356,7 +391,9 @@ export function createWorld(host: HTMLElement): World {
   }
 
   const rigs = new Map<string, Rig>();
+  const rigResources = new Map<string, Set<Resource>>();
   const depositViews = new Map<string, DepositView>();
+  const depositResources = new Map<string, Set<Resource>>();
   let companyTex: THREE.Texture | null = null;
   let companySign: THREE.Sprite | null = null;
   let lastCompany = "";
@@ -769,7 +806,7 @@ export function createWorld(host: HTMLElement): World {
     if (d.kind === "vein") {
       const skin = cutMat.clone();
       track(skin);
-      cut = new THREE.Mesh(carveFace(d, 0), skin);
+      cut = new THREE.Mesh(track(carveFace(d, 0)), skin);
       cut.castShadow = true;
       cut.receiveShadow = true;
       group.add(cut);
@@ -1159,41 +1196,56 @@ export function createWorld(host: HTMLElement): World {
   const clock = { t: 0 };
 
   const rigKind = new Map<string, string>();
+  function removeRig(uid: string, rig: Rig) {
+    scene.remove(rig.root);
+    releaseAll(rigResources.get(uid));
+    rigResources.delete(uid);
+    rigKind.delete(uid);
+    rigs.delete(uid);
+  }
+  function removeDeposit(id: string, view: DepositView) {
+    scene.remove(view.group);
+    scene.remove(view.sign);
+    // Current vein geometry may have been replaced since initial creation.
+    if (view.cut) release(view.cut.geometry);
+    releaseAll(depositResources.get(id));
+    depositResources.delete(id);
+    depositViews.delete(id);
+  }
   function ensure(state: GameState) {
     const live = new Set(state.vehicles.map((v) => v.uid));
     for (const [uid, rig] of rigs) {
-      if (!live.has(uid)) {
-        scene.remove(rig.root);
-        rigs.delete(uid);
-      }
+      if (!live.has(uid)) removeRig(uid, rig);
     }
     for (const v of state.vehicles) {
       // Rebuild if this id now belongs to a different kind of machine (guards against reused ids).
       const have = rigs.get(v.uid);
-      if (have && rigKind.get(v.uid) !== v.defId) {
-        scene.remove(have.root);
-        rigs.delete(v.uid);
-      }
+      if (have && rigKind.get(v.uid) !== v.defId) removeRig(v.uid, have);
       if (!rigs.has(v.uid)) {
-        rigs.set(v.uid, buildRig(v.defId, v.uid));
+        const built = captureResources(() => buildRig(v.defId, v.uid));
+        rigs.set(v.uid, built.value);
+        rigResources.set(v.uid, built.resources);
         rigKind.set(v.uid, v.defId);
       }
     }
     const dlive = new Set(state.deposits.map((d) => d.id));
     for (const [id, view] of depositViews) {
-      if (!dlive.has(id)) {
-        scene.remove(view.group);
-        scene.remove(view.sign);
-        depositViews.delete(id);
-      }
+      if (!dlive.has(id)) removeDeposit(id, view);
     }
     for (const d of state.deposits) {
-      if (!depositViews.has(d.id)) depositViews.set(d.id, makeDeposit(d));
+      if (!depositViews.has(d.id)) {
+        const built = captureResources(() => makeDeposit(d));
+        depositViews.set(d.id, built.value);
+        depositResources.set(d.id, built.resources);
+      }
     }
     if (state.company !== lastCompany) {
       lastCompany = state.company;
-      if (companySign) scene.remove(companySign);
-      companyTex?.dispose();
+      if (companySign) {
+        scene.remove(companySign);
+        release(companySign.material);
+      }
+      if (companyTex) release(companyTex);
       companyTex = track(textTexture(state.company.toUpperCase(), "#f4efe6"));
       companySign = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: companyTex, transparent: true, depthWrite: false, fog: false })));
       companySign.position.set(22, 6.4, 54);
@@ -1396,8 +1448,8 @@ export function createWorld(host: HTMLElement): World {
         view.group.rotation.y = faceOf(d).yaw;
         view.group.scale.set(1, 1, 1);
         if (Math.abs(dug - view.lastDug) > 0.012) {
-          const next = carveFace(d, dug);
-          view.cut.geometry.dispose();
+          const next = track(carveFace(d, dug));
+          release(view.cut.geometry);
           view.cut.geometry = next;
           view.lastDug = dug;
         }
@@ -1415,13 +1467,19 @@ export function createWorld(host: HTMLElement): World {
           child.visible = true;
         });
       }
-      for (const child of view.group.children) {
-        child.traverse((part) => {
-          const mesh = part as THREE.Mesh;
-          if (!(mesh instanceof THREE.Mesh) || !mesh.userData.ore) return;
-          const piles = pileMaterials[d.ore] ?? pileMaterials.iron;
-          mesh.material = mesh.userData.heap ? (owned ? piles : lockedMat) : owned ? oreMaterials[d.ore] : lockedMat;
-        });
+      // Ore meshes are static between ownership/grade changes. Avoid walking
+      // the entire pile and rewriting materials on every animation frame.
+      if (view.lastOwned !== owned || view.lastOre !== d.ore) {
+        for (const child of view.group.children) {
+          child.traverse((part) => {
+            const mesh = part as THREE.Mesh;
+            if (!(mesh instanceof THREE.Mesh) || !mesh.userData.ore) return;
+            const piles = pileMaterials[d.ore] ?? pileMaterials.iron;
+            mesh.material = mesh.userData.heap ? (owned ? piles : lockedMat) : owned ? oreMaterials[d.ore] : lockedMat;
+          });
+        }
+        view.lastOwned = owned;
+        view.lastOre = d.ore;
       }
       if (view.lease !== !owned) {
         view.lease = !owned;
@@ -1510,14 +1568,20 @@ export function createWorld(host: HTMLElement): World {
     applyNight(state);
     updateDrill(state);
     sky.position.set(camera.position.x, 0, camera.position.z);
+    // Lower the render scale on sustained slow frames, then restore detail
+    // gradually when the phone can sustain smooth animation again.
+    if (!document.hidden && resolution.sample(dt)) {
+      renderer.setPixelRatio(baseDpr * resolution.scale);
+    }
     renderer.render(scene, camera);
   }
 
+  let baseDpr = 1;
   function resize() {
     const w = host.clientWidth || 1;
     const h = host.clientHeight || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, w > 1400 ? 1.25 : Math.min(w, h) >= 600 ? Math.min(quality.dprCap, 1.75) : quality.dprCap);
-    renderer.setPixelRatio(dpr);
+    baseDpr = Math.min(window.devicePixelRatio || 1, w > 1400 ? 1.25 : Math.min(w, h) >= 600 ? Math.min(quality.dprCap, 1.75) : quality.dprCap);
+    renderer.setPixelRatio(baseDpr * resolution.scale);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -1526,7 +1590,7 @@ export function createWorld(host: HTMLElement): World {
   resize();
 
   return {
-    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), cam: [camera.position.x, camera.position.z] as [number, number] }),
+    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, cam: [camera.position.x, camera.position.z] as [number, number] }),
     sync,
     orbit(dt: number) {
       if (bound) sync(bound, dt, false);
@@ -1573,8 +1637,11 @@ export function createWorld(host: HTMLElement): World {
     },
     resize,
     dispose() {
+      for (const resource of disposables) resource.dispose();
+      disposables.clear();
+      environmentTarget.dispose();
       renderer.dispose();
-      disposables.forEach((d) => d.dispose());
+      renderer.forceContextLoss();
       canvas.remove();
     },
   };
