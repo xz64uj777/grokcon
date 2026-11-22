@@ -10,7 +10,8 @@ import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/g
 import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
 import { X1 } from "@/game/mountain";
 import { X0, areaOf, bridgeDeckY, rainAt } from "@/game/river";
-import { buildValley } from "@/game/valley";
+import { buildValley, type Valley } from "@/game/valley";
+import { needsDistantScenery } from "@/game/region-scenery";
 import { buildMountain } from "@/game/mountain-scene";
 import { pileShape } from "@/game/piles";
 import { drapeMesh, heightAt, gradeAt } from "@/game/terrain";
@@ -74,11 +75,12 @@ export type World = {
   blast: (x: number, z: number) => void;
   resize: () => void;
   /** Draw calls and triangles of the last frame (QA/perf only). */
-  stats: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; cam: [number, number] };
+  stats: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; cam: [number, number]; regions: { river: boolean; mountain: boolean }; initMs: number };
   dispose: () => void;
 };
 
 export function createWorld(host: HTMLElement): World {
+  const initStartedAt = performance.now();
   const canvas = document.createElement("canvas");
   canvas.className = "absolute inset-0 h-full w-full";
   canvas.style.touchAction = "none";
@@ -919,8 +921,21 @@ export function createWorld(host: HTMLElement): World {
   scene.add(gatePost);
 
   buildSluice(scene, track, box, steel, std);
-  const valley = buildValley(scene, track, std, quality.rich, (t, a) => track(textTexture(t, a)));
-  buildMountain(scene, track, std, terrainSegments.mountain);
+  let valley: Valley | null = null;
+  let mountainReady = false;
+
+  // River Valley and High Mountain are more than a kilometre from the
+  // starting ridge. Don't allocate their meshes, textures and GPU buffers
+  // until the player unlocks or already occupies the area.
+  function ensureDistantScenery(state: GameState) {
+    if (!valley && needsDistantScenery(state, "river")) {
+      valley = buildValley(scene, track, std, quality.rich, (t, a) => track(textTexture(t, a)));
+    }
+    if (!mountainReady && needsDistantScenery(state, "mountain")) {
+      buildMountain(scene, track, std, terrainSegments.mountain);
+      mountainReady = true;
+    }
+  }
 
   // Rain: a pool of streaks that follows the camera. Only drawn while it rains.
   const rainCount = quality.rich ? 900 : 450;
@@ -1235,6 +1250,10 @@ export function createWorld(host: HTMLElement): World {
       if (!dlive.has(id)) removeDeposit(id, view);
     }
     for (const d of state.deposits) {
+      // Pre-existing deposits in locked areas remain in state and saves, but
+      // do not need render resources until their region is initialized.
+      if (areaOf(d.x) === "river" && !valley) continue;
+      if (areaOf(d.x) === "mountain" && !mountainReady) continue;
       if (!depositViews.has(d.id)) {
         const built = captureResources(() => makeDeposit(d));
         depositViews.set(d.id, built.value);
@@ -1301,6 +1320,7 @@ export function createWorld(host: HTMLElement): World {
   function sync(state: GameState, dt: number, follow: boolean) {
     clock.t += dt;
     if (bound !== state) bound = state;
+    ensureDistantScenery(state);
     ensure(state);
     const night = onRound(8) ? nightness(state.seconds) : 0;
     const beamOrder: { d: number; beams: THREE.SpotLight[] }[] = [];
@@ -1563,7 +1583,7 @@ export function createWorld(host: HTMLElement): World {
       sun.target.position.set(cx, 0, 0);
       sun.target.updateMatrixWorld();
     }
-    valley.update(dt, state.wet ?? 0, !!state.washPlant);
+    valley?.update(dt, state.wet ?? 0, !!state.washPlant);
     mountainLink.visible = mountainUnlockable(state) || mountainOpen(state);
     washGroup.visible = !!state.washPlant;
     updateWeather(rainAt(state.market.seed, state.seconds), dt);
@@ -1590,9 +1610,10 @@ export function createWorld(host: HTMLElement): World {
   }
 
   resize();
+  const initMs = Math.round(performance.now() - initStartedAt);
 
   return {
-    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, cam: [camera.position.x, camera.position.z] as [number, number] }),
+    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, cam: [camera.position.x, camera.position.z] as [number, number], regions: { river: valley !== null, mountain: mountainReady }, initMs }),
     sync,
     orbit(dt: number) {
       if (bound) sync(bound, dt, false);
