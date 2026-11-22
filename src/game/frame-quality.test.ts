@@ -35,7 +35,8 @@ describe("adaptive mobile renderer resolution", () => {
     renderFrames(quality, 60, 120);
     assert.ok(quality.scale > lowered);
     assert.ok(quality.scale < 1);
-    renderFrames(quality, 60, 2400);
+    // Seven 0.05 recovery steps, each requiring four good two-second windows.
+    renderFrames(quality, 60, 4800);
     assert.equal(quality.scale, 1);
   });
 
