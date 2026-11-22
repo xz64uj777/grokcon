@@ -1642,9 +1642,15 @@ function enterBay(v: VehicleState, spot: BaySpot, place: number, keepX: number, 
 function goingToWash(state: GameState, t: VehicleState) {
   if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
   if (!(t.operator || handsOn(state, t))) return false;
+  // A full loader or excavator waiting at the dig is not queued at the plant.
+  // A dedicated feeder stays at the hopper and is not waiting to tip on the pad.
+  // The sluice and mill have no dump line of this kind; only the wash plant does.
+  if (fillsHaulers(t.defId) || t.feederPad) return false;
   const cap = vehicleStats(t).capacity;
-  // DRAFT: only machines actually hauling in. A part-loaded truck in a bay near the plant held the line.
-  return t.cargo >= cap * 0.9 || dumpAnyway.has(t) || (cap <= 0 || !DEFS[t.defId].receives) && distTo(t.x, t.z, WASH_PLANT.x, WASH_PLANT.z) < 80 && !fillsHaulers(t.defId);
+  if (cap <= 0) return false;
+  // Only machines actually hauling a load in to dump. The old "near the plant"
+  // check also pulled in skid steers that were only working nearby.
+  return t.cargo >= cap * 0.9 || dumpAnyway.has(t);
 }
 
 function plantLine(state: GameState) {
