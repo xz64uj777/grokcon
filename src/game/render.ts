@@ -75,7 +75,7 @@ export type World = {
   blast: (x: number, z: number) => void;
   resize: () => void;
   /** Draw calls and triangles of the last frame (QA/perf only). */
-  stats: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; cam: [number, number]; regions: { river: boolean; mountain: boolean }; initMs: number };
+  stats: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; resources: number; cam: [number, number]; regions: { river: boolean; mountain: boolean }; initMs: number };
   dispose: () => void;
 };
 
@@ -1613,7 +1613,7 @@ export function createWorld(host: HTMLElement): World {
   const initMs = Math.round(performance.now() - initStartedAt);
 
   return {
-    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, cam: [camera.position.x, camera.position.z] as [number, number], regions: { river: valley !== null, mountain: mountainReady }, initMs }),
+    stats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, resources: disposables.size, cam: [camera.position.x, camera.position.z] as [number, number], regions: { river: valley !== null, mountain: mountainReady }, initMs }),
     sync,
     orbit(dt: number) {
       if (bound) sync(bound, dt, false);
