@@ -39,6 +39,8 @@ function sanitize(raw: unknown): GameState | null {
   const v2 = o.version === 2 || o.version === 3 || o.version === 4;
   const company = typeof o.company === "string" && o.company.trim() ? o.company.trim().slice(0, 24) : "Ridge Ore Co.";
   const state = freshGame(company);
+  // Earlier saves have no revision; they are upgraded on their next write.
+  state.saveRevision = Math.floor(num(o.saveRevision, 0, 0, Number.MAX_SAFE_INTEGER - 2));
   state.cash = num(o.cash, state.cash, 0, 1e12);
   state.lifetime = num(o.lifetime, 0, 0, 1e12);
   state.seconds = num(o.seconds, 0, 0, 1e9);
@@ -307,66 +309,50 @@ function readRaw(raw: string | null) {
   if (!raw) return null;
   try {
     const state = sanitize(JSON.parse(raw));
-    return state ? { state, raw, worth: bookWorth(state) } : null;
+    return state ? { state, raw, revision: state.saveRevision ?? 0 } : null;
   } catch {
     return null;
   }
-}
-
-function richer<T extends { worth: number }>(a: T | null, b: T | null) {
-  if (!a) return b;
-  if (!b) return a;
-  return b.worth > a.worth ? b : a;
 }
 
 export function loadGame(): GameState | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const best = richer(readRaw(localStorage.getItem(KEY)), readRaw(localStorage.getItem(BAK)));
-    if (!best) return null;
-    memorySave = best.raw;
-    memoryWorth = best.worth;
-    return best.state;
+    // A valid current save always wins over a backup, even after spending or selling.
+    const latest = readRaw(localStorage.getItem(KEY)) ?? readRaw(localStorage.getItem(BAK));
+    if (!latest) return null;
+    memorySave = latest.raw;
+    memoryRevision = latest.revision;
+    return latest.state;
   } catch {
     return null;
   }
 }
 
-function isNewBook(state: GameState) {
-  return (
-    state.seconds < 8 &&
-    state.lifetime < 1 &&
-    !state.sluice &&
-    state.claims.length <= 1 &&
-    state.vehicles.every((v) => v.defId === "pickup" || v.defId === "crusher")
-  );
-}
-
 export function saveGame(state: GameState, force = false) {
+  // Date.now provides ordering across browser storage backends and fresh sessions;
+  // the counter keeps saves ordered even when several happen in one millisecond.
+  const revision = Math.max(Date.now(), memoryRevision, state.saveRevision ?? 0) + 1;
+  state.saveRevision = revision;
   const json = JSON.stringify(snapshot(state));
-  const worth = bookWorth(state);
   memorySave = json;
+  memoryRevision = revision;
   if (typeof localStorage !== "undefined") {
     try {
       const current = readRaw(localStorage.getItem(KEY));
-      const backup = readRaw(localStorage.getItem(BAK));
-      const kept = richer(current, backup);
-      if (!force && isNewBook(state) && kept && kept.worth > worth + 25) {
-        memorySave = kept.raw;
-        memoryWorth = kept.worth;
-        return false;
-      }
-      if (current && current.raw !== json) {
-        const bakWorth = backup?.worth ?? -1;
-        if (current.worth >= bakWorth) localStorage.setItem(BAK, current.raw);
+      if (force) {
+        // A new claim or imported save must not inherit an older company's backup.
+        localStorage.removeItem(BAK);
+      } else if (current && current.raw !== json) {
+        const backup = readRaw(localStorage.getItem(BAK));
+        if (!backup || current.revision >= backup.revision) localStorage.setItem(BAK, current.raw);
       }
       localStorage.setItem(KEY, json);
-      memoryWorth = worth;
     } catch {
       /* private mode or a full disk — the IndexedDB copy may still land */
     }
   }
-  mirrorSave(json, worth, force);
+  mirrorSave(json, revision, force);
   return true;
 }
 
@@ -391,7 +377,7 @@ function snapshot(state: GameState): GameState {
 }
 
 let memorySave: string | null = null;
-let memoryWorth = 0;
+let memoryRevision = 0;
 
 export function currentSaveText() {
   return memorySave;
@@ -420,16 +406,19 @@ function openBooks(): Promise<IDBDatabase | null> {
   });
 }
 
-function mirrorSave(json: string, worth: number, force: boolean) {
+function mirrorSave(json: string, revision: number, force: boolean) {
   void openBooks().then((db) => {
     if (!db) return;
     try {
       const tx = db.transaction(IDB_STORE, "readwrite");
       const store = tx.objectStore(IDB_STORE);
-      const bestReq = store.get(BEST);
-      bestReq.onsuccess = () => {
-        const previous = typeof bestReq.result === "string" ? readRaw(bestReq.result) : null;
-        if (force || !previous || worth + 1 >= previous.worth) store.put(json, BEST);
+      const currentReq = store.get(KEY);
+      currentReq.onsuccess = () => {
+        const previous = typeof currentReq.result === "string" ? readRaw(currentReq.result) : null;
+        // Async IndexedDB writes can finish out of order: never overwrite a newer save.
+        if (previous && previous.revision > revision) return;
+        if (force || !previous) store.put(json, BEST);
+        else if (previous.raw !== json) store.put(previous.raw, BEST);
         store.put(json, KEY);
       };
       tx.oncomplete = () => db.close();
@@ -460,10 +449,11 @@ export function loadGameBackup(): Promise<GameState | null> {
             pending -= 1;
             if (pending > 0) return;
             db.close();
-            const picked = richer(readRaw(currentRaw), readRaw(bestRaw));
-            if (picked && picked.worth > memoryWorth) {
+            // The backup is recovery-only; it must not replace a valid, newer save.
+            const picked = readRaw(currentRaw) ?? readRaw(bestRaw);
+            if (picked && picked.revision > memoryRevision) {
               memorySave = picked.raw;
-              memoryWorth = picked.worth;
+              memoryRevision = picked.revision;
             }
             resolve(picked ? picked.state : null);
           };
