@@ -60,6 +60,9 @@ try {
   ensure(response?.ok(), `Initial page request failed: ${response?.status()}`);
   await page.getByRole("button", { name: "Start", exact: true }).waitFor({ timeout: 45000 });
   ensure(await page.locator("canvas").count() >= 2, "3D world or HUD canvas not mounted");
+  const companyInput = page.getByRole("textbox", { name: "Company" });
+  ensure(await companyInput.inputValue() === "Ridge Ore Co.", "Default company name is not shown");
+  await companyInput.fill("Ridge QA Mobile");
 
   const startup = await page.evaluate(() => ({
     readyMs: Math.round(performance.now()),
@@ -80,8 +83,25 @@ try {
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
   const first = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
-  ensure(first && first.company === "Ridge Ore Co.", "Starting a game did not persist the company");
+  ensure(first && first.company === "Ridge QA Mobile", "Edited company name was not persisted after start");
   ensure(first.saveRevision > 0, "Save revision was not persisted");
+
+  // Exercise controlled inputs, icon buttons, panel switches and state
+  // updates: these must work under both React and Preact compatibility.
+  await page.getByRole("button", { name: "Office", exact: true }).click();
+  const officePanel = page.locator("aside.office-panel");
+  await officePanel.waitFor({ timeout: 15000 });
+  for (const tab of ["Ground", "Crew", "Prices", "Machines"]) {
+    await officePanel.getByRole("button", { name: tab, exact: true }).click();
+  }
+  await officePanel.getByRole("button", { name: "Controls: Realistic" }).click();
+  await officePanel.getByRole("button", { name: "Controls: Simple" }).waitFor({ timeout: 15000 });
+  await officePanel.getByRole("button", { name: "Controls: Simple" }).click();
+  await officePanel.getByRole("button", { name: "Controls: Realistic" }).waitFor({ timeout: 15000 });
+  await officePanel.getByRole("button", { name: "Close office" }).click();
+  ensure(await officePanel.count() === 0, "Office panel did not close");
+  ensure(pageErrors.length === 0, `Office interactions caused a page error: ${pageErrors.join("; ")}`);
+  console.log("PASS: editable company, office tabs, control modes and icon button events");
 
   await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 });
   await page.getByRole("button", { name: "Continue", exact: true }).waitFor({ timeout: 45000 });
@@ -97,7 +117,9 @@ try {
     document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
   ensure(!overflow, "Landscape game layout has horizontal overflow");
   ensure(pageErrors.length === 0, `Uncaught game errors: ${pageErrors.join("; ")}`);
-  await page.screenshot({ path: `${artifactDir}/mobile-landscape.png` });
+  // Capturing WebGL in CI's SwiftShader sometimes hangs even after all layout
+  // and gameplay assertions succeed. Screenshots are diagnostic, not a gate;
+  // the layout and runtime error checks above remain mandatory.
   console.log("PASS: mobile start, saved resume, landscape resize and runtime errors");
   // Prove temporary ore piles free their GPU resources when removed.
   const original = await page.evaluate(() => window.__controlsTest?.renderStats());
@@ -178,7 +200,7 @@ try {
   for (const [name, target] of [["mobile", page], ["startup-error", failedPage]]) {
     try {
       if (target && !target.isClosed()) {
-        await target.screenshot({ path: `${artifactDir}/failure-${name}.png` });
+        await target.screenshot({ path: `${artifactDir}/failure-${name}.png`, timeout: 5000 });
       }
     } catch {
       // Preserve the original assertion failure.
