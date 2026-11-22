@@ -49,6 +49,9 @@ jobs:
       - name: Create GitHub Pages entry point
         run: node -e "require('node:fs').copyFileSync('dist-static/static.html', 'dist-static/index.html')"
 
+      - name: Preload hashed 3D startup dependencies
+        run: node scripts/preload-static-entry.mjs
+
       - name: Install Chromium for game smoke tests
         run: npx playwright install --with-deps chromium
 

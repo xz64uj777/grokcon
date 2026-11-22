@@ -60,6 +60,19 @@ try {
   ensure(response?.ok(), `Initial page request failed: ${response?.status()}`);
   await page.getByRole("button", { name: "Start", exact: true }).waitFor({ timeout: 45000 });
   ensure(await page.locator("canvas").count() >= 2, "3D world or HUD canvas not mounted");
+
+  const startup = await page.evaluate(() => ({
+    readyMs: Math.round(performance.now()),
+    preloads: Array.from(document.querySelectorAll('link[rel="modulepreload"]'), (node) => node.getAttribute("href")),
+    assets: performance.getEntriesByType("resource")
+      .filter((entry) => /\/assets\/(?:mount|three-vendor|static)-.*\.js$/.test(entry.name))
+      .map((entry) => ({ name: entry.name.split("/").at(-1), startedMs: Math.round(entry.startTime), type: entry.initiatorType })),
+    frames: window.__controlsTest?.renderStats(),
+  }));
+  ensure(startup.preloads.some((url) => /three-vendor-.*\.js$/.test(url)), "Three.js startup preload missing");
+  ensure(startup.preloads.some((url) => /mount-.*\.js$/.test(url)), "Game startup preload missing");
+  ensure(startup.frames?.triangles > 0, "No 3D geometry was rendered");
+  console.log("COLD START", JSON.stringify(startup));
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
   const first = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
