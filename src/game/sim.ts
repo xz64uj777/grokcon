@@ -189,6 +189,40 @@ function isRiverBar(d: Deposit) {
   return d.kind === "vein" && d.claim === VALLEY_CLAIMS.bars;
 }
 
+/** A wheel loader may cut river bars, a claim or team face, or a face another digger is already on. */
+function loaderMayCut(state: GameState, v: VehicleState, d: Deposit | null | undefined): d is Deposit {
+  if (!d || d.kind !== "vein") return false;
+  if (!ownsClaim(state, d.claim) || (assignedClaim(v) != null && d.claim !== assignedClaim(v))) return false;
+  if (assignedClaim(v) != null || isRiverBar(d)) return true;
+  const planned = plannedDeposit(state, v);
+  if (planned && planned.id === d.id) return true;
+  return state.vehicles.some((o) => {
+    if (o === v || !fillsHaulers(o.defId) || !(o.operator || handsOn(state, o))) return false;
+    if (areaOf(o.x) !== areaOf(d.x)) return false;
+    const theirs = plannedDeposit(state, o);
+    if (theirs && theirs.id === d.id) return true;
+    return distTo(o.x, o.z, d.x, d.z) < 36 && /^(Working|Heading to|Scooping) /.test(o.status);
+  });
+}
+
+function loaderCutVein(state: GameState, v: VehicleState): Deposit | null {
+  if (assignedClaim(v) != null) return bestVein(state, v, null);
+  const planned = plannedDeposit(state, v);
+  if (planned && planned.kind === "vein" && loaderMayCut(state, v, planned) && sameArea(planned, v)) return planned;
+  const spot = bestVein(state, v, v.cargo > 0.08 ? v.cargoOre : null);
+  return loaderMayCut(state, v, spot) ? spot : null;
+}
+
+/** Vein a loader may keep filling, honoring a started bucket's ore. */
+function loaderFillVein(state: GameState, v: VehicleState): Deposit | null {
+  if (v.workClaim == null && v.cargo > 0.08) {
+    const spot = bestVein(state, v, v.cargoOre);
+    return loaderMayCut(state, v, spot) ? spot : null;
+  }
+  return loaderCutVein(state, v);
+}
+
+
 function assignedClaim(v: VehicleState): number | null {
   if (v.workClaim == null) return null;
   const claimArea = claimAreaOf(v.workClaim);
@@ -1095,9 +1129,11 @@ function hasPile(state: GameState, o: VehicleState) {
 }
 export const DIGGER_HOLD_SECONDS = 30;
 export const TRUCK_IDLE_SECONDS = 45;
+/** An empty truck or heavy yields the bay if its digger is not about to fill it. */
+export const BAY_YIELD_SECONDS = 20;
 
 function holdForTruck(state: GameState, v: VehicleState): Control {
-  const crossing = loaderToHeavyBank(state, v);
+  const crossing = loaderToHeavyBank(state, v) ?? loaderToOrphanHeavy(state, v);
   if (crossing) return crossing;
   // A full loader on the river walks to the open side before it waits, so the bay is not in the water.
   if (wheelLoader(v.defId) && areaOf(v.x) === "river") {
@@ -1141,6 +1177,55 @@ function holdForTruck(state: GameState, v: VehicleState): Control {
 function loaderToHeavyBank(state: GameState, v: VehicleState): Control | null {
   const bank = heavyBank(state, v);
   if (bank == null || Math.sign(v.x - RIVER.x) === bank) return null;
+  return loaderToHeavyBankAt(state, v, bank);
+}
+
+/** A hired heavy on the river with no digger on its bank, even when dump trucks are working the other side. */
+function orphanHeavy(state: GameState): VehicleState | null {
+  if (!state.vehicles.some((t) => t.defId === "heavy" && (t.operator || handsOn(state, t)) && areaOf(t.x) === "river")) return null;
+  for (const t of state.vehicles) {
+    if (t.defId !== "heavy" || !(t.operator || handsOn(state, t)) || areaOf(t.x) !== "river") continue;
+    if (truckLeaving(t)) continue;
+    const diggerHere = state.vehicles.some(
+      (o) => fillsHaulers(o.defId) && (o.operator || handsOn(state, o)) && areaOf(o.x) === "river" && !otherBank(t.x, o.x),
+    );
+    if (!diggerHere) return t;
+  }
+  return null;
+}
+
+/** Send one loader or excavator across to load a stranded heavy, without pulling every digger off the dump trucks. */
+function loaderToOrphanHeavy(state: GameState, v: VehicleState): Control | null {
+  if (!fillsHaulers(v.defId) || areaOf(v.x) !== "river") return null;
+  // A loaded bucket or a truck already in this digger's line stays on this bank.
+  // Sending the excavator across left the west dump trucks idle in the valley crew.
+  if (v.cargo > 0.15) return null;
+  if (lineFor(state, v).some((t) => !truckLeaving(t))) return null;
+  const heavy = orphanHeavy(state);
+  if (!heavy || !otherBank(v.x, heavy.x)) return null;
+  const volunteers = state.vehicles.filter(
+    (o) =>
+      fillsHaulers(o.defId) &&
+      (o.operator || handsOn(state, o)) &&
+      areaOf(o.x) === "river" &&
+      otherBank(o.x, heavy.x) &&
+      o.cargo <= 0.15 &&
+      !lineFor(state, o).some((t) => !truckLeaving(t)),
+  );
+  if (!volunteers.length) return null;
+  // When a payloader is on the river, it is the one that crosses. The excavator
+  // keeps loading the dump trucks even if the loader is busy for a moment.
+  const hasLoader = state.vehicles.some(
+    (o) => wheelLoader(o.defId) && (o.operator || handsOn(state, o)) && areaOf(o.x) === "river",
+  );
+  const pool = hasLoader ? volunteers.filter((o) => wheelLoader(o.defId)) : volunteers;
+  if (!pool.length) return null;
+  pool.sort((a, b) => distTo(a.x, a.z, heavy.x, heavy.z) - distTo(b.x, b.z, heavy.x, heavy.z));
+  if (pool[0] !== v) return null;
+  return loaderToHeavyBankAt(state, v, Math.sign(heavy.x - RIVER.x) || -1);
+}
+
+function loaderToHeavyBankAt(state: GameState, v: VehicleState, bank: number): Control {
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
@@ -1155,6 +1240,28 @@ function loaderToHeavyBank(state: GameState, v: VehicleState): Control | null {
   const face = best ? jobStand(v, best) : { x: RIVER.x + bank * (RIVER.halfWidth + 18), z: BRIDGE.z };
   v.status = "Crossing to the heavy haul's bank";
   return seek(v, face.x, face.z, 4);
+}
+
+function diggerAboutToFill(state: GameState, truck: VehicleState, digger: VehicleState): boolean {
+  const reach = pourReach(digger.defId);
+  const dist = distTo(truck.x, truck.z, digger.x, digger.z);
+  // Still at this bay, even with an empty bucket for a moment (r16).
+  if (dist <= reach) return true;
+  if (dist > reach + 14) return false;
+  if (digger.cargo > 0.15) return true;
+  return /^(Scooping|Working|Setting up the load|Waiting for)/.test(digger.status);
+}
+
+/** Don't scoop a different ore, or go back to the face, while a truck is already in the bay. */
+function holdForReadyHauler(state: GameState, v: VehicleState, _nextOre: OreId | null): Control | null {
+  const ready = lineFor(state, v).find((t) => bayReady.has(t));
+  if (!ready) return null;
+  // Only hold a bucket the waiting truck can actually take. A dirt bucket
+  // should not freeze the digger while a silver truck sits in the bay.
+  if (v.cargo > 0.15 && (!ready.cargoOre || ready.cargoOre === v.cargoOre)) {
+    return holdForTruck(state, v);
+  }
+  return null;
 }
 
 function truckWaitStatus(state: GameState, v: VehicleState) {
@@ -2270,6 +2377,8 @@ function aiControl(state: GameState, index: number): Control {
       }
     } else label = "No face in reach";
   } else if (def.dig > 0) {
+    const aid = !full ? loaderToOrphanHeavy(state, v) : null;
+    if (aid) return aid;
     if (def.id === "skid" && full && v.cargoOre && loaderInArea(state, v)) {
       const src = bestVein(state, v, v.cargoOre) ?? bestPile(state, v) ?? { x: v.x, z: v.z };
       const spot = stockSpot(v, src);
@@ -2324,6 +2433,8 @@ function aiControl(state: GameState, index: number): Control {
         if (fillsHaulers(def.id)) return holdForTruck(state, v);
       }
       const cut = driveFace(vein);
+      const wait = holdForReadyHauler(state, v, faceOutput(vein, "auto"));
+      if (wait) return wait;
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
         v.status = `Working ${job}`;
@@ -2377,6 +2488,19 @@ function aiControl(state: GameState, index: number): Control {
     if (!target) {
       const digger = diggerForTruck(state, v);
       if (digger) {
+        if (
+          bayReady.has(v) &&
+          v.cargo < 0.4 &&
+          idleFor(state, v) > BAY_YIELD_SECONDS &&
+          !diggerAboutToFill(state, v, digger)
+        ) {
+          // This machine is empty and the digger is not about to fill it.
+          // Drop to the back of the line so a truck behind can pull in.
+          bayReady.delete(v);
+          bayCommit.delete(v);
+          truckSpot.delete(v);
+          lineTicket.set(v, lineNo++);
+        }
         const line = lineFor(state, digger);
         const place = Math.max(0, line.findIndex((t) => t === v));
         const zone = loadingZone(state, digger);
@@ -2393,6 +2517,8 @@ function aiControl(state: GameState, index: number): Control {
     haulTarget();
     if (!target) return holdForTruck(state, v);
   } else if (def.dig > 0 || def.scoop > 0) {
+    const aid = !full ? loaderToOrphanHeavy(state, v) : null;
+    if (aid) return aid;
     const vein = def.dig > 0 && !full ? bestVein(state, v, v.cargo > 0.15 ? v.cargoOre : null) : null;
     const pile = def.scoop > 0 && !full ? bestPile(state, v) : null;
     const pileD = pile ? distTo(v.x, v.z, pile.x, pile.z) : Infinity;
@@ -2419,6 +2545,8 @@ function aiControl(state: GameState, index: number): Control {
         return seek(v, truck.x, truck.z, arrive);
       } else {
       const cut = driveFace(vein);
+      const wait = holdForReadyHauler(state, v, faceOutput(vein, "auto"));
+      if (wait) return wait;
       const held = workHere(v, cut.x, cut.z, cut.reach);
       if (held) {
         v.status = `Working ${prettySign(vein.sign)}`;
@@ -2431,8 +2559,10 @@ function aiControl(state: GameState, index: number): Control {
     } else if (def.scoop > 0) {
       const spot = bestVein(state, v, null);
       const cut = spot ? jobStand(v, spot) : null;
-      const canCut = !!spot && (assignedClaim(v) != null || isRiverBar(spot));
+      const canCut = loaderMayCut(state, v, spot);
       if (spot && cut && canCut) {
+        const wait = holdForReadyHauler(state, v, faceOutput(spot, "auto"));
+        if (wait) return wait;
         const held = workHere(v, cut.x, cut.z, cut.reach);
         if (held) {
           v.status = `Working ${prettySign(spot.sign)}`;
@@ -2554,8 +2684,8 @@ function fillSourceInReach(state: GameState, v: VehicleState) {
     if (closestFace(state, tip.x, tip.z, v)) return true;
   }
   if (wheelLoader(def.id) && v.operator) {
-    const spot = v.workClaim != null ? bestVein(state, v, null) : bestVein(state, v, v.cargo > 0.08 ? v.cargoOre : null);
-    if (!spot || (v.workClaim == null && !isRiverBar(spot))) return false;
+    const spot = loaderFillVein(state, v);
+    if (!spot) return false;
     const stand = loaderStand(v, spot);
     if (distTo(v.x, v.z, stand.x, stand.z) <= stand.reach + 1.4) return true;
     const cut = faceOf(spot);
@@ -2797,8 +2927,7 @@ function performAction(
     }
     const pile = pileInReach(state, v);
     const assigned = v.operator && v.workClaim != null ? bestVein(state, v, null) : null;
-    const bar = !assigned && wheelLoader(v.defId) ? bestVein(state, v, v.cargo > 0.08 ? v.cargoOre : null) : null;
-    const spot = assigned ?? (bar && isRiverBar(bar) ? bar : null);
+    const spot = assigned ?? (wheelLoader(v.defId) ? loaderFillVein(state, v) : null);
     let faceNear = false;
     if (spot && wheelLoader(v.defId)) {
       const stand = loaderStand(v, spot);
