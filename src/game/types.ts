@@ -120,6 +120,8 @@ export type Blast = {
 
 export type GameState = {
   version: 4;
+  /** Monotonically ordered save timestamp; absent on saves from earlier releases. */
+  saveRevision?: number;
   /** Round 3 site operations (fuel, tires, reputation, events...). */
   ops: Ops;
   controlMode: ControlMode;
