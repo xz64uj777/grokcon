@@ -11,9 +11,18 @@ export default defineConfig({
   base: process.env.RIDGE_BASE || "/grokcon/",
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    // The static game uses Preact's React compatibility layer to avoid
+    // shipping the substantially larger react-dom runtime on mobile.
+    // Keep this mapping in the standalone build only: TanStack Start
+    // and the normal application build remain on real React 19.
+    alias: [
+      { find: "react-dom/client", replacement: "preact/compat/client" },
+      { find: "react-dom", replacement: "preact/compat" },
+      { find: "react/jsx-runtime", replacement: "preact/jsx-runtime" },
+      { find: "react/jsx-dev-runtime", replacement: "preact/jsx-dev-runtime" },
+      { find: "react", replacement: "preact/compat" },
+      { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+    ],
   },
   build: {
     outDir: "dist-static",
