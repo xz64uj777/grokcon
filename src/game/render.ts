@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { buildBackdrop, buildPass, buildPitWalls, buildPuddles, buildRoads, buildScatter, dirtTexture, gravelTexture, puffTexture, qualityTier } from "@/game/scenery";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { createAdaptiveResolution } from "@/game/frame-quality";
+import { terrainMeshSegments } from "@/game/terrain-detail";
 import * as THREE from "three";
 import { BLOCKS, BOUNDS, DEFS, GATE, ORES, PADS, PIT, type BlockKind } from "@/game/catalog";
 import { DECK_Y, HAUL_ROAD, HITCH_Z, MOUNTAIN_GATE_X, MOUNTAIN_LINK, MOUNTAIN_ROAD, MOUNTAIN_SPUR, PASS_SUMMIT_X, RIDGE_SPUR, VALLEY_GATE_X, VALLEY_SPUR, hillBlocksRoad } from "@/game/lowboy";
@@ -89,6 +90,7 @@ export function createWorld(host: HTMLElement): World {
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   const quality = qualityTier();
+  const terrainSegments = terrainMeshSegments(quality.rich);
   const resolution = createAdaptiveResolution();
   renderer.shadowMap.type = quality.rich ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.setClearColor(0xe2bd9a, 1);
@@ -336,7 +338,7 @@ export function createWorld(host: HTMLElement): World {
   pullout.position.set(PASS_SUMMIT_X, 0.042, 112);
   pullout.receiveShadow = true;
   scene.add(pullout);
-  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340, 170, 170)), std(0xffffff, { map: groundTex, roughness: 1 }));
+  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(340, 340, ...terrainSegments.ridge)), std(0xffffff, { map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   drapeMesh(ground, 0);
@@ -918,7 +920,7 @@ export function createWorld(host: HTMLElement): World {
 
   buildSluice(scene, track, box, steel, std);
   const valley = buildValley(scene, track, std, quality.rich, (t, a) => track(textTexture(t, a)));
-  buildMountain(scene, track, std);
+  buildMountain(scene, track, std, terrainSegments.mountain);
 
   // Rain: a pool of streaks that follows the camera. Only drawn while it rains.
   const rainCount = quality.rich ? 900 : 450;
