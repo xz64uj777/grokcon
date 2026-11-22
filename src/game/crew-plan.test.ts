@@ -230,3 +230,68 @@ test("iron still hauls to the railroad when that is the auto dest", () => {
   const plan = planCrewJobs(machines, jobs, null, manuals);
   assert.equal(plan.get("T1")!.destKind, "loadout");
 });
+
+test("a high-value face does not take every dump truck when another digger needs one", () => {
+  const machines = [
+    machine("E1", "excavator", -80, 16),
+    machine("L1", "loader", 0, 20),
+    machine("T1", "truck", -70, 20),
+    machine("T2", "truck", 10, 20),
+    machine("H1", "heavy", 20, 20),
+  ];
+  const jobs = [
+    job("gold", "vein", "gold", 80, -80, 16, { score: 20000, claimName: "Gold creek" }),
+    job("iron", "pile", "iron", 24, 0, 22, { score: 2000, claimName: "South yard" }),
+  ];
+  const plan = planCrewJobs(machines, jobs, null);
+  const eTeam = plan.get("E1")!.team;
+  const lTeam = plan.get("L1")!.team;
+  assert.ok(eTeam && lTeam && eTeam !== lTeam, "diggers should be on two teams");
+  const dumpTeams = [plan.get("T1")!.team, plan.get("T2")!.team];
+  assert.equal(new Set(dumpTeams).size, 2, `both dump trucks went to one team: T1=${dumpTeams[0]} T2=${dumpTeams[1]}`);
+  assert.ok(plan.get("T1")!.team === eTeam || plan.get("T2")!.team === eTeam);
+  assert.ok(plan.get("T1")!.team === lTeam || plan.get("T2")!.team === lTeam);
+});
+
+test("a loaded truck stays on its team when the job ore changes", () => {
+  const machines = [machine("L1", "loader", 0, 0), machine("T1", "truck", 4, 4), machine("T2", "truck", 8, 8)];
+  const first = planCrewJobs(machines, [job("iron", "pile", "iron", 24, 0, 0, { score: 2000 })], null);
+  assert.equal(first.get("T1")!.team, first.get("L1")!.team);
+  const hauling = machines.map((m) => (m.uid === "T1" ? { ...m, cargo: 18, cargoOre: "iron" as const } : m));
+  const next = planCrewJobs(hauling, [job("gold", "pile", "gold", 20, 10, 0, { score: 8000 })], first);
+  assert.equal(next.get("T1")!.team, next.get("L1")!.team, "iron-loaded truck was dropped from the team");
+});
+
+test("a heavy loader shares an excavator's face when there is no pile", () => {
+  const machines = [machine("H1", "hloader", 40, 40), machine("E1", "excavator", 48, 50)];
+  const jobs = [job("east-rim", "vein", "copper", 200, 74, -22, { score: 8000, claim: 7, claimName: "East rim" })];
+  const plan = planCrewJobs(machines, jobs, null);
+  assert.equal(plan.get("H1")!.sourceId, "east-rim");
+  assert.equal(plan.get("E1")!.sourceId, "east-rim");
+  assert.ok(plan.get("H1")!.team !== plan.get("E1")!.team, "sharing diggers should stay on their own teams so trucks can split");
+});
+
+test("a river heavy keeps the payloader free to visit, without moving it onto the east job", () => {
+  const west = 1000 - 40;
+  const east = 1000 + 40;
+  const machines: PlanMachine[] = [
+    { uid: "E1", defId: "excavator", x: west, z: 30, area: "river", cargo: 0, cargoOre: null, workClaim: null, workFace: null },
+    { uid: "L1", defId: "loader", x: west, z: 20, area: "river", cargo: 0, cargoOre: null, workClaim: null, workFace: null },
+    { uid: "T1", defId: "truck", x: west, z: 24, area: "river", cargo: 0, cargoOre: null, workClaim: null, workFace: null },
+    { uid: "T2", defId: "truck", x: west, z: 28, area: "river", cargo: 0, cargoOre: null, workClaim: null, workFace: null },
+    { uid: "H1", defId: "heavy", x: east, z: 10, area: "river", cargo: 0, cargoOre: null, workClaim: null, workFace: null },
+  ];
+  const jobs: PlanJob[] = [
+    job("west-silver", "vein", "silver", 80, west, 12, { score: 9000, area: "river", claim: 5, claimName: "River bars" }),
+    job("west-gold", "vein", "gold", 80, west, 40, { score: 8000, area: "river", claim: 5, claimName: "River bars" }),
+    job("east-bar", "vein", "silver", 60, east, 8, { score: 5000, area: "river", claim: 5, claimName: "River bars" }),
+  ];
+  const plan = planCrewJobs(machines, jobs, null);
+  const loaderJob = plan.get("L1")!;
+  const excavatorJob = plan.get("E1")!;
+  const heavyPartners = plan.get("H1")!.partnerUids;
+  const dumpTeams = [plan.get("T1")!.team, plan.get("T2")!.team];
+  assert.ok(heavyPartners.includes("L1"), `heavy should stay with the payloader so it can visit: partners=${heavyPartners.join(",")}`);
+  assert.ok(loaderJob.sourceId !== "east-bar", `payloader was permanently retargeted to ${loaderJob.sourceId}`);
+  assert.equal(new Set(dumpTeams).size, 2, `both dump trucks went to one team: T1=${dumpTeams[0]} T2=${dumpTeams[1]}`);
+});
