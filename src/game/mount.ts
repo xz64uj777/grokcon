@@ -362,7 +362,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const msg = opsAction(state, id);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
-      if (id !== "photo") saveGame(books(), true);
+      if (id !== "photo") saveGame(books());
       push();
     },
     repair(index) {
