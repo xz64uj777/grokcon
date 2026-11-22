@@ -68,6 +68,20 @@ try {
 
   await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 });
   await page.getByRole("button", { name: "Continue", exact: true }).waitFor({ timeout: 45000 });
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
+  const resumed = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
+  ensure(resumed && resumed.company === first.company, "Company changed after reloading");
+  ensure(resumed.saveRevision > first.saveRevision, "Resume did not make a newer save");
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await sleep(250);
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+  ensure(!overflow, "Landscape game layout has horizontal overflow");
+  ensure(pageErrors.length === 0, `Uncaught game errors: ${pageErrors.join("; ")}`);
+  await page.screenshot({ path: `${artifactDir}/mobile-landscape.png` });
+  console.log("PASS: mobile start, saved resume, landscape resize and runtime errors");
   // Prove temporary ore piles free their GPU resources when removed.
   const original = await page.evaluate(() => window.__controlsTest?.renderStats());
   ensure(original && original.geometries > 0, "QA graphics statistics are missing");
@@ -100,20 +114,7 @@ try {
   );
   console.log("PASS: temporary ore piles release GPU geometries");
 
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
-  const resumed = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
-  ensure(resumed && resumed.company === first.company, "Company changed after reloading");
-  ensure(resumed.saveRevision > first.saveRevision, "Resume did not make a newer save");
-
-  await page.setViewportSize({ width: 844, height: 390 });
-  await sleep(250);
-  const overflow = await page.evaluate(() =>
-    document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
-  ensure(!overflow, "Landscape game layout has horizontal overflow");
-  ensure(pageErrors.length === 0, `Uncaught game errors: ${pageErrors.join("; ")}`);
-  await page.screenshot({ path: `${artifactDir}/mobile-landscape.png` });
-  console.log("PASS: mobile start, saved resume, landscape resize and runtime errors");
+  ensure(pageErrors.length === 0, `Uncaught GPU memory test errors: ${pageErrors.join("; ")}`);
   // Software WebGL is CPU-intensive: close the first 3D world before the retry test.
   await mobile.close();
   page = null;
