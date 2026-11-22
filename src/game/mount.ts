@@ -3,7 +3,7 @@ import { CLAIMS, ORES, PADS, boundsFor, isVehicleId } from "@/game/catalog";
 import { BRIDGE, RIVER, X0, areaOf } from "@/game/river";
 import { PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, onHaulRoad } from "@/game/lowboy";
 import { createWorld } from "@/game/render";
-import { bookWorth, currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
+import { currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { sticksToCommand, type Stick } from "@/game/controls";
 import {
   buildHud,
@@ -74,11 +74,13 @@ type Hooks = {
 export function mountGame(host: HTMLElement, hooks: Hooks) {
   const loaded = loadGame();
   let hadSave = loaded != null;
-  let booksReady = hadSave;
+  // Check both storage backends before allowing a save to be continued or replaced.
+  let booksReady = false;
   let state = loaded ?? freshGame("Ridge Ore Co.");
   let running = false;
   let panelOpen = false;
   let dead = false;
+  let backupRestoreAllowed = true;
   const keys = new Set<string>();
   let injected: Set<string> | null = null;
   let steerOverride: number | null = null;
@@ -146,6 +148,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   const api: GameApi = {
     start(mode, company) {
       if (!booksReady) return;
+      backupRestoreAllowed = false;
       if (practiceBack) {
         state = practiceBack;
         practiceBack = null;
@@ -467,11 +470,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     importBooks(text) {
       const next = readSaveText(text);
       if (!next) return false;
+      backupRestoreAllowed = false;
       practiceBack = null;
       state = next;
       hadSave = true;
       running = false;
-      saveGame(books());
+      saveGame(books(), true);
       world.snap();
       push();
       return true;
@@ -582,14 +586,11 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   void navigator.storage?.persist?.();
   void loadGameBackup().then((backup) => {
     if (dead) return;
-    if (backup && bookWorth(backup) > bookWorth(state) + 20) {
-      const untouched = state.seconds < 8 && state.lifetime < 1;
-      if (!running || untouched) {
-        state = backup;
-        hadSave = true;
-        if (running) world.snap();
-        saveGame(books());
-      }
+    if (backupRestoreAllowed && backup && (!hadSave || (backup.saveRevision ?? 0) > (state.saveRevision ?? 0))) {
+      // Never roll back a started game for a more valuable but older backup.
+      state = backup;
+      hadSave = true;
+      saveGame(books());
     }
     booksReady = true;
     push();
