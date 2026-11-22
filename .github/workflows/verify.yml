@@ -43,6 +43,9 @@ jobs:
       - name: Build standalone mobile browser game
         run: npx vite build --config vite.static.config.ts
 
+      - name: Check cacheable graphics engine and bundle-size budgets
+        run: node scripts/check-static-bundle.mjs
+
       - name: Create GitHub Pages entry point
         run: node -e "require('node:fs').copyFileSync('dist-static/static.html', 'dist-static/index.html')"
 
