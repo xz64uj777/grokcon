@@ -65,12 +65,12 @@ try {
     readyMs: Math.round(performance.now()),
     preloads: Array.from(document.querySelectorAll('link[rel="modulepreload"]'), (node) => node.getAttribute("href")),
     assets: performance.getEntriesByType("resource")
-      .filter((entry) => /\\/assets\\/(?:mount|three-vendor|static)-.*\\.js$/.test(entry.name))
+      .filter((entry) => /\/assets\/(?:mount|three-vendor|static)-.*\.js$/.test(entry.name))
       .map((entry) => ({ name: entry.name.split("/").at(-1), startedMs: Math.round(entry.startTime), type: entry.initiatorType })),
     frames: window.__controlsTest?.renderStats(),
   }));
-  ensure(startup.preloads.some((url) => /three-vendor-.*\\.js$/.test(url)), "Three.js startup preload missing");
-  ensure(startup.preloads.some((url) => /mount-.*\\.js$/.test(url)), "Game startup preload missing");
+  ensure(startup.preloads.some((url) => /three-vendor-.*\.js$/.test(url)), "Three.js startup preload missing");
+  ensure(startup.preloads.some((url) => /mount-.*\.js$/.test(url)), "Game startup preload missing");
   ensure(startup.frames?.triangles > 0, "No 3D geometry was rendered");
   console.log("COLD START", JSON.stringify(startup));
   await page.getByRole("button", { name: "Start", exact: true }).click();
