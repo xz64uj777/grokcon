@@ -46,6 +46,20 @@ jobs:
       - name: Create GitHub Pages entry point
         run: node -e "require('node:fs').copyFileSync('dist-static/static.html', 'dist-static/index.html')"
 
+      - name: Install Chromium for game smoke tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify mobile startup, save reload and download recovery
+        run: node scripts/game-smoke.mjs
+
+      - name: Upload browser smoke screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-browser-smoke
+          path: artifacts/game-smoke
+          if-no-files-found: ignore
+
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
