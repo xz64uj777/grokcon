@@ -10,6 +10,7 @@ export function MineScreen() {
   const apiRef = useRef<GameApi | null>(null);
   const bridges = useRef({ toggle: () => {}, close: () => {} });
   const [hud, setHud] = useState<ViewModel | null>(null);
+  const [startupError, setStartupError] = useState(false);
   const [panel, setPanel] = useState<null | "machines" | "ground" | "crew" | "prices">(null);
   const [crewArea, setCrewArea] = useState<"ridge" | "river" | "mountain">("ridge");
   const [watchMap, setWatchMap] = useState<"ridge" | "river" | "mountain" | null>(null);
@@ -63,19 +64,29 @@ export function MineScreen() {
     if (!host) return;
     let stop = () => {};
     let dead = false;
-    void import("@/game/mount").then(({ mountGame }) => {
-      if (dead) return;
-      stop = mountGame(host, {
-        onHud: (view) => {
-          if (!dead) setHud(view);
-        },
-        onApi: (api) => {
-          apiRef.current = api;
-        },
-        onTogglePanel: () => bridges.current.toggle(),
-        onClosePanel: () => bridges.current.close(),
+    void import("@/game/mount")
+      .then(({ mountGame }) => {
+        if (dead) return;
+        stop = mountGame(host, {
+          onHud: (view) => {
+            if (!dead) setHud(view);
+          },
+          onApi: (api) => {
+            apiRef.current = api;
+          },
+          onTogglePanel: () => bridges.current.toggle(),
+          onClosePanel: () => bridges.current.close(),
+        });
+      })
+      .catch((error: unknown) => {
+        if (dead) return;
+        console.error("Ridge Ore startup failed:", error);
+        // An unavailable WebGL context or interrupted chunk load should never
+        // leave the title screen stuck on "Opening the gate…" indefinitely.
+        apiRef.current = null;
+        host.replaceChildren();
+        setStartupError(true);
       });
-    });
     return () => {
       dead = true;
       stop();
@@ -98,6 +109,24 @@ export function MineScreen() {
   return (
     <main className={`game-shell fixed inset-0 bg-bg text-fg ${hud?.twoSticks ? "twin-sticks" : ""} ${playing && hud?.photo ? "photo-mode" : ""}`} data-screen={screen} style={{ ["--pad-h" as string]: `${padH}px` }}>
       <div ref={worldRef} className="absolute inset-0" />
+      {startupError && (
+        <section role="alert" className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-bg/95 p-6">
+          <div className="w-full max-w-sm border border-border bg-surface p-6 text-center">
+            <h2 className="font-display text-2xl uppercase text-fg">Game could not start</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted">
+              The graphics system or game download was interrupted. Your saved company is still on this device.
+              Try reloading, or switch to an updated browser with hardware acceleration enabled.
+            </p>
+            <button
+              type="button"
+              className="mt-5 h-12 w-full bg-primary font-display text-lg uppercase text-primary-fg"
+              onClick={() => window.location.reload()}
+            >
+              Retry loading
+            </button>
+          </div>
+        </section>
+      )}
       {playing && hud?.ripperControl && !hud.photo && (
         <RipperDrag depth={hud.ripper} onChange={(d) => apiRef.current?.setRipper(d)} />
       )}
