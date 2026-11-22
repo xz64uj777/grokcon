@@ -82,6 +82,9 @@ try {
   ensure(pageErrors.length === 0, `Uncaught game errors: ${pageErrors.join("; ")}`);
   await page.screenshot({ path: `${artifactDir}/mobile-landscape.png` });
   console.log("PASS: mobile start, saved resume, landscape resize and runtime errors");
+  // Software WebGL is CPU-intensive: close the first 3D world before the retry test.
+  await mobile.close();
+  page = null;
 
   // A broken network chunk should show a recoverable error instead of hanging forever.
   const recovery = await browser.newContext({
@@ -94,10 +97,14 @@ try {
   await failedPage.getByRole("alert").getByText("Game could not start").waitFor({ timeout: 30000 });
   await failedPage.unroute(chunkPattern);
   await failedPage.getByRole("button", { name: "Retry loading" }).click();
-  await failedPage.getByRole("button", { name: "Start", exact: true }).waitFor({ timeout: 45000 });
+  await failedPage.waitForFunction(
+    () => document.querySelectorAll("canvas").length >= 2 &&
+      !document.querySelector('[role="alert"]') &&
+      Array.from(document.querySelectorAll("button")).some((b) => /^(Start|Continue)$/i.test(b.textContent?.trim() || "")),
+    null, { timeout: 60000 },
+  );
   console.log("PASS: failed module download displays an error and retry recovers");
   await recovery.close();
-  await mobile.close();
 } catch (error) {
   console.error("Game browser smoke failed:", error);
   for (const [name, target] of [["mobile", page], ["startup-error", failedPage]]) {
