@@ -329,7 +329,7 @@ export function loadGame(): GameState | null {
   }
 }
 
-export function saveGame(state: GameState, force = false) {
+export function saveGame(state: GameState, resetHistory = false) {
   // Date.now provides ordering across browser storage backends and fresh sessions;
   // the counter keeps saves ordered even when several happen in one millisecond.
   const revision = Math.max(Date.now(), memoryRevision, state.saveRevision ?? 0) + 1;
@@ -340,19 +340,18 @@ export function saveGame(state: GameState, force = false) {
   if (typeof localStorage !== "undefined") {
     try {
       const current = readRaw(localStorage.getItem(KEY));
-      if (force) {
-        // A new claim or imported save must not inherit an older company's backup.
-        localStorage.removeItem(BAK);
-      } else if (current && current.raw !== json) {
+      if (!resetHistory && current && current.raw !== json) {
         const backup = readRaw(localStorage.getItem(BAK));
         if (!backup || current.revision >= backup.revision) localStorage.setItem(BAK, current.raw);
       }
+      // Write the replacement before removing the old backup, in case storage is full.
       localStorage.setItem(KEY, json);
+      if (resetHistory) localStorage.removeItem(BAK);
     } catch {
       /* private mode or a full disk — the IndexedDB copy may still land */
     }
   }
-  mirrorSave(json, revision, force);
+  mirrorSave(json, revision, resetHistory);
   return true;
 }
 
@@ -406,7 +405,7 @@ function openBooks(): Promise<IDBDatabase | null> {
   });
 }
 
-function mirrorSave(json: string, revision: number, force: boolean) {
+function mirrorSave(json: string, revision: number, resetHistory: boolean) {
   void openBooks().then((db) => {
     if (!db) return;
     try {
@@ -417,7 +416,7 @@ function mirrorSave(json: string, revision: number, force: boolean) {
         const previous = typeof currentReq.result === "string" ? readRaw(currentReq.result) : null;
         // Async IndexedDB writes can finish out of order: never overwrite a newer save.
         if (previous && previous.revision > revision) return;
-        if (force || !previous) store.put(json, BEST);
+        if (resetHistory || !previous) store.put(json, BEST);
         else if (previous.raw !== json) store.put(previous.raw, BEST);
         store.put(json, KEY);
       };
