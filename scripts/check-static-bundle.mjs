@@ -24,7 +24,7 @@ function requireOne(chunks, label) {
 
 const gameChunk = requireOne(game, "game");
 const engineChunk = requireOne(engine, "Three.js engine");
-requireOne(shell, "static shell");
+const shellChunk = requireOne(shell, "static shell");
 const manifest = JSON.parse(readFileSync(join(root, ".vite", "manifest.json"), "utf8"));
 if (!manifest["static.html"]) throw new Error("Vite's static entry is missing from the manifest");
 
@@ -45,7 +45,12 @@ if (gameChunk.gzipBytes > 110_000) {
 if (engineChunk.gzipBytes > 170_000) {
   throw new Error(`Three.js engine chunk grew to ${fmt(engineChunk.gzipBytes)} (limit 170 kB)`);
 }
-if (totalGzipBytes > 340_000) {
-  throw new Error(`First-load JavaScript grew to ${fmt(totalGzipBytes)} (limit 340 kB)`);
+// The static game uses Preact compat, while the normal TanStack app keeps
+// React. Guard against accidentally rebundling react-dom on static hosting.
+if (shellChunk.gzipBytes > 35_000) {
+  throw new Error(`Static UI runtime grew to ${fmt(shellChunk.gzipBytes)} (limit 35 kB)`);
 }
-console.log("PASS: stable engine split and game update size budget");
+if (totalGzipBytes > 265_000) {
+  throw new Error(`First-load JavaScript grew to ${fmt(totalGzipBytes)} (limit 265 kB)`);
+}
+console.log("PASS: stable engine split, lean UI and compressed JS size budgets");
