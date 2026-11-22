@@ -36,6 +36,7 @@ import {
   boggedDown,
   BARGE_RATE,
   bridgeMaxLoad,
+  bridgeAllows,
   crossingWorth,
   otherBank,
   grossTons,
@@ -208,7 +209,7 @@ function loaderMayCut(state: GameState, v: VehicleState, d: Deposit | null | und
 function loaderCutVein(state: GameState, v: VehicleState): Deposit | null {
   if (assignedClaim(v) != null) return bestVein(state, v, null);
   const planned = plannedDeposit(state, v);
-  if (planned && planned.kind === "vein" && loaderMayCut(state, v, planned) && sameArea(planned, v)) return planned;
+  if (planned && planned.kind === "vein" && loaderMayCut(state, v, planned) && sameArea(planned, v) && !cannotCrossTo(state, v, planned.x)) return planned;
   const spot = bestVein(state, v, v.cargo > 0.08 ? v.cargoOre : null);
   return loaderMayCut(state, v, spot) ? spot : null;
 }
@@ -505,6 +506,16 @@ function handsOn(state: GameState, v: VehicleState) {
   return !state.watching && v === state.vehicles[state.active];
 }
 
+function haulerCanTake(state: GameState, v: VehicleState, t: VehicleState, maxDist: number, operatedOnly: boolean) {
+  if (!DEFS[t.defId].receives || t === v) return false;
+  if (!sameArea(t, v) || !bayReady.has(t) || truckLeaving(t)) return false;
+  if (!heavyReaches(t, v)) return false;
+  if (operatedOnly && !t.operator && !handsOn(state, t)) return false;
+  const room = vehicleStats(t).capacity - t.cargo;
+  if (room < 0.4 || (t.cargoOre && v.cargoOre && t.cargoOre !== v.cargoOre)) return false;
+  return distTo(v.x, v.z, t.x, t.z) <= maxDist;
+}
+
 function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
   const line = lineFor(state, v);
   // The line head loads first when it is actually parked in the zone.
@@ -514,15 +525,21 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
   const team = peekCrewJob(state, v)?.partnerUids;
   for (const t of line) {
     if (team && team.length > 0 && !team.includes(t.uid)) continue;
-    if (!sameArea(t, v) || !bayReady.has(t)) continue;
-    if (operatedOnly && !t.operator && !handsOn(state, t)) continue;
-    const room = vehicleStats(t).capacity - t.cargo;
-    if (room < 0.4 || (t.cargoOre && v.cargoOre && t.cargoOre !== v.cargoOre)) continue;
+    if (!haulerCanTake(state, v, t, maxDist, operatedOnly)) continue;
     const d = distTo(v.x, v.z, t.x, t.z);
-    if (d > maxDist) continue;
     if (t === line[0]) return t;
     if (d < bestD) {
       bestD = d;
+      best = t;
+    }
+  }
+  for (const t of state.vehicles) {
+    if (!haulerCanTake(state, v, t, maxDist, operatedOnly)) continue;
+    if (best && t === best) continue;
+    const d = distTo(v.x, v.z, t.x, t.z);
+    const heavyBias = t.defId === "heavy" && t.cargo < 1 ? -8 : 0;
+    if (d + heavyBias < bestD) {
+      bestD = d + heavyBias;
       best = t;
     }
   }
@@ -567,7 +584,7 @@ export function homeClaim(area: AreaId) {
 /** Machines that can feed a plant's pile, in tons per second. */
 export const FEED_RATES: Partial<Record<VehicleId, number>> = { excavator: 1.8, loader: 1.4, hloader: 2.4, skid: 0.5 };
 function padKindForFeed(pile: Deposit) {
-  return PADS.find((p) => feedId(p.id) === pile.id)?.kind ?? null;
+  return padForFeedPile(pile.id)?.kind ?? null;
 }
 
 function feedCrewFor(state: GameState, pile: Deposit) {
@@ -602,14 +619,36 @@ export function feedId(padId: string) {
   return `feed-${padId}`;
 }
 
+function padForFeedPile(id: string) {
+  return PADS.find((p) => id === feedId(p.id) || id.startsWith(`${feedId(p.id)}--`)) ?? null;
+}
+
+function sideFeedId(padId: string, ore: OreId) {
+  return `${feedId(padId)}--${ore}`;
+}
+
 /** One feed pile per plant; loads tipped there stack on it. */
 export function addFeedPile(state: GameState, pad: { id: string; x: number; z: number }, ore: OreId, tons: number, purity: number) {
   const id = feedId(pad.id);
   const have = state.deposits.find((d) => d.id === id);
   if (have) {
     if (have.ore !== ore && have.tons > 0.05) {
-      // A different ore can't share the hopper: start a side pile beside it.
-      addPile(state, ore, tons, pad.x + 6, pad.z + 6, homeClaim(areaOf(pad.x)), purity);
+      // A different ore can't share the hopper. Park it on a feed-side pile so
+      // a loader will not haul it back into the plant and dump it unpaid again.
+      const sid = sideFeedId(pad.id, ore);
+      const side = state.deposits.find((d) => d.id === sid);
+      if (side) {
+        side.purity = side.tons > 0.05 ? mixPurity(side.tons, side.purity, tons, purity) : purity;
+        side.ore = ore;
+        side.tons += tons;
+        side.max = Math.max(side.max, side.tons);
+        return;
+      }
+      state.deposits.push({
+        id: sid, kind: "pile", ore, tons, max: tons, x: pad.x + 8, z: pad.z + 8, regen: 0,
+        claim: homeClaim(areaOf(pad.x)), radius: 6, sign: "FEED", purity, overburden: 0, grade: 1,
+        stress: 0, bench: 1, benchProgress: 0, hard: false, tested: true, lastBlastDay: -1,
+      });
       return;
     }
     have.purity = have.tons > 0.05 ? mixPurity(have.tons, have.purity, tons, purity) : purity;
@@ -636,7 +675,7 @@ const feedPaid = new WeakMap<Deposit, number>();
 function feedTick(state: GameState, dt: number, playerAction: boolean, sales: StepFX["sales"]) {
   for (const d of [...state.deposits]) {
     if (!d.id.startsWith("feed-") || d.kind !== "pile") continue;
-    const pad = PADS.find((p) => feedId(p.id) === d.id);
+    const pad = padForFeedPile(d.id);
     if (!pad) continue;
     const unit = unitPrice(d.ore, pad.kind, state.sluice, state.market) * purityFactor(d.ore, d.purity ?? 1) * Ops.saleMult(state, d.ore, pad.kind);
     const crew = new Set(feedCrewFor(state, d).map(({ index }) => index));
@@ -833,6 +872,13 @@ function canReach(v: VehicleState, padX: number) {
   return crossingWorth(v.defId, vehicleStats(v).capacity, v.cargo);
 }
 
+/** A machine must not drive onto a bank the bridge will not take at its current weight. */
+function cannotCrossTo(state: GameState, v: VehicleState, x: number) {
+  if (!otherBank(v.x, x)) return false;
+  if (Ops.bridgeClosed(state)) return true;
+  return !bridgeAllows(v.defId, v.cargo);
+}
+
 function bestPad(state: GameState, ore: OreId, x: number, z: number, v?: VehicleState) {
   let best: ReturnType<typeof livePads>[number] | null = null;
   let score = -Infinity;
@@ -893,7 +939,7 @@ function bestVein(state: GameState, v: VehicleState, ore: OreId | null) {
     if (!ownsClaim(state, d.claim)) continue;
     if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
     if (ore && d.ore !== ore) continue;
-    if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
+    if (!sameArea(d, v) || offHeavyBank(state, v, d.x) || cannotCrossTo(state, v, d.x)) continue;
     if (!acceptsJob(state, v, d)) continue;
     const s = veinScore(state, v, d);
     if (s > score) {
@@ -1023,7 +1069,7 @@ function bestPile(state: GameState, v: VehicleState) {
     if (!ownsClaim(state, d.claim)) continue;
     if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
-    if (!sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
+    if (!sameArea(d, v) || offHeavyBank(state, v, d.x) || cannotCrossTo(state, v, d.x)) continue;
     if (v.defId === "skid" && !crumb && loaderInArea(state, v) && d.tons < 8) continue;
     const unit = prefersSluice(state, d.ore) || dirtToSluice(state, d.ore, d.x) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
@@ -1131,6 +1177,7 @@ export const DIGGER_HOLD_SECONDS = 30;
 export const TRUCK_IDLE_SECONDS = 45;
 /** An empty truck or heavy yields the bay if its digger is not about to fill it. */
 export const BAY_YIELD_SECONDS = 20;
+const BAY_YIELD_BUSY_SECONDS = 45;
 
 function holdForTruck(state: GameState, v: VehicleState): Control {
   const crossing = loaderToHeavyBank(state, v) ?? loaderToOrphanHeavy(state, v);
@@ -1144,7 +1191,7 @@ function holdForTruck(state: GameState, v: VehicleState): Control {
       let vein: Deposit | null = null;
       let bestD = 36;
       for (const d of state.deposits) {
-        if (d.kind !== "vein" || d.tons < 1 || !ownsClaim(state, d.claim) || !sameArea(d, v) || offHeavyBank(state, v, d.x)) continue;
+        if (d.kind !== "vein" || d.tons < 1 || !ownsClaim(state, d.claim) || !sameArea(d, v) || offHeavyBank(state, v, d.x) || cannotCrossTo(state, v, d.x)) continue;
         const dist = distTo(v.x, v.z, d.x, d.z);
         if (dist < bestD) {
           bestD = dist;
@@ -1598,6 +1645,30 @@ function sideSpot(v: VehicleState, zone: LoadZone, pour: number): BaySpot | null
   return null;
 }
 
+/** A farther open pocket a heavy haul can actually reach at a tight shared face. */
+function heavyOpenSpot(v: VehicleState, zone: LoadZone, pour: number): BaySpot | null {
+  const reach = Math.max(pour, 28);
+  const openAng = Math.atan2(zone.standZ - zone.keepZ, zone.standX - zone.keepX);
+  const approach = Math.atan2(v.z - zone.keepZ, v.x - zone.keepX);
+  const angs = [openAng, approach];
+  for (let i = 1; i <= 8; i++) {
+    const step = (i / 8) * 0.9;
+    angs.push(openAng + step, openAng - step, approach + step, approach - step);
+  }
+  for (const ang of angs) {
+    for (const r of [22, 24, 20, 26, 18]) {
+      if (r > reach) continue;
+      const x = zone.keepX + Math.cos(ang) * r;
+      const z = zone.keepZ + Math.sin(ang) * r;
+      if (!spotOpen(x, z, zone.standX, zone.standZ, zone.keepX, zone.keepZ, reach)) continue;
+      if (chordGap(v.x, v.z, x, z, zone.keepX, zone.keepZ) < 12.5) continue;
+      if (distTo(x, z, zone.standX, zone.standZ) > reach) continue;
+      return { x, z };
+    }
+  }
+  return null;
+}
+
 /** The truck's own spot in the digger's zone. Latched until the zone moves. */
 function spotForTruck(state: GameState, v: VehicleState, digger: VehicleState, place: number): BaySpot {
   const zone = loadingZone(state, digger);
@@ -1658,6 +1729,26 @@ function spotForTruck(state: GameState, v: VehicleState, digger: VehicleState, p
     else {
       const pour = digger.defId === "hloader" ? 30 : digger.defId === "excavator" ? 28 : 26;
       const extra = sideSpot(v, zone, pour);
+      if (extra) {
+        spots.push(extra);
+        bestI = spots.length - 1;
+      }
+    }
+  }
+  // Only swap in a farther pocket when another digger is already on this face,
+  // which is what pins a heavy haul at a tight rim. A lone loader's regular
+  // spots must keep the outward gap the pile-queue test checks.
+  if (v.defId === "heavy" && place === 0) {
+    const crowded = state.vehicles.some(
+      (o) =>
+        o !== digger &&
+        fillsHaulers(o.defId) &&
+        (o.operator || handsOn(state, o)) &&
+        distTo(o.x, o.z, zone.keepX, zone.keepZ) < 36,
+    );
+    if (crowded) {
+      const pour = digger.defId === "hloader" ? 30 : digger.defId === "excavator" ? 28 : 26;
+      const extra = heavyOpenSpot(v, zone, pour);
       if (extra) {
         spots.push(extra);
         bestI = spots.length - 1;
@@ -1745,6 +1836,24 @@ function enterBay(v: VehicleState, spot: BaySpot, place: number, keepX: number, 
   }
   return seek(v, spot.x, spot.z, 3.2);
 }
+
+/** A truck already in pour reach, clear of the pile, can take the load even if it has not nosed into the painted bay spot. */
+function parkInPour(state: GameState, v: VehicleState, digger: VehicleState, place: number, zone: LoadZone, spot: BaySpot): Control | null {
+  if (truckLeaving(v)) return null;
+  // The digger has to be set up on the face. Otherwise a truck beside it in the yard would park too early.
+  if (distTo(digger.x, digger.z, zone.standX, zone.standZ) > 14) return null;
+  if (distTo(v.x, v.z, zone.keepX, zone.keepZ) < 12.5) return null;
+  if (distTo(v.x, v.z, spot.x, spot.z) > 12) return null;
+  const reach = pourReach(digger.defId);
+  if (distTo(v.x, v.z, digger.x, digger.z) > reach) return null;
+  if (distTo(v.x, v.z, zone.standX, zone.standZ) > reach + 4) return null;
+  if (Math.abs(v.speed) > 1.2) return null;
+  bayCommit.add(v);
+  bayReady.add(v);
+  v.status = place === 0 ? "In the load bay" : `In line (${place + 1})`;
+  return { throttle: 0, steer: 0, action: false, brake: 1 };
+}
+
 
 function goingToWash(state: GameState, t: VehicleState) {
   if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
@@ -1880,7 +1989,7 @@ function commitVein(state: GameState, v: VehicleState, next: Deposit | null, sco
   const pin = facePin(state, v);
   if (pin) return pin;
   const prev = state.deposits.find((d) => d.id === crewJob.get(v));
-  if (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) && next && prev.id !== next.id) {
+  if (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) && !cannotCrossTo(state, v, prev.x) && next && prev.id !== next.id) {
     const onIt = distTo(v.x, v.z, prev.x, prev.z) < prev.radius + 16;
     // A crowded river bar should not send the excavator across the valley to the quarry.
     if (isRiverBar(prev) && prev.tons >= 8 && !isRiverBar(next)) return prev;
@@ -1888,7 +1997,7 @@ function commitVein(state: GameState, v: VehicleState, next: Deposit | null, sco
       return prev;
     }
   }
-  const pick = next ?? (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) ? prev : null);
+  const pick = next ?? (veinUsable(state, v, prev) && !offHeavyBank(state, v, prev.x) && !cannotCrossTo(state, v, prev.x) ? prev : null);
   if (pick) crewJob.set(v, pick.id);
   else crewJob.delete(v);
   return pick;
@@ -2245,6 +2354,15 @@ function aiControl(state: GameState, index: number): Control {
 
   const feeding = v.unstick > 0 ? null : feedJob(state, v);
   if (feeding) return feeding;
+  // Do not keep pushing a load onto a bridge the scale will reject, or a flooded deck.
+  if (/^(Too heavy for the bridge|Bridge flooded)/.test(v.status) && v.cargo > 0.15) {
+    if (fillsHaulers(v.defId)) return holdForTruck(state, v);
+    const pad = v.cargoOre ? bestPad(state, v.cargoOre, v.x, v.z, v) : null;
+    if (pad) return seek(v, pad.x, pad.z, Math.max(5, pad.r * 0.62));
+    const wait = safeWaitSpot(state, v);
+    if (distTo(v.x, v.z, wait.x, wait.z) > 5) return seek(v, wait.x, wait.z, 5);
+    return { throttle: 0, steer: 0, action: false, brake: 1 };
+  }
   if (v.unstick > 0) {
     const hit = noseBlocked(state, v);
     v.status = hit === "wall" ? "Backing off a wall" : hit === "pile" ? "Backing off a pile" : "Backing up";
@@ -2400,14 +2518,14 @@ function aiControl(state: GameState, index: number): Control {
     }
     const pinned = facePin(state, v);
     const plannedVein = plannedDeposit(state, v);
-    let vein: Deposit | null = pinned ?? (plannedVein?.kind === "vein" ? plannedVein : null);
+    let vein: Deposit | null = pinned ?? (plannedVein?.kind === "vein" && !cannotCrossTo(state, v, plannedVein.x) ? plannedVein : null);
     if (!vein) {
       let veinS = -Infinity;
       for (const d of state.deposits) {
         if (d.kind !== "vein" || d.tons < 0.35) continue;
         if (!ownsClaim(state, d.claim)) continue;
         if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) continue;
-        if (offHeavyBank(state, v, d.x) || (assignedClaim(v) == null && !sameArea(d, v))) continue;
+        if (offHeavyBank(state, v, d.x) || cannotCrossTo(state, v, d.x) || (assignedClaim(v) == null && !sameArea(d, v))) continue;
         if (!acceptsJob(state, v, d)) continue;
         const dist = distTo(v.x, v.z, d.x, d.z);
         const s = washScore(state, d.ore) + (d.ore === "dirt" ? 0 : 1500) + (dist < 42 ? 400 : 0) - dist - crewNear(state, v, d.x, d.z, 14) * 2000;
@@ -2488,14 +2606,17 @@ function aiControl(state: GameState, index: number): Control {
     if (!target) {
       const digger = diggerForTruck(state, v);
       if (digger) {
+        const waited = idleFor(state, v);
+        const othersWaiting = lineFor(state, digger).some((t) => t !== v && !truckLeaving(t));
         if (
           bayReady.has(v) &&
           v.cargo < 0.4 &&
-          idleFor(state, v) > BAY_YIELD_SECONDS &&
-          !diggerAboutToFill(state, v, digger)
+          waited > BAY_YIELD_SECONDS &&
+          (!diggerAboutToFill(state, v, digger) || (othersWaiting && waited > BAY_YIELD_BUSY_SECONDS))
         ) {
           // This machine is empty and the digger is not about to fill it.
-          // Drop to the back of the line so a truck behind can pull in.
+          // After a longer wait, also yield if another truck is in line even
+          // though a digger is nearby — being close is not the same as loading this bed.
           bayReady.delete(v);
           bayCommit.delete(v);
           truckSpot.delete(v);
@@ -2504,7 +2625,10 @@ function aiControl(state: GameState, index: number): Control {
         const line = lineFor(state, digger);
         const place = Math.max(0, line.findIndex((t) => t === v));
         const zone = loadingZone(state, digger);
-        return enterBay(v, spotForTruck(state, v, digger, place), place, zone.keepX, zone.keepZ);
+        const spot = spotForTruck(state, v, digger, place);
+        const parked = parkInPour(state, v, digger, place, zone, spot);
+        if (parked) return parked;
+        return enterBay(v, spot, place, zone.keepX, zone.keepZ);
       }
       v.status = "Needs a payloader";
       const wait = safeWaitSpot(state, v);
@@ -2763,10 +2887,9 @@ function performAction(
       emptyCargo(v);
       v.busy = true;
       if (player) state.tutorial.dumped = true;
-      if (sidePile) {
-        if (player) log(state, `Hopper is full of something else. ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()} dropped beside the ${pad.name.toLowerCase()}.`);
-        return null;
-      }
+      // The check is paid on the dump even when the hopper already has another ore
+      // and this load sits beside the plant. Leaving it unpaid zeroed mountain sales
+      // after the first dirt went into the mill.
       const unit = unitPrice(ore, pad.kind, state.sluice, state.market);
       const purity = purityFactor(ore, purityIn);
       const gross = tons * unit * purity * Ops.saleMult(state, ore, pad.kind);
@@ -2776,11 +2899,14 @@ function performAction(
       recordSale(state.market, pad.kind, ore, tons);
       state.cash += net;
       state.lifetime += net;
-      const id = feedId(pad.id);
+      const id = sidePile ? sideFeedId(pad.id, ore) : feedId(pad.id);
       const pile = state.deposits.find((d) => d.id === id);
       if (pile) feedPaid.set(pile, (feedPaid.get(pile) ?? 0) + tons);
       const extra = bonus > 0 ? ` +${formatMoney(bonus)} contract` : "";
-      if (player) log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}.`);
+      if (player) {
+        if (sidePile) log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}. The hopper was full of something else, so it was dropped beside the plant.`);
+        else log(state, `${pad.name} paid ${formatMoney(net)} for ${tons.toFixed(1)} tons of ${ORES[ore].name.toLowerCase()}.`);
+      }
       return { x: v.x, z: v.z, text: `+${formatMoney(net)} ${ORES[ore].name} ${tons.toFixed(1)}t${extra}`, player };
     } else if (!keepBucket && !excavatorHand && v.cargo > 0.04 && v.cargoOre && pad) {
       const unit = unitPrice(v.cargoOre, pad.kind, state.sluice, state.market);
@@ -3964,7 +4090,7 @@ function plannedPadFor(state: GameState, v: VehicleState) {
   const pad = livePads(state).find((p) => p.kind === job.destKind);
   if (!pad || !padOpen(state, pad.kind)) return null;
   if (unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0) return null;
-  if (areaOf(pad.x) !== areaOf(v.x) && !canReach(v, pad.x)) return null;
+  if (areaOf(pad.x) !== areaOf(v.x) || !canReach(v, pad.x)) return null;
   const auto = bestPad(state, v.cargoOre, v.x, v.z, v);
   if (auto && honorTeamDest(auto.kind, pad.kind) == null) return null;
   return pad;

@@ -1,4 +1,5 @@
 import type { OreId, PadKind } from "@/game/types";
+import { RIVER } from "@/game/river";
 
 /** Loose piles at or above this are a loader/truck job, not a crumb. */
 export const PILE_JOB_TONS = 1.5;
@@ -71,6 +72,18 @@ export function jobStillValid(kind: JobKind | null, tons: number | null) {
 
 function dist(a: { x: number; z: number }, b: { x: number; z: number }) {
   return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function bankOf(x: number) {
+  return Math.sign(x - RIVER.x) || -1;
+}
+
+function isWheelLoader(defId: string) {
+  return defId === "loader" || defId === "hloader";
+}
+
+function dumpCount(team: Team) {
+  return team.trucks.filter((t) => t.defId === "truck").length;
 }
 
 function allowedJob(m: PlanMachine, j: PlanJob) {
@@ -253,7 +266,13 @@ export function planCrewJobs(
         // A loader only sits on a face when there is no pile to haul. If a pile
         // shows up, drop the face so the team can go load it.
         if (d.defId !== "excavator" && job.kind === "vein") {
-          const pileReady = areaJobs.some((j) => j.kind === "pile" && jobStillValid(j.kind, j.tons) && allowedJob(d, j));
+          const pileReady = areaJobs.some(
+            (j) =>
+              j.kind === "pile" &&
+              jobStillValid(j.kind, j.tons) &&
+              allowedJob(d, j) &&
+              !(d.cargo > 0.15 && d.cargoOre && d.cargoOre === job.ore && j.ore !== job.ore),
+          );
           if (pileReady) continue;
         }
         const slot = sticky.get(a.team) ?? { trucks: [], job };
@@ -283,9 +302,16 @@ export function planCrewJobs(
 
     const fits = (d: PlanMachine, j: PlanJob) => {
       if (takenJobs.has(j.id) || !allowedJob(d, j)) return false;
+      if (d.cargo > 0.15 && d.cargoOre && j.ore !== d.cargoOre) return false;
       if (d.workFace && j.kind === "vein") return j.id === d.workFace;
       if (d.defId === "excavator") return j.kind === "vein";
-      const pilesOpen = workJobs.some((p) => p.kind === "pile" && !takenJobs.has(p.id) && allowedJob(d, p));
+      const pilesOpen = workJobs.some(
+        (p) =>
+          p.kind === "pile" &&
+          !takenJobs.has(p.id) &&
+          allowedJob(d, p) &&
+          !(d.cargo > 0.15 && d.cargoOre && p.ore !== d.cargoOre),
+      );
       return pilesOpen ? j.kind === "pile" : j.kind === "vein";
     };
 
@@ -308,18 +334,47 @@ export function planCrewJobs(
       takenJobs.add(best.j.id);
     }
 
-    const truckScore = (team: Team, t: PlanMachine) => {
-      if (team.trucks.length >= MAX_TEAM_TRUCKS) return -Infinity;
-      if (t.workClaim != null && team.job.claim !== t.workClaim) return -Infinity;
-      if (t.cargo > 0.15 && t.cargoOre && t.cargoOre !== team.job.ore) return -Infinity;
+    // A leftover loader can share a face the excavator is already on, instead of
+    // standing around looking for a pile that is not there.
+    for (const d of diggers) {
+      if (usedDiggers.has(d.uid) || d.crewId) continue;
+      let share: Team | null = null;
+      let shareS = -Infinity;
+      for (const team of teams) {
+        if (team.job.kind !== "vein" || !allowedJob(d, team.job)) continue;
+        if (d.defId === "excavator" && team.job.kind !== "vein") continue;
+        const s = jobScore(d, team.job);
+        if (s > shareS) {
+          shareS = s;
+          share = team;
+        }
+      }
+      if (!share) continue;
+      usedDiggers.add(d.uid);
+      teams.push({ team: allocTeam(), digger: d, trucks: [], job: share.job });
+    }
+
+    // Do not permanently retarget a west payloader onto the heavy's east-bank job.
+    // That parked the loader east all day and cut west dump-truck throughput.
+    // One dump truck per digger stays in place; a free empty loader can still
+    // visit the heavy (loaderToOrphanHeavy) without taking the trucks with it.
+
+    const truckFits = (team: Team, t: PlanMachine, ignoreOre = false) => {
+      if (team.trucks.length >= MAX_TEAM_TRUCKS) return false;
+      if (t.workClaim != null && team.job.claim !== t.workClaim) return false;
+      if (!ignoreOre && t.cargo > 0.15 && t.cargoOre && t.cargoOre !== team.job.ore) return false;
+      return true;
+    };
+    const truckScore = (team: Team, t: PlanMachine, dumpsOnly = false) => {
+      if (!truckFits(team, t)) return -Infinity;
+      if (dumpsOnly && dumpCount(team) >= 1) return -Infinity;
       return -team.trucks.length * 10_000 + team.job.score - dist(t, team.digger) + (t.cargoOre === team.job.ore ? 500 : 0);
     };
-    for (const t of trucks) {
-      if (usedTrucks.has(t.uid)) continue;
+    const assignTruck = (t: PlanMachine, scoreOf: (team: Team) => number) => {
       let best: Team | null = null;
       let bestS = -Infinity;
       for (const team of teams) {
-        const s = truckScore(team, t);
+        const s = scoreOf(team);
         if (s > bestS) {
           bestS = s;
           best = team;
@@ -328,7 +383,44 @@ export function planCrewJobs(
       if (best && bestS > -Infinity) {
         best.trucks.push(t);
         usedTrucks.add(t.uid);
+        return true;
       }
+      return false;
+    };
+
+    // A truck already carrying a load stays on its previous team so it can dump
+    // and come back, even if the team's job ore just changed.
+    if (prev) {
+      for (const t of trucks) {
+        if (usedTrucks.has(t.uid) || t.crewId || t.cargo <= 0.15) continue;
+        const a = prev.get(t.uid);
+        if (!a || a.role !== "truck") continue;
+        const team = teams.find((x) => x.team === a.team);
+        if (team && truckFits(team, t, true)) {
+          team.trucks.push(t);
+          usedTrucks.add(t.uid);
+        }
+      }
+    }
+
+    // Give each digger a dump truck before any team gets a second, so a high-value
+    // face cannot hoard every truck and leave a full loader waiting.
+    for (const t of trucks) {
+      if (t.defId !== "truck" || usedTrucks.has(t.uid)) continue;
+      assignTruck(t, (team) => truckScore(team, t, true));
+    }
+    for (const t of trucks) {
+      if (t.defId !== "truck" || usedTrucks.has(t.uid)) continue;
+      assignTruck(t, (team) => truckScore(team, t, false));
+    }
+    for (const t of trucks) {
+      if (t.defId !== "heavy" || usedTrucks.has(t.uid)) continue;
+      assignTruck(t, (team) => {
+        if (!truckFits(team, t)) return -Infinity;
+        const loaderBonus = isWheelLoader(team.digger.defId) ? 8000 : 0;
+        const bankBonus = t.area === "river" && bankOf(team.job.x) === bankOf(t.x) ? 12_000 : 0;
+        return bankBonus + loaderBonus - team.trucks.length * 2000 + team.job.score - dist(t, team.digger);
+      });
     }
 
     for (const team of teams) {
