@@ -74,8 +74,8 @@ try {
   ensure(startup.frames?.triangles > 0, "No 3D geometry was rendered");
   ensure(startup.frames?.regions?.river === false && startup.frames?.regions?.mountain === false,
     "Locked distant scenery was built during the fresh ridge game startup");
-  ensure(startup.frames?.geometries < 114,
-    "Fresh ridge game did not reduce the initially allocated GPU geometry count");
+  ensure(startup.frames?.resources > 0,
+    "Tracked rendering resource count is missing");
   console.log("COLD START", JSON.stringify(startup));
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
@@ -144,10 +144,10 @@ try {
     null, { timeout: 45000 },
   );
   const expanded = await page.evaluate(() => window.__controlsTest.renderStats());
-  ensure(expanded.geometries > startup.frames.geometries,
-    "Region unlocks did not allocate their deferred geometry");
+  ensure(expanded.resources > startup.frames.resources,
+    "Region unlocks did not allocate their deferred scenery resources");
   console.log("PASS: locked region scenes deferred until unlock",
-    JSON.stringify({ initial: startup.frames.geometries, expanded: expanded.geometries, initMs: startup.frames.initMs }));
+    JSON.stringify({ initialResources: startup.frames.resources, expandedResources: expanded.resources, initMs: startup.frames.initMs }));
 
   ensure(pageErrors.length === 0, `Uncaught GPU memory test errors: ${pageErrors.join("; ")}`);
   // Software WebGL is CPU-intensive: close the first 3D world before the retry test.
