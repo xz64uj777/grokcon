@@ -72,6 +72,10 @@ try {
   ensure(startup.preloads.some((url) => /three-vendor-.*\.js$/.test(url)), "Three.js startup preload missing");
   ensure(startup.preloads.some((url) => /mount-.*\.js$/.test(url)), "Game startup preload missing");
   ensure(startup.frames?.triangles > 0, "No 3D geometry was rendered");
+  ensure(startup.frames?.regions?.river === false && startup.frames?.regions?.mountain === false,
+    "Locked distant scenery was built during the fresh ridge game startup");
+  ensure(startup.frames?.resources > 0,
+    "Tracked rendering resource count is missing");
   console.log("COLD START", JSON.stringify(startup));
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
@@ -126,6 +130,24 @@ try {
     { timeout: 30000 },
   );
   console.log("PASS: temporary ore piles release GPU geometries");
+
+  // Incremental region creation must work without navigating or reloading,
+  // and already-owned claims must not modify the player's persisted save.
+  await page.evaluate(() => { window.__controlsTest.getState().claims.push(4); });
+  await page.waitForFunction(
+    () => window.__controlsTest.renderStats().regions.river,
+    null, { timeout: 45000 },
+  );
+  await page.evaluate(() => { window.__controlsTest.getState().claims.push(6); });
+  await page.waitForFunction(
+    () => window.__controlsTest.renderStats().regions.mountain,
+    null, { timeout: 45000 },
+  );
+  const expanded = await page.evaluate(() => window.__controlsTest.renderStats());
+  ensure(expanded.resources > startup.frames.resources,
+    "Region unlocks did not allocate their deferred scenery resources");
+  console.log("PASS: locked region scenes deferred until unlock",
+    JSON.stringify({ initialResources: startup.frames.resources, expandedResources: expanded.resources, initMs: startup.frames.initMs }));
 
   ensure(pageErrors.length === 0, `Uncaught GPU memory test errors: ${pageErrors.join("; ")}`);
   // Software WebGL is CPU-intensive: close the first 3D world before the retry test.
