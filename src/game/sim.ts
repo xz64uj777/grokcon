@@ -516,7 +516,7 @@ function haulerCanTake(state: GameState, v: VehicleState, t: VehicleState, maxDi
   return distTo(v.x, v.z, t.x, t.z) <= maxDist;
 }
 
-function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean) {
+function nearestHauler(state: GameState, v: VehicleState, maxDist: number, operatedOnly: boolean): VehicleState | null {
   const line = lineFor(state, v);
   // The line head loads first when it is actually parked in the zone.
   // If it is still out on the road, take the closest truck that is.
@@ -527,21 +527,24 @@ function nearestHauler(state: GameState, v: VehicleState, maxDist: number, opera
     if (team && team.length > 0 && !team.includes(t.uid)) continue;
     if (!haulerCanTake(state, v, t, maxDist, operatedOnly)) continue;
     const d = distTo(v.x, v.z, t.x, t.z);
-    if (t === line[0]) return t;
+    if (t === line[0]) {
+      best = t;
+      break;
+    }
     if (d < bestD) {
       bestD = d;
       best = t;
     }
   }
+  // A ready heavy from another team already in pour reach gets this bucket.
+  // Returning the team dump truck immediately left the East Rim heavy sitting
+  // through every truck cycle. Same-line order is unchanged so a lone loader's
+  // dump truck and heavy still keep their pile gap.
   for (const t of state.vehicles) {
+    if (t.defId !== "heavy" || line.includes(t) || t === best) continue;
     if (!haulerCanTake(state, v, t, maxDist, operatedOnly)) continue;
-    if (best && t === best) continue;
-    const d = distTo(v.x, v.z, t.x, t.z);
-    const heavyBias = t.defId === "heavy" && t.cargo < 1 ? -8 : 0;
-    if (d + heavyBias < bestD) {
-      bestD = d + heavyBias;
-      best = t;
-    }
+    if (t.cargo >= vehicleStats(t).capacity * 0.9) continue;
+    return t;
   }
   return best;
 }
