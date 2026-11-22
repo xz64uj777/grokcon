@@ -258,6 +258,9 @@ export type HudModel = {
     destValue: string;
     sources: { value: string; label: string }[];
     dests: { value: string; label: string }[];
+    /** Truck-wait light for this team on this map. Null when the team has no digger. */
+    truckLight: "green" | "yellow" | "red" | null;
+    truckHint: string | null;
   }[];
   grounds: GroundCard[];
   hadSave: boolean;

@@ -19,7 +19,7 @@ import { dropInFront, pourIntoTrucks } from "./haulers.ts";
 import { aboard, avoidTraffic, behindWestCliff, bindDeck, crewWatchdog, guardBridge, holdDeck, holdPiles, integrate, integrateTank, machineAhead, noseBlocked, resolveCircle, resolveVehicles, snapDeck, trailerCollide } from "./motion.ts";
 import { aiControl, performAction, saleAcc } from "./ai.ts";
 import { blastEvacuationControl, groundFactor, rainNow, regen, spawnRockslide, updateBlast } from "./blast.ts";
-import { notePass, refreshCrewPlan } from "./crew.ts";
+import { notePass, noteTeamTruckWait, refreshCrewPlan } from "./crew.ts";
 import { storyTick } from "./office.ts";
 
 
@@ -211,6 +211,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
   storyTick(state);
   snapDeck(state);
   notePass(state);
+  noteTeamTruckWait(state, dt);
   state.seconds += dt;
   const raining = rainNow(state) > 0.05;
   if (raining !== wasRaining) log(state, raining ? "Rain's coming in. The valley mud spreads and the low ground floods." : "Rain has stopped. The ground will dry out over a few minutes.");

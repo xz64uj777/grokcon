@@ -292,6 +292,77 @@ export function crewSelectOptions(state: GameState, v: VehicleState) {
 }
 
 
+/** How long, in game seconds, to average a digger's time waiting on a truck. */
+export const TRUCK_WAIT_WINDOW = 60;
+/** Under this share of the window, the team light is green. */
+export const TRUCK_WAIT_GREEN = 0.15;
+/** From the green cutoff through this share, the light is yellow; above it, red. */
+export const TRUCK_WAIT_YELLOW = 0.4;
+
+const truckWaitLog = new WeakMap<VehicleState, { t: number; dt: number; waiting: boolean }[]>();
+
+export function isDiggerWaitingForTruck(status: string) {
+  return /^(Waiting for truck|Waiting for a ready dump truck|Waiting for the heavy haul)$/.test(status);
+}
+
+export function truckLightForWait(ratio: number): "green" | "yellow" | "red" {
+  if (ratio < TRUCK_WAIT_GREEN) return "green";
+  if (ratio <= TRUCK_WAIT_YELLOW) return "yellow";
+  return "red";
+}
+
+export function truckWaitHint(light: "green" | "yellow" | "red") {
+  if (light === "green") return "Diggers are rarely waiting on a truck.";
+  if (light === "yellow") return "Diggers wait on trucks some of the time — another truck may help.";
+  return "Diggers waiting on trucks — add a truck";
+}
+
+function teamDiggers(state: GameState, crewId: number, area: AreaId) {
+  return state.vehicles.filter(
+    (v) =>
+      v.crewId === crewId &&
+      isPlanDigger(v.defId) &&
+      machineArea(state, v) === area &&
+      v.hired &&
+      v.operator &&
+      !v.feederPad,
+  );
+}
+
+/** Record this tick's waiting-for-a-truck time. Call from the sim step; does not change behavior. */
+export function noteTeamTruckWait(state: GameState, dt: number) {
+  if (dt <= 0) return;
+  const cut = state.seconds - TRUCK_WAIT_WINDOW;
+  for (const v of state.vehicles) {
+    if (!isPlanDigger(v.defId) || !v.hired || !v.operator || v.feederPad) continue;
+    let log = truckWaitLog.get(v);
+    if (!log) {
+      log = [];
+      truckWaitLog.set(v, log);
+    }
+    log.push({ t: state.seconds, dt, waiting: isDiggerWaitingForTruck(v.status) });
+    while (log.length && log[0].t < cut) log.shift();
+  }
+}
+
+/** Share of recent digger time spent waiting on a truck, or null if this team has no digger here. */
+export function teamTruckWaitRatio(state: GameState, crewId: number, area: AreaId) {
+  const diggers = teamDiggers(state, crewId, area);
+  if (!diggers.length) return null;
+  let wait = 0;
+  let total = 0;
+  for (const v of diggers) {
+    const log = truckWaitLog.get(v);
+    if (!log) continue;
+    for (const s of log) {
+      total += s.dt;
+      if (s.waiting) wait += s.dt;
+    }
+  }
+  if (total <= 0) return 0;
+  return wait / total;
+}
+
 export function buildHudTeams(state: GameState): import("@/game/types").HudModel["teams"] {
   pruneCrews(state);
   const order: AreaId[] = ["ridge", "river", "mountain"];
@@ -303,6 +374,8 @@ export function buildHudTeams(state: GameState): import("@/game/types").HudModel
       (a, b) => order.indexOf(a) - order.indexOf(b),
     );
     for (const area of areas) {
+      const ratio = teamTruckWaitRatio(state, c.id, area);
+      const truckLight = ratio == null ? null : truckLightForWait(ratio);
       out.push({
         id: c.id,
         name: `Team ${c.id}`,
@@ -312,6 +385,8 @@ export function buildHudTeams(state: GameState): import("@/game/types").HudModel
         destValue: c.destKind && padOpen(state, c.destKind) ? c.destKind : "auto",
         sources: teamSourceOptions(state, area),
         dests: teamDestOptions(state, area),
+        truckLight,
+        truckHint: truckLight ? truckWaitHint(truckLight) : null,
       });
     }
   }
