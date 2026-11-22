@@ -819,7 +819,7 @@ declare global {
       getYaw: () => number;
       getSpeed: () => number;
       getState?: () => GameState;
-      renderStats?: () => { calls: number; triangles: number; dpr: number; cam: [number, number] };
+      renderStats?: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; cam: [number, number] };
       setSticks?: (left: Stick, right: Stick) => void;
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;

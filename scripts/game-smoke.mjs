@@ -56,7 +56,7 @@ try {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+  const response = await page.goto(url + "?qa=1", { waitUntil: "domcontentloaded", timeout: 45000 });
   ensure(response?.ok(), `Initial page request failed: ${response?.status()}`);
   await page.getByRole("button", { name: "Start", exact: true }).waitFor({ timeout: 45000 });
   ensure(await page.locator("canvas").count() >= 2, "3D world or HUD canvas not mounted");
@@ -82,6 +82,39 @@ try {
   ensure(pageErrors.length === 0, `Uncaught game errors: ${pageErrors.join("; ")}`);
   await page.screenshot({ path: `${artifactDir}/mobile-landscape.png` });
   console.log("PASS: mobile start, saved resume, landscape resize and runtime errors");
+  // Prove temporary ore piles free their GPU resources when removed.
+  const original = await page.evaluate(() => window.__controlsTest?.renderStats());
+  ensure(original && original.geometries > 0, "QA graphics statistics are missing");
+  await page.evaluate(() => {
+    const state = window.__controlsTest.getState();
+    const active = state.vehicles[state.active];
+    state.deposits.push({
+      id: "gpu-smoke-temporary-pile",
+      kind: "pile", ore: "dirt", tons: 8, max: 8,
+      x: active.x + 2, z: active.z + 3,
+      regen: 0, claim: 1, radius: 6, sign: "PILE", purity: 1,
+      overburden: 0, grade: 1, stress: 0, bench: 1,
+      benchProgress: 0, hard: false, tested: true, lastBlastDay: -1,
+      paidTons: 0,
+    });
+  });
+  await page.waitForFunction(
+    (count) => window.__controlsTest.renderStats().geometries > count,
+    original.geometries,
+    { timeout: 30000 },
+  );
+  await page.evaluate(() => {
+    const state = window.__controlsTest.getState();
+    state.deposits = state.deposits.filter((d) => d.id !== "gpu-smoke-temporary-pile");
+  });
+  await page.waitForFunction(
+    (count) => window.__controlsTest.renderStats().geometries <= count,
+    original.geometries,
+    { timeout: 30000 },
+  );
+  console.log("PASS: temporary ore piles release GPU geometries");
+
+  ensure(pageErrors.length === 0, `Uncaught GPU memory test errors: ${pageErrors.join("; ")}`);
   // Software WebGL is CPU-intensive: close the first 3D world before the retry test.
   await mobile.close();
   page = null;
