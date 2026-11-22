@@ -3,7 +3,7 @@
 import * as Ops from "@/game/ops";
 import { pileFootprint } from "@/game/piles";
 import { DEFS, ORES } from "@/game/catalog";
-import { X0, areaOf, bridgeAllows, crossingWorth, otherBank, RIVER } from "@/game/river";
+import { BRIDGE, X0, areaOf, bridgeAllows, crossingWorth, otherBank, RIVER } from "@/game/river";
 import { bucketPoint } from "@/game/controls";
 import { isPlantKind, PILE_JOB_TONS, CRUMB_TONS } from "@/game/crew-plan";
 import type { Deposit, GameState, OreId, VehicleState } from "@/game/types";
@@ -142,9 +142,22 @@ export function washScore(state: GameState, ore: OreId) {
 }
 
 
+/** True when driving from fromX to toX has to use the valley bridge. A machine
+ * sitting on the river (sign 0) still has to finish a crossing to reach a bank. */
+
+/** True when driving from fromX to toX has to use the valley bridge. A machine
+ * sitting on the river (sign 0) still has to finish a crossing to reach a bank. */
+function crossingNeeded(fromX: number, toX: number) {
+  if (areaOf(fromX) !== "river" || areaOf(toX) !== "river") return false;
+  const a = Math.sign(fromX - RIVER.x);
+  const b = Math.sign(toX - RIVER.x);
+  if (a === 0 && b === 0) return false;
+  return a !== b;
+}
+
 export function canReach(v: VehicleState, padX: number) {
   if (areaOf(v.x) !== areaOf(padX)) return false;
-  if (!otherBank(v.x, padX)) return true;
+  if (!crossingNeeded(v.x, padX)) return true;
   return crossingWorth(v.defId, vehicleStats(v).capacity, v.cargo);
 }
 
@@ -152,7 +165,19 @@ export function canReach(v: VehicleState, padX: number) {
 
 /** A machine must not drive onto a bank the bridge will not take at its current weight. */
 export function cannotCrossTo(state: GameState, v: VehicleState, x: number) {
-  if (!otherBank(v.x, x)) return false;
+  if (areaOf(v.x) !== "river" || areaOf(x) !== "river") return false;
+  const here = Math.sign(v.x - RIVER.x);
+  const dest = Math.sign(x - RIVER.x);
+  const onDeck =
+    Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 2 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 6;
+  const blocked = Ops.bridgeClosed(state) || !bridgeAllows(v.defId, v.cargo);
+  // Overweight or closed: leave toward the bank we are already on (west from the exact middle).
+  // Do not finish the crossing toward the far plant.
+  if (onDeck && blocked) {
+    const leave = here || -1;
+    return dest !== leave;
+  }
+  if (!crossingNeeded(v.x, x)) return false;
   if (Ops.bridgeClosed(state)) return true;
   return !bridgeAllows(v.defId, v.cargo);
 }

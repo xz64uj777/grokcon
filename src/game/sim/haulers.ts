@@ -1,7 +1,7 @@
 /** Load-bay partners, truck lines, and pouring a bucket into a bed. */
 
 import { DEFS, ORES } from "@/game/catalog";
-import { BRIDGE, areaOf, bridgeMaxLoad, crossingWorth, otherBank, RIVER } from "@/game/river";
+import { BRIDGE, areaOf, bridgeAllows, bridgeMaxLoad, crossingWorth, onBridge, otherBank, RIVER } from "@/game/river";
 import { isPlanDigger } from "@/game/crew-plan";
 import { mixPurity } from "@/game/mining";
 import type { Deposit, GameState, OreId, VehicleId, VehicleState } from "@/game/types";
@@ -178,6 +178,16 @@ export const TRUCK_IDLE_SECONDS = 45;
 export function holdForTruck(state: GameState, v: VehicleState): Control {
   const crossing = loaderToHeavyBank(state, v) ?? loaderToOrphanHeavy(state, v);
   if (crossing) return crossing;
+  // An overweight bucket must get off the deck before it waits. Sitting mid-span
+  // was how the heavy loader stayed stuck on a bridge that could not take it.
+  if (fillsHaulers(v.defId) && areaOf(v.x) === "river" && !bridgeAllows(v.defId, v.cargo) && onBridge(v.x, v.z, 2)) {
+    const leave = Math.sign(v.x - BRIDGE.x) || -1;
+    const exitX = BRIDGE.x + leave * (BRIDGE.halfLength + 6);
+    if (distTo(v.x, v.z, exitX, BRIDGE.z) > 2) {
+      v.status = truckWaitStatus(state, v);
+      return seek(v, exitX, BRIDGE.z, 2);
+    }
+  }
   // A full loader on the river walks to the open side before it waits, so the bay is not in the water.
   if (wheelLoader(v.defId) && areaOf(v.x) === "river") {
     const beside = state.vehicles.some(

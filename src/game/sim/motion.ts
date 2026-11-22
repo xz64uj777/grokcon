@@ -5,7 +5,7 @@ import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
 import { pileFootprint } from "@/game/piles";
 import { X1, switchbackWaypoint } from "@/game/mountain";
 import { BLOCKS, DEFS, GATE, inPit, boundsFor } from "@/game/catalog";
-import { BRIDGE, X0, areaOf, bridgeMaxLoad, grossTons, MACHINE_TONS, inRiver, onBridge, bridgeLane } from "@/game/river";
+import { BRIDGE, X0, areaOf, bridgeAllows, bridgeMaxLoad, grossTons, MACHINE_TONS, inRiver, onBridge, bridgeLane } from "@/game/river";
 import { tankMotion } from "@/game/controls";
 import { HITCH_Z, MOUNTAIN_GATE_X, blockRoadGate, deckFit, onHaulRoad, onMountainRoad, stepHitch } from "@/game/lowboy";
 import type { AreaId } from "@/game/river";
@@ -70,12 +70,18 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
   // The heavy haul never starts a crossing. It sells on the bank it is already on.
   if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
+  const crossing =
+    Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 2 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 6;
+  // A load the scale will reject must not start a crossing, or finish one toward the far bank.
+  if (!bridgeAllows(v.defId, v.cargo)) {
+    if (!crossing && side !== 0) return { x: v.x, z: v.z };
+    const leave = side || -1;
+    return { x: BRIDGE.x + leave * (BRIDGE.halfLength + 6), z: BRIDGE.z };
+  }
   const exitX = BRIDGE.x + (goal || -side || 1) * (BRIDGE.halfLength + 6);
   const exit = { x: exitX, z: BRIDGE.z };
   // Once you're on the crossing, finish it. Sliding off the planks used to
   // aim a skid or a truck back at the ramp, so they danced and never got over.
-  const crossing =
-    Math.abs(v.x - BRIDGE.x) <= BRIDGE.halfLength + 2 && Math.abs(v.z - BRIDGE.z) <= BRIDGE.halfWidth + 6;
   if (crossing || side === 0) return exit;
   const near = { x: BRIDGE.x + side * (BRIDGE.halfLength + 5), z: BRIDGE.z };
   if (Math.abs(v.z - BRIDGE.z) > 1.6 || Math.abs(v.x - near.x) > 4) return near;
