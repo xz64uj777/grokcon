@@ -1641,7 +1641,6 @@ export function createWorld(host: HTMLElement): World {
       disposables.clear();
       environmentTarget.dispose();
       renderer.dispose();
-      renderer.forceContextLoss();
       canvas.remove();
     },
   };
