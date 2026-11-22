@@ -27,8 +27,8 @@ function snowTexture() {
   return t;
 }
 
-export function buildMountain(scene: THREE.Scene, track: Track, std: Std) {
-  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(320, 300, 160, 150)), std(0xdfe4e8, { map: track(snowTexture()), roughness: 0.95 }));
+export function buildMountain(scene: THREE.Scene, track: Track, std: Std, segments: readonly [number, number] = [160, 150]) {
+  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(320, 300, ...segments)), std(0xdfe4e8, { map: track(snowTexture()), roughness: 0.95 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(X1, 0, 0);
   ground.receiveShadow = true;
