@@ -26,6 +26,9 @@ export function benchBetween(x: number, z: number, tx: number, tz: number) {
 
 
 export function routeTo(v: VehicleState, tx: number, tz: number) {
+  const dry = dryBank(tx, tz);
+  tx = dry.x;
+  tz = dry.z;
   if (areaOf(v.x) === "river") return routeRiver(v, tx, tz);
   if (areaOf(v.x) === "mountain") {
     const w = switchbackWaypoint(v.x, v.z, tx, tz);
@@ -70,7 +73,14 @@ function routeRiver(v: VehicleState, tx: number, tz: number) {
   if (gap) return gap;
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
-  if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
+  if (goal === 0 || (side !== 0 && side === goal)) {
+    // Same bank, but the straight line still cuts the water. Go to the bridge mouth instead.
+    if (!onBridge(v.x, v.z) && lineCrossesWater(v.x, v.z, tx, tz)) {
+      const stay = side || (v.x < BRIDGE.x ? -1 : 1);
+      return { x: BRIDGE.x + stay * (BRIDGE.halfLength + 6), z: BRIDGE.z };
+    }
+    return { x: tx, z: tz };
+  }
   // The heavy haul never starts a crossing. It sells on the bank it is already on.
   if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
   const crossing =
@@ -105,6 +115,14 @@ function valleyGap(x: number, z: number, tx: number, tz: number): { x: number; z
   return { x: wallEast + 8, z: Math.max(-14, Math.min(0, tz)) };
 }
 
+
+function lineCrossesWater(x0: number, z0: number, x1: number, z1: number) {
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 8;
+    if (inChannel(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return true;
+  }
+  return false;
+}
 
 /** Pull piles and machines out of the water onto the nearest bank. */
 export function liftOutOfRiver(state: GameState) {
@@ -726,7 +744,7 @@ export function hitsBlock(x: number, z: number, radius: number) {
 
 
 export function pointBlocked(x: number, z: number, radius: number, avoidBridge = false) {
-  if (inRiver(x, z)) return true;
+  if (inChannel(x, z) || inRiver(x, z)) return true;
   if (avoidBridge && onBridge(x, z)) return true;
   for (const b of BLOCKS) {
     const hx = b.sx / 2;

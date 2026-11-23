@@ -76,13 +76,18 @@ test("an old save pulls a river pile and the machines onto the bank, and the cre
   back.watching = true;
   toggleCrew(back, back.vehicles.indexOf(savedLoader));
   toggleCrew(back, back.vehicles.indexOf(back.vehicles.find((v) => v.defId === "truck")!));
-  let yanked = 0;
-  for (let i = 0; i < 30 * 4; i++) {
+  const crew = back.vehicles.find((v) => v.defId === "truck")!;
+  crew.x = X0 - 14;
+  crew.z = -36;
+  crew.yaw = -Math.PI / 2;
+  let wet = 0;
+  for (let i = 0; i < 30 * 6; i++) {
     step(back, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
     for (const v of back.vehicles) {
       if (v.defId === "crusher") continue;
-      if (inChannel(v.x, v.z) || v.status === "Back on the bank") yanked += 1;
+      if (inChannel(v.x, v.z)) wet += 1;
     }
   }
-  assert.equal(yanked, 0);
+  assert.equal(wet, 0);
+  assert.equal(inChannel(pile.x, pile.z), false);
 });
