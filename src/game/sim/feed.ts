@@ -53,7 +53,7 @@ function feedCrewFor(state: GameState, pile: Deposit) {
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
-export const YARD_FEED_RATE = 0.1;
+export const YARD_FEED_RATE = 0.45;
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
 
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
@@ -264,28 +264,16 @@ export function addPile(state: GameState, ore: OreId, tons: number, x: number, z
   let bestD = 16;
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.ore !== ore || d.id.startsWith("feed-") || d.id === "slide-gap") continue;
+    // Only blend material dropped in the same claim; never drag a heap across the map.
+    if (d.claim !== claim || areaOf(d.x) !== areaOf(x)) continue;
     const dist = distTo(x, z, d.x, d.z);
     if (dist < bestD) {
       bestD = dist;
       best = d;
     }
   }
-  if (!best) {
-    const loose = state.deposits.filter((d) => d.kind === "pile" && d.regen <= 0);
-    if (loose.length >= 16) {
-      let near = loose[0];
-      let nd = Infinity;
-      for (const d of loose) {
-        if (d.ore !== ore) continue;
-        const dist = distTo(x, z, d.x, d.z);
-        if (dist < nd) {
-          nd = dist;
-          near = d;
-        }
-      }
-      if (near.ore === ore) best = near;
-    }
-  }
+  // Do not force-merge with a distant pile when the site has many heaps.
+  // That relocated existing ore, made phantom dirt mounds, and blocked crew routes.
   if (best) {
     const t = best.tons + tons;
     best.purity = mixPurity(best.tons, best.purity ?? 1, tons, purity);
