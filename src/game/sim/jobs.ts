@@ -75,6 +75,9 @@ export function facePin(state: GameState, v: VehicleState): Deposit | null {
 
 
 export function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
+  // Crew work orders must never prevent a seated player working nearby material.
+  // Ownership is still checked when taking material from a face or pile.
+  if (handsOn(state, v)) return true;
   const pin = facePin(state, v);
   if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
@@ -294,24 +297,26 @@ export function pileApproach(state: GameState, v: VehicleState, pile: Deposit) {
     return { x: prev.x, z: prev.z };
   }
   const foot = pileFootprint(Math.max(pile.tons, 0.4));
+  // Stop outside the solid heap plus the body; targeting inside made loaders orbit.
+  const standOff = Math.max(2.2, vehicleStats(v).radius * 0.45 + 0.9);
   if (!wheelLoader(v.defId)) {
     const dx = v.x - pile.x;
     const dz = v.z - pile.z;
     const ang = Math.atan2(dz, dx) + ((slotOf(v) % 5) - 2) * 0.38;
-    const spot = { id: pile.id, x: pile.x + Math.cos(ang) * (foot.rx + 2.2), z: pile.z + Math.sin(ang) * (foot.rz + 2.2) };
+    const spot = { id: pile.id, x: pile.x + Math.cos(ang) * (foot.rx + standOff), z: pile.z + Math.sin(ang) * (foot.rz + standOff) };
     approachLatch.set(v, spot);
     return spot;
   }
   // On the open side of the heap, still close enough to scoop, with room for a truck outside it.
   const bank = areaOf(pile.x) === "river" ? Math.sign(pile.x - RIVER.x) || 1 : 0;
   const shift = ((slotOf(v) % 5) - 2) * 0.42;
-  let bestX = pile.x + (bank || 1) * (foot.rx + 2.2);
+  let bestX = pile.x + (bank || 1) * (foot.rx + standOff);
   let bestZ = pile.z;
   let bestS = -Infinity;
   for (let i = 0; i < 24; i++) {
     const ang = (i / 24) * Math.PI * 2 + shift;
-    const x = pile.x + Math.cos(ang) * (foot.rx + 2.2);
-    const z = pile.z + Math.sin(ang) * (foot.rz + 2.2);
+    const x = pile.x + Math.cos(ang) * (foot.rx + standOff);
+    const z = pile.z + Math.sin(ang) * (foot.rz + standOff);
     if (pointBlocked(x, z, 1.8)) continue;
     if (areaOf(pile.x) === "river" && otherBank(x, pile.x)) continue;
     if (areaOf(pile.x) === "ridge" && (x < -82 || (x < -52 && z < 14))) continue;
@@ -341,8 +346,9 @@ export function pileInReach(state: GameState, v: VehicleState) {
     const foot = pileFootprint(d.tons);
     const dx = v.x - d.x;
     const dz = v.z - d.z;
-    const rx = foot.rx + 4.4;
-    const rz = foot.rz + 4.4;
+    const reach = Math.max(4.4, vehicleStats(v).radius * 0.45 + 1.9);
+    const rx = foot.rx + reach;
+    const rz = foot.rz + reach;
     if ((dx * dx) / (rx * rx) + (dz * dz) / (rz * rz) >= 1) continue;
     const dist = Math.hypot(dx, dz);
     if (dist < bestD) {
