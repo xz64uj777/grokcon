@@ -269,7 +269,7 @@ export function MineScreen() {
                   apiRef.current?.watch(!hud.watching);
                 }}
               >
-                {hud.watching ? "Watching" : "Watch"}
+                {hud.watching ? "Drive" : "Watch"}
               </button>
               <button
                 type="button"
@@ -377,6 +377,7 @@ export function MineScreen() {
           </footer>
           {hud.watching ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 pb-4">
+              <p className="pointer-events-auto mb-2 text-xs text-fg">Tap a machine to watch it. Tap Drive to take manual control.</p>
               <div className="pointer-events-auto flex items-stretch gap-2">
                 <button
                   type="button"
@@ -458,7 +459,7 @@ export function MineScreen() {
                   onPointerUp={() => apiRef.current?.setAction(false)}
                   onPointerCancel={() => apiRef.current?.setAction(false)}
                 >
-                  Auto
+                  Work
                 </button>
               </div>
               <div className="twin-l">

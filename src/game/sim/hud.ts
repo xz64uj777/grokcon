@@ -122,6 +122,9 @@ function realHint(state: GameState): string | null {
   const k = machineKind(v.defId);
   const t = v.tool;
   const pad = nearestPad(state, v.x, v.z);
+  if ((k === "skid" || k === "loader" || k === "excavator") && state.deposits.some(
+    (d) => d.kind === "pile" && d.id.startsWith("feed-") && d.tons > 0.1 && distTo(v.x, v.z, d.x, d.z) <= 10,
+  )) return "Plant feed pile: hold Work to process it. The yard feeder also clears it automatically.";
   const full = vehicleStats(v).capacity > 0 && v.cargo >= vehicleStats(v).capacity * 0.92;
   const face = faceNearPlayer(state, v, 2);
   if (face && face.stress > 0.5) return `The ${face.sign} wall is getting steep! Lift the bucket halfway and strip the dirt off the top first.`;
@@ -134,7 +137,7 @@ function realHint(state: GameState): string | null {
     }
     if (full) return "Bucket full. Lift it a little and drive to a truck, the crusher or the waste pile.";
     if (t.lift > 0.5) return "Lower the arms to the ground (right stick down).";
-    return `Roll in slowly with the bucket low, then curl it back (${curl}). Too fast spills.`;
+    return `Roll in slowly with the bucket low, curl it back (${curl}), or hold Work for assisted scooping.`;
   }
   if (k === "excavator") {
     const tip = bucketPoint(v.x, v.z, v.yaw, t);
@@ -195,7 +198,9 @@ export function nearPileLabel(state: GameState, v: VehicleState) {
   }
   if (!best) return "";
   const tons = best.tons >= 10 ? best.tons.toFixed(0) : best.tons.toFixed(1);
-  return `${prettySign(best.sign)} · ${tons} t`;
+  return best.id.startsWith("feed-")
+    ? `Plant feed (processing) · ${tons} t`
+    : `${prettySign(best.sign)} · ${tons} t`;
 }
 
 
