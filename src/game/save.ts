@@ -2,6 +2,7 @@ import { PRICES as OPS_PRICES, applyRipped, readOps } from "@/game/ops";
 import { CLAIMS, DEFS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
 import { onHaulRoad } from "@/game/lowboy";
 import { WASH_PLANT, areaOf } from "@/game/river";
+import { liftOutOfRiver } from "@/game/sim/motion";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
 import { MARKET_KEYS, ensureLowboy, freshGame, homeClaim } from "@/game/sim";
@@ -244,6 +245,7 @@ function sanitize(raw: unknown): GameState | null {
   // Version 4: site operations. Older saves start with nothing bought and full tanks.
   state.ops = readOps(o.ops);
   applyRipped(state);
+  liftOutOfRiver(state);
   return state;
 }
 

@@ -5,7 +5,7 @@ import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
 import { pileFootprint } from "@/game/piles";
 import { X1, switchbackWaypoint } from "@/game/mountain";
 import { BLOCKS, DEFS, GATE, inPit, boundsFor } from "@/game/catalog";
-import { BRIDGE, X0, areaOf, bridgeAllows, bridgeMaxLoad, grossTons, MACHINE_TONS, inRiver, onBridge, bridgeLane } from "@/game/river";
+import { BRIDGE, X0, areaOf, bridgeAllows, bridgeMaxLoad, dryBank, grossTons, MACHINE_TONS, inChannel, inRiver, onBridge, bridgeLane } from "@/game/river";
 import { tankMotion } from "@/game/controls";
 import { HITCH_Z, MOUNTAIN_GATE_X, blockRoadGate, deckFit, onHaulRoad, onMountainRoad, stepHitch } from "@/game/lowboy";
 import type { AreaId } from "@/game/river";
@@ -26,6 +26,9 @@ export function benchBetween(x: number, z: number, tx: number, tz: number) {
 
 
 export function routeTo(v: VehicleState, tx: number, tz: number) {
+  const dry = dryBank(tx, tz);
+  tx = dry.x;
+  tz = dry.z;
   if (areaOf(v.x) === "river") return routeRiver(v, tx, tz);
   if (areaOf(v.x) === "mountain") {
     const w = switchbackWaypoint(v.x, v.z, tx, tz);
@@ -63,11 +66,21 @@ export function routeTo(v: VehicleState, tx: number, tz: number) {
 
 /** In the valley the only way over the river is the bridge, and the only way past the west cliff is the quarry gap. */
 function routeRiver(v: VehicleState, tx: number, tz: number) {
+  const dry = dryBank(tx, tz);
+  tx = dry.x;
+  tz = dry.z;
   const gap = valleyGap(v.x, v.z, tx, tz);
   if (gap) return gap;
   const side = Math.sign(v.x - BRIDGE.x);
   const goal = Math.sign(tx - BRIDGE.x);
-  if (goal === 0 || (side !== 0 && side === goal)) return { x: tx, z: tz };
+  if (goal === 0 || (side !== 0 && side === goal)) {
+    // Same bank, but the straight line still cuts the water. Go to the bridge mouth instead.
+    if (!onBridge(v.x, v.z) && lineCrossesWater(v.x, v.z, tx, tz)) {
+      const stay = side || (v.x < BRIDGE.x ? -1 : 1);
+      return { x: BRIDGE.x + stay * (BRIDGE.halfLength + 6), z: BRIDGE.z };
+    }
+    return { x: tx, z: tz };
+  }
   // The heavy haul never starts a crossing. It sells on the bank it is already on.
   if (v.defId === "heavy" && !onBridge(v.x, v.z, 1)) return { x: v.x, z: v.z };
   const crossing =
@@ -102,6 +115,32 @@ function valleyGap(x: number, z: number, tx: number, tz: number): { x: number; z
   return { x: wallEast + 8, z: Math.max(-14, Math.min(0, tz)) };
 }
 
+
+function lineCrossesWater(x0: number, z0: number, x1: number, z1: number) {
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 8;
+    if (inChannel(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return true;
+  }
+  return false;
+}
+
+/** Pull piles and machines out of the water onto the nearest bank. */
+export function liftOutOfRiver(state: GameState) {
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || !inChannel(d.x, d.z)) continue;
+    const p = dryBank(d.x, d.z);
+    d.x = p.x;
+    d.z = p.z;
+  }
+  for (const v of state.vehicles) {
+    if (!inChannel(v.x, v.z)) continue;
+    const p = dryBank(v.x, v.z);
+    v.x = p.x;
+    v.z = p.z;
+    v.speed = 0;
+    v.status = "Back on the bank";
+  }
+}
 
 export function behindWestCliff(x: number, z: number) {
   if (onHaulRoad(x, z) || areaOf(x) !== "river") return false;
@@ -705,7 +744,7 @@ export function hitsBlock(x: number, z: number, radius: number) {
 
 
 export function pointBlocked(x: number, z: number, radius: number, avoidBridge = false) {
-  if (inRiver(x, z)) return true;
+  if (inChannel(x, z) || inRiver(x, z)) return true;
   if (avoidBridge && onBridge(x, z)) return true;
   for (const b of BLOCKS) {
     const hx = b.sx / 2;

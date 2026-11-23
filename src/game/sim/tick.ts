@@ -4,7 +4,7 @@ import * as Ops from "@/game/ops";
 import * as Career from "@/game/career";
 import { MOUNTAIN_SPAWNS } from "@/game/mountain";
 import { SPAWNS, formatMoney } from "@/game/catalog";
-import { RIVER_SPAWNS, X0, areaOf, stepWet } from "@/game/river";
+import { RIVER_SPAWNS, X0, areaOf, inChannel, stepWet } from "@/game/river";
 import { bladeDrag, machineKind, readGesture, stepTool } from "@/game/controls";
 import { advanceMarket } from "@/game/market";
 import type { Gesture } from "@/game/controls";
@@ -16,7 +16,7 @@ import { log, vehicleStats } from "./world.ts";
 import { feedTick } from "./feed.ts";
 import { faceNearPlayer } from "./jobs.ts";
 import { dropInFront, pourIntoTrucks } from "./haulers.ts";
-import { aboard, avoidTraffic, behindWestCliff, bindDeck, crewWatchdog, guardBridge, holdDeck, holdPiles, integrate, integrateTank, machineAhead, noseBlocked, resolveCircle, resolveVehicles, snapDeck, trailerCollide } from "./motion.ts";
+import { aboard, avoidTraffic, behindWestCliff, bindDeck, crewWatchdog, guardBridge, holdDeck, holdPiles, integrate, integrateTank, liftOutOfRiver, machineAhead, noseBlocked, resolveCircle, resolveVehicles, snapDeck, trailerCollide } from "./motion.ts";
 import { aiControl, performAction, saleAcc } from "./ai.ts";
 import { blastEvacuationControl, groundFactor, rainNow, regen, spawnRockslide, updateBlast } from "./blast.ts";
 import { notePass, noteTeamTruckWait, refreshCrewPlan } from "./crew.ts";
@@ -114,7 +114,16 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     }
     controls.push(c);
     work.push(w);
+    const x0 = v.x;
+    const z0 = v.z;
     integrate(v, c, dt);
+    // Hired and parked machines never drive into the water. Mud is not what puts them there.
+    const seated = i === state.active && !state.watching;
+    if (!seated && inChannel(v.x, v.z) && !inChannel(x0, z0)) {
+      v.x = x0;
+      v.z = z0;
+      v.speed = 0;
+    }
   }
   // Mud: cap each machine's speed to what the ground allows.
   for (const v of state.vehicles) {
@@ -135,6 +144,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     });
     resolveVehicles(state);
   }
+  liftOutOfRiver(state);
   for (const v of state.vehicles) {
     if (!behindWestCliff(v.x, v.z)) continue;
     v.x = X0 - 68;
