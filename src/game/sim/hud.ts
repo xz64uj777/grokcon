@@ -137,7 +137,7 @@ function realHint(state: GameState): string | null {
     }
     if (full) return "Bucket full. Lift it a little and drive to a truck, the crusher or the waste pile.";
     if (t.lift > 0.5) return "Lower the arms to the ground (right stick down).";
-    return `Roll in slowly with the bucket low, then curl it back (${curl}). Too fast spills.`;
+    return `Roll in slowly with the bucket low, curl it back (${curl}), or hold Work for assisted scooping.`;
   }
   if (k === "excavator") {
     const tip = bucketPoint(v.x, v.z, v.yaw, t);
