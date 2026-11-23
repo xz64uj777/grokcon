@@ -3,6 +3,7 @@ import { CLAIMS, ORES, PADS, boundsFor, isVehicleId } from "@/game/catalog";
 import { BRIDGE, RIVER, X0, areaOf } from "@/game/river";
 import { PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, onHaulRoad } from "@/game/lowboy";
 import { createWorld } from "@/game/render";
+import { createFrameRecorder } from "@/game/performance-metrics";
 import { currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { sticksToCommand, type Stick } from "@/game/controls";
 import {
@@ -482,13 +483,73 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     },
   };
 
-  const qa = import.meta.env.DEV || new URLSearchParams(window.location.search).has("qa");
+  const params = new URLSearchParams(window.location.search);
+  const qa = import.meta.env.DEV || params.has("qa");
+  const showPerf = params.has("perf");
+  // No collection or extra rendering work unless explicitly requested.
+  const frameRecorder = qa || showPerf ? createFrameRecorder() : null;
+  const performanceReport = () => ({
+    app: "Ridge Ore",
+    recordedAt: new Date().toISOString(),
+    navigationElapsedMs: Math.round(performance.now()),
+    device: {
+      userAgent: navigator.userAgent,
+      viewport: [window.innerWidth, window.innerHeight],
+      devicePixelRatio: window.devicePixelRatio,
+      hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+      deviceMemoryGiB: (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null,
+    },
+    frame: frameRecorder?.summary() ?? null,
+    graphics: world.stats(),
+    playing: running,
+  });
+
+  let perfPanel: HTMLDetailsElement | null = null;
+  let perfText: HTMLElement | null = null;
+  let perfDisplayAt = 0;
+  if (showPerf) {
+    // Small, opt-in debug UI. No network calls or automatic upload of device data.
+    perfPanel = document.createElement("details");
+    perfPanel.open = true;
+    perfPanel.setAttribute("data-ridge-perf", "");
+    perfPanel.style.cssText =
+      "position:fixed;right:8px;top:8px;z-index:80;width:260px;max-width:calc(100vw - 16px);" +
+      "padding:8px 10px;background:#15130fee;color:#f5eedf;border:1px solid #d1a656;" +
+      "font:12px/1.5 system-ui,sans-serif;pointer-events:auto";
+    const summary = document.createElement("summary");
+    summary.textContent = "Performance (local only)";
+    summary.style.cssText = "cursor:pointer;font-weight:700";
+    perfPanel.appendChild(summary);
+    perfText = document.createElement("div");
+    perfText.textContent = "Gathering frame samples…";
+    perfText.style.cssText = "margin:8px 0;white-space:pre-line";
+    perfPanel.appendChild(perfText);
+    const download = document.createElement("button");
+    download.type = "button";
+    download.textContent = "Download FPS report";
+    download.style.cssText =
+      "cursor:pointer;border:1px solid #d1a656;background:#32291e;color:#fff;padding:8px";
+    download.addEventListener("click", () => {
+      const text = JSON.stringify(performanceReport(), null, 2);
+      const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ridge-ore-performance.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    perfPanel.appendChild(download);
+    host.appendChild(perfPanel);
+    window.__ridgePerfReport = performanceReport;
+  }
+
   if (qa) {
     window.__controlsTest = {
       getYaw: () => state.vehicles[state.active]?.yaw ?? 0,
       getSpeed: () => state.vehicles[state.active]?.speed ?? 0,
       getState: () => state,
       renderStats: () => world.stats(),
+      performanceReport: () => performanceReport(),
       setSticks(left: Stick, right: Stick) {
         sticks.left = left;
         sticks.right = right;
@@ -727,7 +788,9 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function loop(now: number) {
     if (dead) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const workStarted = frameRecorder ? performance.now() : 0;
+    const frameMs = now - last;
+    const dt = Math.min(0.05, frameMs / 1000);
     last = now;
     let digPulse = false;
     let sold = false;
@@ -777,6 +840,19 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
       hudT = 0;
     }
+    if (frameRecorder) {
+      frameRecorder.sample(frameMs, performance.now() - workStarted, document.hidden);
+      if (perfText && now - perfDisplayAt >= 1000) {
+        const metrics = frameRecorder.summary();
+        const gfx = world.stats();
+        perfText.textContent =
+          `FPS: ${metrics.fps}  |  1% low: ${metrics.onePercentLowFps}\n` +
+          `p95 frame: ${metrics.p95FrameMs} ms  |  slow: ${metrics.slowFramePercent}%\n` +
+          `p95 work: ${metrics.p95WorkMs} ms  |  DPR: ${gfx.dpr}\n` +
+          `Frames: ${metrics.samples} (last ${metrics.durationSeconds}s)`;
+        perfDisplayAt = now;
+      }
+    }
     raf = requestAnimationFrame(loop);
   }
 
@@ -804,6 +880,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     audio.stop();
     world.dispose();
     overlay.remove();
+    perfPanel?.remove();
+    if (showPerf) delete window.__ridgePerfReport;
     if (qa) delete window.__controlsTest;
   };
 }
@@ -815,11 +893,13 @@ function oreHex(ore: keyof typeof ORES) {
 
 declare global {
   interface Window {
+    __ridgePerfReport?: () => unknown;
     __controlsTest?: {
       getYaw: () => number;
       getSpeed: () => number;
       getState?: () => GameState;
       renderStats?: () => { calls: number; triangles: number; dpr: number; geometries: number; textures: number; resources: number; cam: [number, number]; regions: { river: boolean; mountain: boolean }; initMs: number };
+      performanceReport?: () => unknown;
       setSticks?: (left: Stick, right: Stick) => void;
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;
