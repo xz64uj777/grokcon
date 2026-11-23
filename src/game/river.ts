@@ -145,6 +145,18 @@ export function inRiver(x: number, z: number) {
   return Math.abs(x - RIVER.x) < RIVER.halfWidth && !onBridge(x, z) && !bridgeLane(x, z);
 }
 
+/** The water itself, including beside the bridge. The deck is not water. */
+export function inChannel(x: number, z: number) {
+  return Math.abs(x - RIVER.x) < RIVER.halfWidth && !onBridge(x, z);
+}
+
+/** Nearest point on a dry bank. Points already on land, or on the bridge, stay put. */
+export function dryBank(x: number, z: number) {
+  if (!inChannel(x, z)) return { x, z };
+  const side = x < RIVER.x ? -1 : 1;
+  return { x: RIVER.x + side * (RIVER.halfWidth + 3), z };
+}
+
 /** Soft ground. Each zone is an ellipse; depth fades to 0 at the edge. */
 export type MudZone = { x: number; z: number; rx: number; rz: number; depth: number; flood?: boolean };
 

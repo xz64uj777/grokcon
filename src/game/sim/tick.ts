@@ -16,7 +16,7 @@ import { log, vehicleStats } from "./world.ts";
 import { feedTick } from "./feed.ts";
 import { faceNearPlayer } from "./jobs.ts";
 import { dropInFront, pourIntoTrucks } from "./haulers.ts";
-import { aboard, avoidTraffic, behindWestCliff, bindDeck, crewWatchdog, guardBridge, holdDeck, holdPiles, integrate, integrateTank, machineAhead, noseBlocked, resolveCircle, resolveVehicles, snapDeck, trailerCollide } from "./motion.ts";
+import { aboard, avoidTraffic, behindWestCliff, bindDeck, crewWatchdog, guardBridge, holdDeck, holdPiles, integrate, integrateTank, liftOutOfRiver, machineAhead, noseBlocked, resolveCircle, resolveVehicles, snapDeck, trailerCollide } from "./motion.ts";
 import { aiControl, performAction, saleAcc } from "./ai.ts";
 import { blastEvacuationControl, groundFactor, rainNow, regen, spawnRockslide, updateBlast } from "./blast.ts";
 import { notePass, noteTeamTruckWait, refreshCrewPlan } from "./crew.ts";
@@ -135,6 +135,7 @@ export function step(state: GameState, input: Input, dt: number, playerEnabled: 
     });
     resolveVehicles(state);
   }
+  liftOutOfRiver(state);
   for (const v of state.vehicles) {
     if (!behindWestCliff(v.x, v.z)) continue;
     v.x = X0 - 68;

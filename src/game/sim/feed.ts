@@ -2,7 +2,7 @@
 
 import * as Ops from "@/game/ops";
 import { CREW_KEEP, ORES, PADS, formatMoney } from "@/game/catalog";
-import { areaOf, otherBank } from "@/game/river";
+import { areaOf, dryBank, otherBank } from "@/game/river";
 import { recordSale } from "@/game/market";
 import { mixPurity, purityFactor } from "@/game/mining";
 import type { Deposit, GameState, OreId, PadKind, VehicleId, VehicleState } from "@/game/types";
@@ -260,6 +260,9 @@ export function feedJob(state: GameState, v: VehicleState): Control | null {
 
 export function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1, purity = 1) {
   if (tons <= 0) return;
+  const spot = dryBank(x, z);
+  x = spot.x;
+  z = spot.z;
   let best: Deposit | null = null;
   let bestD = 16;
   for (const d of state.deposits) {
@@ -289,8 +292,9 @@ export function addPile(state: GameState, ore: OreId, tons: number, x: number, z
   if (best) {
     const t = best.tons + tons;
     best.purity = mixPurity(best.tons, best.purity ?? 1, tons, purity);
-    best.x = (best.x * best.tons + x * tons) / t;
-    best.z = (best.z * best.tons + z * tons) / t;
+    const landed = dryBank((best.x * best.tons + x * tons) / t, (best.z * best.tons + z * tons) / t);
+    best.x = landed.x;
+    best.z = landed.z;
     best.tons = t;
     best.max = Math.max(best.max, t);
     if (best.id !== "starter" && claim !== 1) best.claim = claim;

@@ -3,7 +3,7 @@
 import * as Ops from "@/game/ops";
 import { pileFootprint } from "@/game/piles";
 import { DEFS, ORES } from "@/game/catalog";
-import { BRIDGE, X0, areaOf, bridgeAllows, crossingWorth, otherBank, RIVER } from "@/game/river";
+import { BRIDGE, X0, areaOf, bridgeAllows, crossingWorth, inChannel, otherBank, RIVER } from "@/game/river";
 import { bucketPoint } from "@/game/controls";
 import { isPlantKind, PILE_JOB_TONS, CRUMB_TONS } from "@/game/crew-plan";
 import type { Deposit, GameState, OreId, VehicleState } from "@/game/types";
@@ -336,7 +336,7 @@ export function pileInReach(state: GameState, v: VehicleState) {
   let best: Deposit | null = null;
   let bestD = Infinity;
   for (const d of state.deposits) {
-    if (d.kind !== "pile" || d.id.startsWith("feed-") || d.tons < 0.2) continue;
+    if (d.kind !== "pile" || d.id.startsWith("feed-") || d.tons < 0.2 || inChannel(d.x, d.z)) continue;
     if (!acceptsJob(state, v, d)) continue;
     const foot = pileFootprint(d.tons);
     const dx = v.x - d.x;
@@ -378,7 +378,7 @@ export function bestPile(state: GameState, v: VehicleState) {
   let prevScore = -1;
   for (const d of state.deposits) {
     // 1.5 t is the scoop cutoff, except a skid given a crumb by the planner.
-    if (d.kind !== "pile" || d.id.startsWith("feed-")) continue;
+    if (d.kind !== "pile" || d.id.startsWith("feed-") || inChannel(d.x, d.z)) continue;
     const planned = peekCrewJob(state, v);
     const crumb = planned?.sourceId === d.id && planned.jobKind === "crumb";
     if (d.tons < (crumb ? CRUMB_TONS : PILE_JOB_TONS)) continue;

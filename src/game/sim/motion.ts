@@ -5,7 +5,7 @@ import { climbFactor, gradeAt, rollAccel } from "@/game/terrain";
 import { pileFootprint } from "@/game/piles";
 import { X1, switchbackWaypoint } from "@/game/mountain";
 import { BLOCKS, DEFS, GATE, inPit, boundsFor } from "@/game/catalog";
-import { BRIDGE, X0, areaOf, bridgeAllows, bridgeMaxLoad, grossTons, MACHINE_TONS, inRiver, onBridge, bridgeLane } from "@/game/river";
+import { BRIDGE, X0, areaOf, bridgeAllows, bridgeMaxLoad, dryBank, grossTons, MACHINE_TONS, inChannel, inRiver, onBridge, bridgeLane } from "@/game/river";
 import { tankMotion } from "@/game/controls";
 import { HITCH_Z, MOUNTAIN_GATE_X, blockRoadGate, deckFit, onHaulRoad, onMountainRoad, stepHitch } from "@/game/lowboy";
 import type { AreaId } from "@/game/river";
@@ -63,6 +63,9 @@ export function routeTo(v: VehicleState, tx: number, tz: number) {
 
 /** In the valley the only way over the river is the bridge, and the only way past the west cliff is the quarry gap. */
 function routeRiver(v: VehicleState, tx: number, tz: number) {
+  const dry = dryBank(tx, tz);
+  tx = dry.x;
+  tz = dry.z;
   const gap = valleyGap(v.x, v.z, tx, tz);
   if (gap) return gap;
   const side = Math.sign(v.x - BRIDGE.x);
@@ -102,6 +105,24 @@ function valleyGap(x: number, z: number, tx: number, tz: number): { x: number; z
   return { x: wallEast + 8, z: Math.max(-14, Math.min(0, tz)) };
 }
 
+
+/** Pull piles and machines out of the water onto the nearest bank. */
+export function liftOutOfRiver(state: GameState) {
+  for (const d of state.deposits) {
+    if (d.kind !== "pile" || !inChannel(d.x, d.z)) continue;
+    const p = dryBank(d.x, d.z);
+    d.x = p.x;
+    d.z = p.z;
+  }
+  for (const v of state.vehicles) {
+    if (!inChannel(v.x, v.z)) continue;
+    const p = dryBank(v.x, v.z);
+    v.x = p.x;
+    v.z = p.z;
+    v.speed = 0;
+    v.status = "Back on the bank";
+  }
+}
 
 export function behindWestCliff(x: number, z: number) {
   if (onHaulRoad(x, z) || areaOf(x) !== "river") return false;
