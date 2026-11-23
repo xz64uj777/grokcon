@@ -6,7 +6,7 @@ import { isPlanDigger } from "@/game/crew-plan";
 import { mixPurity } from "@/game/mining";
 import type { Deposit, GameState, OreId, VehicleId, VehicleState } from "@/game/types";
 import type { Control } from "./types.ts";
-import { distTo, handsOn, homeClaim, ownsClaim, sameArea, vehicleStats } from "./world.ts";
+import { distTo, handsOn, ownsClaim, sameArea, vehicleStats } from "./world.ts";
 import { addPile } from "./feed.ts";
 import { cannotCrossTo, slotOf } from "./jobs.ts";
 import { bayReady, jobStand, loaderStand } from "./bay.ts";
