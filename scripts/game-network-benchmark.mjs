@@ -81,12 +81,16 @@ try {
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true })
     .waitFor({ timeout: 30_000 });
+  // SwiftShader on shared GitHub-hosted runners can render well below 1 FPS.
+  // Wait for a small but real measured window; this is a functionality check,
+  // not a hardware FPS pass/fail threshold.
+  const minimumSamples = 8;
   await page.waitForFunction(
-    () => window.__ridgePerfReport?.()?.frame?.samples >= 30,
-    null, { timeout: 30_000 },
+    (minimum) => window.__ridgePerfReport?.()?.frame?.samples >= minimum,
+    minimumSamples, { timeout: 60_000 },
   );
   const record = await page.evaluate(() => window.__ridgePerfReport?.());
-  if (!record?.playing || record.frame.fps <= 0 || record.frame.samples < 30) {
+  if (!record?.playing || record.frame.fps <= 0 || record.frame.samples < minimumSamples) {
     throw Error("On-device performance recorder returned an invalid gameplay sample");
   }
 
@@ -98,7 +102,7 @@ try {
     throw Error("Unexpected performance report filename");
   }
   const exported = JSON.parse(await readFile(await download.path(), "utf8"));
-  if (exported.app !== "Ridge Ore" || exported.frame.samples < 30) {
+  if (exported.app !== "Ridge Ore" || exported.frame.samples < minimumSamples) {
     throw Error("Downloaded performance report contents are invalid");
   }
   if (errors.length) throw Error("Browser page errors: " + errors.join("; "));
