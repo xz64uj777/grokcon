@@ -53,7 +53,7 @@ function feedCrewFor(state: GameState, pile: Deposit) {
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
-export const YARD_FEED_RATE = 0.45;
+export const YARD_FEED_RATE = 0.1;
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
 
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
