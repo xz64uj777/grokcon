@@ -144,11 +144,13 @@ test("fix: summit mill pays near sluice price for gold, even with the sluice pre
   assert.equal(t.cargo < 0.05, true);
   assert.ok(s.cash - c0 > 1000, `dump paid ${s.cash - c0}`);
   const pile = s.deposits.find((d) => d.kind === "pile" && d.ore === "gold" && Math.hypot(d.x - 2052, d.z - 50) < 12);
-  assert.ok(pile && pile.tons > 6);
+  // Prepaid loads now run quickly through the plant conveyor. The original
+  // test expected the paid stockpile to linger (which caused the traffic jam).
+  assert.ok(!pile || pile.tons < 5, "paid truck inventory is not clearing");
   buyVehicle(s, "loader");
   const l = s.vehicles[s.vehicles.length - 1];
   s.active = s.vehicles.length - 1;
-  l.x = pile!.x; l.z = pile!.z;
+  l.x = 2052; l.z = 50;
   const c1 = s.cash;
   for (let i = 0; i < 400; i++) step(s, { throttle: 0, steer: 0, action: true }, 1 / 30, true);
   assert.ok(s.cash - c1 < 200, `fed an already-paid pile for ${s.cash - c1}`);
