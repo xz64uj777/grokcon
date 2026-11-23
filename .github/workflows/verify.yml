@@ -58,6 +58,17 @@ jobs:
       - name: Verify mobile startup, save reload and download recovery
         run: node scripts/game-smoke.mjs
 
+      - name: Benchmark mobile-network startup and local FPS export
+        run: node scripts/game-network-benchmark.mjs
+
+      - name: Upload mobile network and frame-time benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ridge-ore-mobile-benchmark
+          path: artifacts/game-bench/mobile-network.json
+          if-no-files-found: ignore
+
       - name: Upload browser smoke screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
