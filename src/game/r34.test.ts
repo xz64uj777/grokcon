@@ -4,6 +4,11 @@ import type { VehicleId } from "@/game/types";
 import { buyVehicle, freshGame, lotBuy, lotButtons, sellVehicle, step } from "@/game/sim";
 import { currentSaveText, readSaveText, saveGame } from "@/game/save";
 import { ops } from "@/game/ops";
+import { addPile } from "@/game/sim/feed";
+import { acceptsJob, pileApproach, pileInReach } from "@/game/sim/jobs";
+import { idleFor, holdForTruck } from "@/game/sim/haulers";
+import { makeVehicle, vehicleStats } from "@/game/sim/world";
+import { pileFootprint } from "@/game/piles";
 
 test("selling or trading a loaded machine drops the ore on the ground", () => {
   const sold = freshGame("Sell");
@@ -75,4 +80,65 @@ test("a plant pile that was already paid does not pay again after reload", () =>
   const c0 = back.cash;
   for (let i = 0; i < 30 * 12; i++) step(back, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
   assert.ok(back.cash - c0 < 40, `feeder paid again: ${back.cash - c0}`);
+});
+
+
+test("regression: many dirt piles never teleport into a distant heap", () => {
+  const state = freshGame("Local dirt");
+  for (const x of [-65, -40, -15, 10]) {
+    for (const z of [-65, -40, -15, 10]) addPile(state, "dirt", 2, x, z, 1);
+  }
+  const old = state.deposits.find((d) => d.kind === "pile" && d.ore === "dirt" && d.x === -65 && d.z === -65)!;
+  assert.ok(old);
+  const before = state.deposits.filter((d) => d.kind === "pile" && d.ore === "dirt").length;
+  addPile(state, "dirt", 3, 70, 70, 1);
+  assert.equal(state.deposits.filter((d) => d.kind === "pile" && d.ore === "dirt").length, before + 1);
+  assert.equal(old.x, -65);
+  assert.equal(old.z, -65);
+});
+
+test("regression: seated driver may scoop despite a hired crew work source", () => {
+  const state = freshGame("Hand controls");
+  const v = state.vehicles[state.active];
+  const pile = state.deposits.find((d) => d.id === "starter")!;
+  assert.ok(pile);
+  v.workClaim = 3;
+  assert.equal(acceptsJob(state, v, pile), true);
+  state.watching = true;
+  assert.equal(acceptsJob(state, v, pile), false);
+});
+
+test("regression: crew loader reaches pile from outside its physical footprint", () => {
+  const state = freshGame("Pile approach");
+  const v = makeVehicle("hloader", 3);
+  const pile = state.deposits.find((d) => d.id === "starter")!;
+  assert.ok(pile);
+  state.vehicles.push(v);
+  state.active = state.vehicles.indexOf(v);
+  v.x = pile.x + 20;
+  v.z = pile.z + 4;
+  const stand = pileApproach(state, v, pile);
+  const foot = pileFootprint(pile.tons);
+  const body = vehicleStats(v).radius * 0.45;
+  const norm = ((stand.x - pile.x) / (foot.rx + body)) ** 2 +
+    ((stand.z - pile.z) / (foot.rz + body)) ** 2;
+  assert.ok(norm > 1, "loader approach point is inside the solid pile");
+  v.x = stand.x;
+  v.z = stand.z;
+  assert.equal(pileInReach(state, v)?.id, pile.id, "loader cannot scoop at approach point");
+});
+
+test("regression: waiting digger keeps its cargo instead of inventing dirt piles", () => {
+  const state = freshGame("Hold load");
+  const v = makeVehicle("loader", 3);
+  v.cargo = 3;
+  v.cargoOre = "dirt";
+  state.vehicles.push(v);
+  idleFor(state, v);
+  state.seconds = 45;
+  const count = state.deposits.length;
+  holdForTruck(state, v);
+  assert.equal(v.cargo, 3);
+  assert.equal(v.cargoOre, "dirt");
+  assert.equal(state.deposits.length, count);
 });
