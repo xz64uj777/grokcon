@@ -213,13 +213,10 @@ export function holdForTruck(state: GameState, v: VehicleState): Control {
       }
     }
   }
-  // Nobody has taken this bucket for a while: tip it beside the machine as a pile.
-  // A planned team waits with the bucket; tipping just made more claim piles.
+  // Never silently empty a waiting bucket onto the yard. The operator can
+  // still dump manually, but unattended machines retain ore until a truck arrives.
   if (fillsHaulers(v.defId) && v.cargoOre && v.cargo > 0.15 && idleFor(state, v) > DIGGER_HOLD_SECONDS && !teamHasTruck(state, v) && !peekCrewJob(state, v)?.sourceId) {
-    addPile(state, v.cargoOre, v.cargo, v.x + Math.sin(v.yaw) * 5, v.z + Math.cos(v.yaw) * 5, homeClaim(areaOf(v.x)), v.cargoPurity ?? 1);
-    v.cargo = 0;
-    v.cargoOre = null;
-    v.status = "Tipped the load on a pile";
+    v.status = "Waiting for a haul truck — load or dump manually";
     return { throttle: 0, steer: 0, action: false, brake: 1 };
   }
   v.status = truckWaitStatus(state, v);
