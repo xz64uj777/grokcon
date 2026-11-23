@@ -124,7 +124,7 @@ function realHint(state: GameState): string | null {
   const pad = nearestPad(state, v.x, v.z);
   if ((k === "skid" || k === "loader" || k === "excavator") && state.deposits.some(
     (d) => d.kind === "pile" && d.id.startsWith("feed-") && d.tons > 0.1 && distTo(v.x, v.z, d.x, d.z) <= 10,
-  )) return "Plant feed pile: hold Work to process it. The yard feeder also clears it automatically.";
+  )) return "Plant stock: truck loads are paid on unloading and the hopper clears them automatically. No scooping needed.";
   const full = vehicleStats(v).capacity > 0 && v.cargo >= vehicleStats(v).capacity * 0.92;
   const face = faceNearPlayer(state, v, 2);
   if (face && face.stress > 0.5) return `The ${face.sign} wall is getting steep! Lift the bucket halfway and strip the dirt off the top first.`;
@@ -198,8 +198,11 @@ export function nearPileLabel(state: GameState, v: VehicleState) {
   }
   if (!best) return "";
   const tons = best.tons >= 10 ? best.tons.toFixed(0) : best.tons.toFixed(1);
+  const prepaid = best.paidTons ?? 0;
   return best.id.startsWith("feed-")
-    ? `Plant feed (processing) · ${tons} t`
+    ? prepaid >= best.tons - 0.05
+      ? `Plant inventory (paid, clears automatically) · ${tons} t`
+      : `Plant feed (processing) · ${tons} t`
     : `${prettySign(best.sign)} · ${tons} t`;
 }
 
