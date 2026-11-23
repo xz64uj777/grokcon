@@ -194,7 +194,7 @@ export const BASE_DEPOSITS = [
     regen: 0.34,
     claim: 3,
     radius: 7.5,
-    sign: "GOLD GRAVEL",
+    sign: "GOLD GRAVEL FACE",
     purity: 1,
     overburden: 12,
     grade: 0.8,

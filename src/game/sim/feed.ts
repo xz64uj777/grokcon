@@ -38,6 +38,10 @@ function feedCrewFor(state: GameState, pile: Deposit) {
   const dedicated = state.vehicles
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
     .filter(({ v, index, rate }) => open(v, index, rate) && (v.feederPad === padKind && (padKind === "sluice" || padKind === "wash")));
+  // Truck unloads are paid immediately. Diverting nearby loaders to scoop
+  // those already-paid heaps creates a traffic jam at Ridge's narrow sluice.
+  // Explicitly assigned feeder machines can stay, but auto crews stay on jobs.
+  if ((pile.paidTons ?? feedPaid.get(pile) ?? 0) >= pile.tons - 0.05) return dedicated;
   const taken = new Set(dedicated.map(({ index }) => index));
   const candidates = state.vehicles
     .map((v, index) => ({ v, index, rate: FEED_RATES[v.defId] }))
@@ -54,6 +58,10 @@ function feedCrewFor(state: GameState, pile: Deposit) {
 
 /** Each plant's own slow yard feeder (a small conveyor and grizzly) when no machine is feeding. */
 export const YARD_FEED_RATE = 0.1;
+/** Paid-for truck loads are plant inventory, not loose material awaiting a loader.
+ * The hopper's conveyor clears this inventory without pulling crew off digging.
+ */
+export const PREPAID_FEED_RATE = 3;
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
 
 /** The yard feeder keeps a 20% cut, so it pays less than a crew feeding. */
@@ -164,6 +172,11 @@ export function feedTick(state: GameState, dt: number, playerAction: boolean, sa
     let tons = 0;
     let byPlayer = false;
     let prepaid = d.paidTons ?? feedPaid.get(d) ?? 0;
+    // Remove already-paid truck loads on the plant's own conveyor, not on the
+    // slow pay-per-ton yard feeder. This changes no cash or contract accounting.
+    const conveyed = Math.min(d.tons, prepaid, PREPAID_FEED_RATE * dt);
+    d.tons -= conveyed;
+    prepaid -= conveyed;
     for (const f of feeders) {
       let room = f.rate * dt;
       if (prepaid > 0 && d.tons > 0) {
