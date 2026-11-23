@@ -200,7 +200,7 @@ export function nearPileLabel(state: GameState, v: VehicleState) {
   const tons = best.tons >= 10 ? best.tons.toFixed(0) : best.tons.toFixed(1);
   return best.id.startsWith("feed-")
     ? `Plant feed (processing) · ${tons} t`
-    : `${ORES[best.ore].name} loose pile · ${tons} t`;
+    : `${prettySign(best.sign)} · ${tons} t`;
 }
 
 
