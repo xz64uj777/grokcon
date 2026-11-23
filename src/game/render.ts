@@ -1483,7 +1483,13 @@ export function createWorld(host: HTMLElement): World {
         // New piles have max === tons, so fullness is always 1 and made every
         // dump look like the same tiny pile regardless of how much was unloaded.
         // Heaped, cone or long windrow, sized from the tonnage (bulk density and angle of repose).
-        const shape = pileShape(d.kind === "pile" ? d.tons : Math.max(4, d.tons * 0.25));
+        // Plant inventory is already inside the hopper/stock queue, not a
+        // scoopable heap. Keep its visual marker small even if several trucks
+        // tip before the belt catches up; never obstruct the work area visually.
+        const displayTons = d.kind === "pile" && d.id.startsWith("feed-")
+          ? Math.min(d.tons, 12)
+          : d.kind === "pile" ? d.tons : Math.max(4, d.tons * 0.25);
+        const shape = pileShape(displayTons);
         view.group.scale.set(shape.radius, shape.height, shape.radius * shape.stretch);
         view.group.children.forEach((child) => {
           child.visible = true;
