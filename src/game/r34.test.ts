@@ -9,6 +9,7 @@ import { acceptsJob, pileApproach, pileInReach } from "@/game/sim/jobs";
 import { idleFor, holdForTruck } from "@/game/sim/haulers";
 import { makeVehicle, vehicleStats } from "@/game/sim/world";
 import { pileFootprint } from "@/game/piles";
+import { sticksToCommand } from "@/game/controls";
 
 test("selling or trading a loaded machine drops the ore on the ground", () => {
   const sold = freshGame("Sell");
@@ -141,4 +142,20 @@ test("regression: waiting digger keeps its cargo instead of inventing dirt piles
   assert.equal(v.cargo, 3);
   assert.equal(v.cargoOre, "dirt");
   assert.equal(state.deposits.length, count);
+});
+
+
+test("regression: manual Work button scoops a loose pile even without a curl gesture", () => {
+  const state = freshGame("Hand scoop");
+  const v = makeVehicle("loader", 3);
+  const pile = state.deposits.find((d) => d.id === "starter")!;
+  state.vehicles.push(v);
+  state.active = state.vehicles.indexOf(v);
+  state.controlMode = "real";
+  v.x = pile.x + 5.5;
+  v.z = pile.z;
+  const cmd = sticksToCommand("loader", { x: 0, y: 0 }, { x: 0, y: 0 });
+  for (let i = 0; i < 90; i++) step(state, { throttle: 0, steer: 0, action: true, cmd }, 1 / 60, true);
+  assert.ok(v.cargo > 0, "holding Work did not scoop the iron pile");
+  assert.equal(v.cargoOre, "iron");
 });
