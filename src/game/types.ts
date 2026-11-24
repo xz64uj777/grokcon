@@ -154,7 +154,7 @@ export type GameState = {
   contractSeq: number;
   contract: Contract;
   log: string[];
-  /** Out of the seat. Hired operators drive, including the machine the camera is on. Not saved. */
+  /** Out of the seat. Hired operators drive, including the machine the camera is on. */
   watching: boolean;
 };
 

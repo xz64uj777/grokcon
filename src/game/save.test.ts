@@ -1,8 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isOreId } from "@/game/catalog";
-import { buyVehicle, freshGame, sellVehicle } from "@/game/sim";
-import { bookWorth, loadGame, readSaveText, saveGame } from "@/game/save";
+import { assignCrew, buyVehicle, freshGame, sellVehicle, setCrewDest, setCrewSource, step } from "@/game/sim";
+import { bookWorth, exportSave, loadGame, readSaveText, saveGame } from "@/game/save";
+import { addPile } from "@/game/sim/feed";
+import { bestPile } from "@/game/sim/jobs";
 import { ops } from "@/game/ops";
 import type { Deposit } from "@/game/types";
 
@@ -165,6 +167,67 @@ describe("save order and recovery", () => {
     const saved = readSaveText(JSON.stringify(old));
     assert.ok(saved);
     assert.equal(saved.saveRevision, 0);
+  });
+});
+
+describe("crew control after a reload", () => {
+  it("resumes a loader and truck mid-job when the player saved in Watch mode", () => {
+    const state = freshGame("Watching crew");
+    Object.assign(state, { cash: 1_000_000, sluice: true, watching: true, claims: [1, 2, 3] });
+    state.market.seed = 32;
+    assert.equal(buyVehicle(state, "loader"), "");
+    assert.equal(buyVehicle(state, "truck"), "");
+    const loader = state.vehicles.find((machine) => machine.defId === "loader")!;
+    const truck = state.vehicles.find((machine) => machine.defId === "truck")!;
+    Object.assign(loader, { x: -21, z: 26, cargo: 8, cargoOre: "gold", hired: true, operator: true });
+    Object.assign(truck, { x: -8, z: 45, cargo: 12, cargoOre: "gold", hired: true, operator: true });
+    state.active = state.vehicles.indexOf(loader);
+    assert.equal(assignCrew(state, state.active, "new"), "");
+    assert.equal(assignCrew(state, state.vehicles.indexOf(truck), "1"), "");
+    addPile(state, "gold", 80, -24, 39);
+    assert.equal(setCrewSource(state, 1, state.deposits.at(-1)!.id), "");
+    assert.equal(setCrewDest(state, 1, "sluice"), "");
+
+    const restored = readSaveText(exportSave(state))!;
+    assert.equal(restored.watching, true);
+    const idle = { throttle: 0, steer: 0, action: false };
+    const hiredLoader = restored.vehicles[restored.active];
+    step(restored, idle, 1 / 60, true);
+    assert.equal(hiredLoader.operator, true);
+    assert.notEqual(hiredLoader.status, "In your seat");
+  });
+
+  it("keeps a loose Gold Creek pile available to its claim's loader after reload", () => {
+    const state = freshGame("Gold Creek stockpile");
+    Object.assign(state, { cash: 1_000_000, claims: [1, 3], watching: true, sluice: true });
+    assert.equal(buyVehicle(state, "loader"), "");
+    const loader = state.vehicles.find((machine) => machine.defId === "loader")!;
+    Object.assign(loader, { x: -75, z: 32, workClaim: 3, hired: true, operator: true });
+    addPile(state, "dirt", 46, -77, 40, 3);
+    const pile = state.deposits.at(-1)!;
+    assert.equal(bestPile(state, loader)?.id, pile.id);
+
+    const restored = readSaveText(exportSave(state))!;
+    const restoredLoader = restored.vehicles.find((machine) => machine.uid === loader.uid)!;
+    assert.equal(restored.deposits.find((deposit) => deposit.id === pile.id)?.claim, 3);
+    assert.equal(bestPile(restored, restoredLoader)?.id, pile.id);
+  });
+
+  it("uses the area's home claim for legacy piles without a valid claim", () => {
+    const state = freshGame("Old stockpile");
+    addPile(state, "dirt", 46, -77, 40, 3);
+    const draft = JSON.parse(exportSave(state));
+    const pile = draft.deposits.at(-1);
+    for (const claim of [undefined, 999]) {
+      pile.claim = claim;
+      const restored = readSaveText(JSON.stringify(draft))!;
+      assert.equal(restored.deposits.find((deposit) => deposit.id === pile.id)?.claim, 1);
+    }
+  });
+
+  it("defaults to driving for old saves without Watch mode", () => {
+    const state = freshGame("Old crew");
+    assert.equal(readSaveText(JSON.stringify({ ...state, version: 1, watching: undefined }))?.watching, false);
   });
 });
 
