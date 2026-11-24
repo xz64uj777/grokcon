@@ -10,6 +10,9 @@ import {
 } from "@/game/sim";
 import { X0, WASH_PLANT } from "@/game/river";
 import { DEFS } from "@/game/catalog";
+import { performAction } from "@/game/sim/ai";
+import { feedId } from "@/game/sim/feed";
+import { plantQueue } from "@/game/sim/plants";
 
 const idle = { throttle: 0, steer: 0, action: false };
 
@@ -143,6 +146,85 @@ test("full diggers waiting at the river dig do not freeze dump trucks at the was
   const stuck = [truckA, truckB].filter((t) => t.status.startsWith("Wash line") && t.cargo > 5);
   assert.equal(stuck.length, 0, `truck still frozen in the wash line: ${note}`);
 });
+
+test("a loaded player truck parked away from the wash plant does not block a hired truck", () => {
+  const s = valleyGame();
+  s.watching = false;
+  const player = hireAt(s, "truck", X0 + 40, 45);
+  player.hired = false;
+  player.operator = false;
+  player.cargo = 22;
+  player.cargoOre = "gold";
+  s.active = s.vehicles.indexOf(player);
+
+  // The first crew truck clears the pad while the second is still approaching.
+  const lead = hireAt(s, "truck", WASH_PLANT.x + 3, WASH_PLANT.z - 7);
+  const following = hireAt(s, "truck", WASH_PLANT.x + 20, WASH_PLANT.z + 13);
+  for (const truck of [lead, following]) {
+    truck.cargo = 22;
+    truck.cargoOre = "gold";
+  }
+  const loader = hireAt(s, "loader", X0 + 40, 62);
+  loader.cargo = 8;
+  loader.cargoOre = "gold";
+
+  let followingDumped = false;
+  for (let i = 0; i < 60 * 40; i++) {
+    const before = following.cargo;
+    step(s, idle, 1 / 60, true);
+    if (before > 20 && following.cargo === 0) {
+      followingDumped = true;
+      break;
+    }
+  }
+
+  assert.ok(followingDumped, `hired truck kept ${following.cargo}t in "${following.status}"`);
+  assert.equal(player.cargo, 22);
+});
+
+test("a hired truck still across the river does not reserve the first wash-plant spot", () => {
+  const s = valleyGame();
+  const distant = hireAt(s, "truck", X0 - 25, 18);
+  const arriving = hireAt(s, "truck", WASH_PLANT.x, WASH_PLANT.z);
+  for (const truck of [distant, arriving]) {
+    truck.cargo = 22;
+    truck.cargoOre = "gold";
+  }
+  const pad = { ...WASH_PLANT, kind: "wash" };
+
+  assert.equal(plantQueue(s, distant, pad), null);
+  assert.equal(plantQueue(s, arriving, pad), null);
+  assert.ok(performAction(s, s.vehicles.indexOf(arriving), 1 / 60, [], { phase: "auto", cut: "top", quality: 1 }));
+  assert.equal(distant.cargo, 22);
+});
+
+for (const followingTons of [22, 8]) {
+  test(`${followingTons}t hired truck on the wash pad waits until the lead truck dumps`, () => {
+    const s = valleyGame();
+    const lead = hireAt(s, "truck", WASH_PLANT.x, WASH_PLANT.z - 4);
+    const following = hireAt(s, "truck", WASH_PLANT.x, WASH_PLANT.z + 4);
+    for (const truck of [lead, following]) {
+      truck.cargo = 22;
+      truck.cargoOre = "gold";
+    }
+    following.cargo = followingTons;
+    const pad = { ...WASH_PLANT, kind: "wash" };
+    const dump = (truck: typeof lead) =>
+      performAction(s, s.vehicles.indexOf(truck), 1 / 60, [], { phase: "auto", cut: "top", quality: 1 });
+    const cashBefore = s.cash;
+
+    assert.equal(plantQueue(s, lead, pad), null);
+    assert.ok(plantQueue(s, following, pad));
+    assert.equal(dump(following), null);
+    assert.equal(following.cargo, followingTons);
+    assert.equal(s.cash, cashBefore);
+    assert.ok(dump(lead));
+    assert.ok(dump(following));
+    const feed = s.deposits.find((pile) => pile.id === feedId(WASH_PLANT.id));
+    assert.equal(feed?.tons, 22 + followingTons);
+    assert.equal(feed?.paidTons, 22 + followingTons);
+  });
+}
 
 test("a hired river crew keeps dumping at the wash plant", () => {
   const s = valleyGame();

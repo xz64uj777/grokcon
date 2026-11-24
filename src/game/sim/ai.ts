@@ -14,7 +14,7 @@ import { addFeedPile, addPile, dumpsToFeed, feedId, feedJob, markFeedPaid, sideF
 import { SHORT_CARRY_RANGE, acceptsJob, assignedClaim, bestPad, bestPile, bestVein, canReach, cannotCrossTo, commitVein, crewNear, dirtToSluice, driveFace, faceOutput, facePin, loaderFillVein, loaderMayCut, pileApproach, pileInReach, prefersSluice, prefersWash, takeBite, washScore, workHere } from "./jobs.ts";
 import { TRUCK_IDLE_SECONDS, cargoInto, diggerAboutToFill, diggerForTruck, dropInFront, emptyCargo, fillsHaulers, hasPile, holdForReadyHauler, holdForTruck, idleFor, lineFor, lineTicket, nextLineTicket, loadTruck, loaderInArea, loaderToOrphanHeavy, nearestHauler, offHeavyBank, stockLatch, stockSpot, truckLeaving, truckNear, truckPartner, wheelLoader } from "./haulers.ts";
 import { BAY_YIELD_BUSY_SECONDS, BAY_YIELD_SECONDS, bayCommit, bayReady, enterBay, jobStand, loaderStand, loadingZone, parkInPour, safeWaitSpot, spotForTruck, truckSpot } from "./bay.ts";
-import { dumpAnyway, plantLine, plantQueue, plantTicket } from "./plants.ts";
+import { dumpAnyway, plantQueue, plantTicket, washQueuePlace } from "./plants.ts";
 import { benchBetween, fuelPoint, lowboyDrive, noseBlocked, seek, topped } from "./motion.ts";
 import { plannedDeposit, plannedPadFor, teamHasTruck } from "./crew.ts";
 
@@ -549,6 +549,8 @@ export function performAction(
     const reclaimWaste = precious && pad?.kind === "reclaim";
     // A hand-worked excavator dumps where the bucket is, not where the tracks are.
     const excavatorHand = manual && kind === "excavator";
+    // Movement and unloading share the queue even if both trucks reach the pad.
+    if (pad?.kind === "wash" && !keepBucket && !excavatorHand && washQueuePlace(state, v) > 0) return null;
     if (!excavatorHand && (holdForSluice || crewShort || reclaimWaste) && v.cargoOre) {
       if (player && holdForSluice) {
         const where = prefersWash(state, v.cargoOre, v.x)
@@ -562,7 +564,7 @@ export function performAction(
               : `${ORES[v.cargoOre].name} pays at the sluice`;
         v.status = where;
       }
-    } else if (!keepBucket && !excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind) && (player || pad.kind !== "wash" || plantLine(state)[0] === v)) {
+    } else if (!keepBucket && !excavatorHand && v.cargo > 0.04 && v.cargoOre && pad && dumpsToFeed(v.defId, pad.kind)) {
       // The check is paid on the dump. The pile is only what's left for the plant to chew through.
       const tons = v.cargo;
       const ore = v.cargoOre;
