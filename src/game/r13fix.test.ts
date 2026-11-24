@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { freshGame, step, addFeedPile, assignCrew, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice, vehicleStats, nearPileLabel, buildHud, TRUCK_IDLE_SECONDS } from "@/game/sim";
 import { PADS } from "@/game/catalog";
-import { saveGame, currentSaveText, readSaveText } from "@/game/save";
+import { exportSave, readSaveText } from "@/game/save";
 
 const idle = { throttle: 0, steer: 0, action: false };
 const wash = () => PADS.find((p) => p.id === "wash" || p.kind === "wash")!;
@@ -162,8 +162,7 @@ test("the yard sells extra diggers and trucks, each one costing more", () => {
 test("plant stockpile crew limit survives a save and load", () => {
   const s = freshGame("T");
   s.feedLimit = 1;
-  saveGame(s, true);
-  assert.equal(readSaveText(currentSaveText()!)?.feedLimit, 1);
+  assert.equal(readSaveText(exportSave(s))?.feedLimit, 1);
 });
 
 test("a closer machine on the other bank does not take a plant slot", () => {
@@ -234,8 +233,7 @@ test("separate nearby piles survive save and reload", () => {
   const s = freshGame("T");
   const base = { kind: "pile" as const, ore: "gold" as const, regen: 0, claim: 1, radius: 6, sign: "PILE", purity: 1, overburden: 0, grade: 1, stress: 0, bench: 1, benchProgress: 0, hard: false, tested: true, lastBlastDay: -1 };
   s.deposits.push({ ...base, id: "p-a", tons: 3, max: 3, x: 10, z: 30 }, { ...base, id: "p-b", tons: 30, max: 30, x: 18, z: 30 }, { ...base, id: "p-c", tons: 200, max: 200, x: 10, z: 40 });
-  saveGame(s, true);
-  const back = readSaveText(currentSaveText()!)!;
+  const back = readSaveText(exportSave(s))!;
   const tons = ["p-a", "p-b", "p-c"].map((id) => back.deposits.find((d) => d.id === id)?.tons);
   assert.deepEqual(tons, [3, 30, 200]);
 });

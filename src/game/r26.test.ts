@@ -14,7 +14,7 @@ import {
   buildHud,
 } from "@/game/sim";
 import { PADS } from "@/game/catalog";
-import { currentSaveText, readSaveText, saveGame } from "@/game/save";
+import { exportSave, readSaveText } from "@/game/save";
 
 const idle = { throttle: 0, steer: 0, action: false };
 
@@ -94,12 +94,11 @@ test("a plant feeder is saved and loads on an old-shaped save", () => {
   const card = hud.crew.find((c) => c.index === s.vehicles.indexOf(loader));
   assert.equal(card?.feederValue, "sluice");
   assert.ok(card?.feederOptions.some((o) => o.value === "sluice" && o.label === "Sluice feeder"));
-  saveGame(s, true);
-  const loaded = readSaveText(currentSaveText()!)!;
+  const loaded = readSaveText(exportSave(s))!;
   const again = loaded.vehicles.find((v) => v.defId === "loader" && v.feederPad === "sluice");
   assert.ok(again, "feeder pad did not survive save");
   // Old saves without the field still load as Auto.
-  const raw = JSON.parse(currentSaveText()!);
+  const raw = JSON.parse(exportSave(s));
   for (const v of raw.vehicles) delete v.feederPad;
   const legacy = readSaveText(JSON.stringify(raw))!;
   assert.equal(legacy.vehicles.some((v) => v.defId === "loader" && (v.feederPad === "sluice" || v.feederPad === "wash")), false);

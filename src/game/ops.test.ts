@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as O from "@/game/ops";
 import { freshGame, step, opsAction } from "@/game/sim";
-import { bookWorth, saveGame, currentSaveText, readSaveText } from "@/game/save";
+import { bookWorth, exportSave, readSaveText } from "@/game/save";
 import type { VehicleState } from "@/game/types";
 
 const truck = (cargo: number, speed: number) => ({ defId: "truck", cargo, speed } as unknown as VehicleState);
@@ -253,8 +253,7 @@ test("grading a haul road is saved, speeds a truck, and burns less fuel", () => 
   assert.match(opsAction(s, "buy:road:north"), /Graded the north road/);
   assert.equal(s.cash, 8000);
   assert.ok(O.roadGraded(s, "north"));
-  saveGame(s);
-  const back = readSaveText(currentSaveText()!)!;
+  const back = readSaveText(exportSave(s))!;
   assert.ok(O.ops(back).roads.includes("north"));
 
   const run = (graded: boolean) => {

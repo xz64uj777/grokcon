@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PADS } from "@/game/catalog";
 import { freshGame, step } from "@/game/sim";
 import { addFeedPile, feedId, feedTick, markFeedPaid, PREPAID_FEED_RATE } from "@/game/sim/feed";
-import { readSaveText, saveGame, currentSaveText } from "@/game/save";
+import { readSaveText, exportSave } from "@/game/save";
 import { buyVehicle } from "@/game/sim";
 
 const idle = { throttle: 0, steer: 0, action: false };
@@ -48,8 +48,7 @@ test("prepaid plant inventory survives saving and clears after reload without an
   addFeedPile(state, sluice, "dirt", 10, 1);
   const pile = state.deposits.find((d) => d.id === feedId(sluice.id))!;
   markFeedPaid(pile, 10);
-  saveGame(state, true);
-  const loaded = readSaveText(currentSaveText()!)!;
+  const loaded = readSaveText(exportSave(state))!;
   const saved = loaded.deposits.find((d) => d.id === pile.id)!;
   assert.ok(saved && (saved.paidTons ?? 0) >= 10);
   const cash = loaded.cash;
