@@ -1,8 +1,9 @@
 /** The wash-plant dump line. */
 
+import { WASH_PLANT, otherBank } from "@/game/river";
 import type { GameState, VehicleState } from "@/game/types";
 import type { Control } from "./types.ts";
-import { distTo, handsOn, vehicleStats } from "./world.ts";
+import { distTo, handsOn } from "./world.ts";
 import { prefersWash } from "./jobs.ts";
 import { fillsHaulers } from "./haulers.ts";
 import { seek } from "./motion.ts";
@@ -14,35 +15,49 @@ export const plantTicket = new WeakMap<VehicleState, number>();
 
 let plantNo = 1;
 
-function goingToWash(state: GameState, t: VehicleState) {
-  if (!t.cargoOre || t.cargo < 0.4 || !prefersWash(state, t.cargoOre, t.x)) return false;
-  if (!(t.operator || handsOn(state, t))) return false;
-  // A full loader or excavator waiting at the dig is not queued at the plant.
-  // A dedicated feeder stays at the hopper and is not waiting to tip on the pad.
-  // The sluice and mill have no dump line of this kind; only the wash plant does.
-  if (fillsHaulers(t.defId) || t.feederPad) return false;
-  const cap = vehicleStats(t).capacity;
-  if (cap <= 0) return false;
-  // Only machines actually hauling a load in to dump. The old "near the plant"
-  // check also pulled in skid steers that were only working nearby.
-  return t.cargo >= cap * 0.9 || dumpAnyway.has(t);
+// Join close to the pad. Keep the ticket farther out so the queue's own
+// parking spots do not make trucks lose their place.
+const WASH_JOIN_RADIUS = WASH_PLANT.r + 20;
+const WASH_WAIT_RADIUS = 60;
+
+function canQueueForWash(state: GameState, t: VehicleState) {
+  if (!t.cargoOre || t.cargo <= 0.04 || !prefersWash(state, t.cargoOre, t.x)) return false;
+  if (!t.operator || handsOn(state, t) || state.deck?.includes(t.uid)) return false;
+  // Loaders and excavators at the dig and dedicated feeders are not in the dump line.
+  return !fillsHaulers(t.defId) && !t.feederPad && !otherBank(t.x, WASH_PLANT.x);
 }
 
+export function washQueuePlace(state: GameState, v: VehicleState) {
+  const distance = distTo(v.x, v.z, WASH_PLANT.x, WASH_PLANT.z);
+  if (!canQueueForWash(state, v) || distance > WASH_WAIT_RADIUS) {
+    plantTicket.delete(v);
+    return -1;
+  }
 
-export function plantLine(state: GameState) {
-  const list = state.vehicles.filter((t) => goingToWash(state, t));
-  for (const t of list) if (!plantTicket.has(t)) plantTicket.set(t, plantNo++);
-  list.sort((a, b) => (plantTicket.get(a) ?? 0) - (plantTicket.get(b) ?? 0));
-  return list;
+  let ticket = plantTicket.get(v);
+  if (ticket === undefined) {
+    if (distance > WASH_JOIN_RADIUS) return -1;
+    ticket = plantNo++;
+    plantTicket.set(v, ticket);
+  }
+
+  let place = 0;
+  for (const other of state.vehicles) {
+    const otherTicket = plantTicket.get(other);
+    if (otherTicket === undefined || otherTicket >= ticket) continue;
+    if (!canQueueForWash(state, other) || distTo(other.x, other.z, WASH_PLANT.x, WASH_PLANT.z) > WASH_WAIT_RADIUS) {
+      plantTicket.delete(other);
+    } else {
+      place++;
+    }
+  }
+  return place;
 }
-
-/** Only the first machine pulls onto the wash plant. The rest wait in a line to the east. */
 
 /** Only the first machine pulls onto the wash plant. The rest wait in a line to the east. */
 export function plantQueue(state: GameState, v: VehicleState, pad: { kind: string; x: number; z: number; r: number } | null): Control | null {
-  if (!pad || pad.kind !== "wash" || !goingToWash(state, v)) return null;
-  if (!plantTicket.has(v)) plantTicket.set(v, plantNo++);
-  const place = plantLine(state).findIndex((t) => t === v);
+  if (!pad || pad.kind !== "wash") return null;
+  const place = washQueuePlace(state, v);
   if (place <= 0) return null;
   // The east bank is narrow. Keep the queue inside the map and off the pad:
   // first five slots run north, then the line snakes back south in a second lane.
