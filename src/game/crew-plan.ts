@@ -251,7 +251,29 @@ export function planCrewJobs(
       const partners = members.map((m) => m.uid);
       if (job) takenJobs.add(job.id);
       for (const d of ds) result.set(d.uid, assignment(crew.id, "digger", job, partners, d.uid));
-      for (const t of ts) result.set(t.uid, assignment(crew.id, "truck", job, partners, t.uid));
+      // Put the assigned loader first so two trucks on one crew do not
+      // both drive to the first loader in vehicle order.
+      const assignedLoads = new Map<string, number>();
+      const queue = area === "river"
+        ? [...ts].sort((a, b) => Number(b.defId === "heavy") - Number(a.defId === "heavy"))
+        : ts;
+      for (const t of queue) {
+        const previous = prev?.get(t.uid);
+        let loader: PlanMachine | undefined;
+        let bestCost = Infinity;
+        for (const d of ds) {
+          if (area === "river" && t.defId === "heavy" && bankOf(t.x) !== bankOf(d.x)) continue;
+          const keepsBay = previous?.team === crew.id && previous.partnerUids[0] === d.uid;
+          const cost = (assignedLoads.get(d.uid) ?? 0) * 10_000 + dist(t, d) - (keepsBay ? 1000 : 0);
+          if (cost < bestCost) {
+            loader = d;
+            bestCost = cost;
+          }
+        }
+        if (loader) assignedLoads.set(loader.uid, (assignedLoads.get(loader.uid) ?? 0) + 1);
+        const orderedPartners = loader ? [loader.uid, ...partners.filter((uid) => uid !== loader.uid)] : partners;
+        result.set(t.uid, assignment(crew.id, "truck", job, orderedPartners, t.uid));
+      }
       for (const s of ss) result.set(s.uid, assignment(crew.id, "skid", job, partners, s.uid));
     }
 

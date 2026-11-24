@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isOreId } from "@/game/catalog";
-import { assignCrew, buyVehicle, freshGame, sellVehicle, setCrewDest, setCrewSource, step } from "@/game/sim";
+import { assignCrew, buyVehicle, freshGame, refreshCrewPlan, sellVehicle, setCrewDest, setCrewSource, step } from "@/game/sim";
 import { bookWorth, exportSave, loadGame, readSaveText, saveGame } from "@/game/save";
 import { addPile } from "@/game/sim/feed";
 import { bestPile } from "@/game/sim/jobs";
+import { diggerForTruck } from "@/game/sim/haulers";
 import { ops } from "@/game/ops";
 import type { Deposit } from "@/game/types";
 
@@ -171,6 +172,41 @@ describe("save order and recovery", () => {
 });
 
 describe("crew control after a reload", () => {
+  it("rebuilds separate loading assignments for a shared Gold Creek crew after reload", () => {
+    const state = freshGame("Shared Gold Creek crew");
+    Object.assign(state, { cash: 1_000_000, claims: [1, 3], watching: true, sluice: true });
+    const positions = [
+      { id: "loader", x: -72, z: 34 },
+      { id: "hloader", x: -64, z: 20 },
+      { id: "truck", x: -59, z: 40 },
+      { id: "heavy", x: -54, z: 17 },
+      { id: "skid", x: -71, z: 24 },
+    ] as const;
+    for (const [index, { id, x, z }] of positions.entries()) {
+      assert.equal(buyVehicle(state, id), "");
+      const v = state.vehicles.at(-1)!;
+      Object.assign(v, { x, z, hired: true, operator: true });
+      assert.equal(assignCrew(state, state.vehicles.indexOf(v), index === 0 ? "new" : "1"), "");
+    }
+    addPile(state, "gold", 120, -72, 24, 3);
+    assert.equal(setCrewSource(state, 1, state.deposits.at(-1)!.id), "");
+    assert.equal(setCrewDest(state, 1, "sluice"), "");
+
+    const restored = readSaveText(exportSave(state))!;
+    const truck = restored.vehicles.find((v) => v.defId === "truck")!;
+    const heavy = restored.vehicles.find((v) => v.defId === "heavy")!;
+    refreshCrewPlan(restored);
+    assert.equal(diggerForTruck(restored, truck)?.defId, "loader");
+    assert.equal(diggerForTruck(restored, heavy)?.defId, "hloader");
+
+    // A truck driving past the other loader shouldn't lose its assigned bay.
+    truck.z = 18;
+    heavy.z = 38;
+    refreshCrewPlan(restored, true);
+    assert.equal(diggerForTruck(restored, truck)?.defId, "loader");
+    assert.equal(diggerForTruck(restored, heavy)?.defId, "hloader");
+  });
+
   it("resumes a loader and truck mid-job when the player saved in Watch mode", () => {
     const state = freshGame("Watching crew");
     Object.assign(state, { cash: 1_000_000, sluice: true, watching: true, claims: [1, 2, 3] });
