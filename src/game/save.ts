@@ -36,6 +36,12 @@ function sanitize(raw: unknown): GameState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   if (o.version !== 1 && o.version !== 2 && o.version !== 3 && o.version !== 4) return null;
+  // Older versions have the same career and fleet fields. Only newer optional
+  // mechanics get defaults, so a truncated file cannot turn into a new claim.
+  if (typeof o.company !== "string" || !o.company.trim() ||
+      ![o.cash, o.lifetime, o.seconds].every(Number.isFinite) ||
+      !Array.isArray(o.vehicles) || !Array.isArray(o.deposits) ||
+      !o.deposits.some((d) => d && typeof d.id === "string" && Number.isFinite(d.tons))) return null;
   const v2 = o.version === 2 || o.version === 3 || o.version === 4;
   const company = typeof o.company === "string" && o.company.trim() ? o.company.trim().slice(0, 24) : "Ridge Ore Co.";
   const state = freshGame(company);
@@ -76,7 +82,7 @@ function sanitize(raw: unknown): GameState | null {
     for (const item of o.vehicles) {
       if (!item || typeof item !== "object") continue;
       const v = item as Record<string, unknown>;
-      if (typeof v.defId !== "string" || !isVehicleId(v.defId)) continue;
+      if (typeof v.defId !== "string" || !isVehicleId(v.defId) || !Number.isFinite(v.x) || !Number.isFinite(v.z)) continue;
       const up = (v.upgrades ?? {}) as Record<string, unknown>;
       const kind = (k: UpgradeKind) => Math.round(num(up[k], 0, 0, 3));
       const ore = typeof v.cargoOre === "string" && isOreId(v.cargoOre) ? v.cargoOre : null;
@@ -110,7 +116,8 @@ function sanitize(raw: unknown): GameState | null {
           : {}),
       });
     }
-    if (vehicles.length && !vehicles.some((v) => v.defId === "crusher")) {
+    if (vehicles.length === 0) return null;
+    if (!vehicles.some((v) => v.defId === "crusher")) {
       vehicles.push({
         uid: "crusher-plant",
         defId: "crusher",
@@ -305,54 +312,88 @@ export function bookWorth(state: GameState) {
   return state.seconds + state.lifetime / 10 + (state.cash + assets) / 50 + machines * 800 + state.claims.length * 400 + (state.sluice ? 2500 : 0) + (state.washPlant ? 2500 : 0);
 }
 
-function readRaw(raw: string | null) {
-  if (!raw) return null;
+type SaveEntry = { state: GameState; raw: string; revision: number };
+type SaveWrite = { raw: string; revision: number; previous: SaveEntry | null };
+type SaveResult = "saved" | "conflict" | "unavailable";
+
+function readRaw(raw: unknown): SaveEntry | null {
+  if (typeof raw !== "string") return null;
+  const state = readSaveText(raw);
+  return state ? { state, raw, revision: state.saveRevision ?? 0 } : null;
+}
+
+function readLocalBooks() {
   try {
-    const state = sanitize(JSON.parse(raw));
-    return state ? { state, raw, revision: state.saveRevision ?? 0 } : null;
+    return readRaw(localStorage.getItem(KEY)) ?? readRaw(localStorage.getItem(BAK));
   } catch {
     return null;
   }
 }
 
 export function loadGame(): GameState | null {
-  if (typeof localStorage === "undefined") return null;
-  try {
-    // A valid current save always wins over a backup, even after spending or selling.
-    const latest = readRaw(localStorage.getItem(KEY)) ?? readRaw(localStorage.getItem(BAK));
-    if (!latest) return null;
-    memorySave = latest.raw;
-    memoryRevision = latest.revision;
-    return latest.state;
-  } catch {
-    return null;
-  }
+  return readLocalBooks()?.state ?? null;
 }
 
-export function saveGame(state: GameState, resetHistory = false) {
-  // Date.now provides ordering across browser storage backends and fresh sessions;
-  // the counter keeps saves ordered even when several happen in one millisecond.
-  const revision = Math.max(Date.now(), memoryRevision, state.saveRevision ?? 0) + 1;
-  state.saveRevision = revision;
-  const json = JSON.stringify(snapshot(state));
-  memorySave = json;
-  memoryRevision = revision;
-  if (typeof localStorage !== "undefined") {
+function newer(a: SaveEntry | null, b: SaveEntry | null) {
+  return a && (!b || a.revision >= b.revision) ? a : b;
+}
+
+function prepareWrite(draft: GameState, base: number, previous: SaveEntry | null): SaveWrite {
+  const revision = Math.max(Date.now(), base) + 1;
+  return { revision, raw: JSON.stringify({ ...draft, saveRevision: revision }), previous };
+}
+
+function writeLocal(write: SaveWrite, base: number, resetHistory: boolean) {
+  try {
+    if ((readLocalBooks()?.revision ?? -1) > base) return false;
+    if (!resetHistory && write.previous) localStorage.setItem(BAK, write.previous.raw);
+    localStorage.setItem(KEY, write.raw);
+  } catch {
+    return false;
+  }
+  if (resetHistory) {
     try {
-      const current = readRaw(localStorage.getItem(KEY));
-      if (!resetHistory && current && current.raw !== json) {
-        const backup = readRaw(localStorage.getItem(BAK));
-        if (!backup || current.revision >= backup.revision) localStorage.setItem(BAK, current.raw);
-      }
-      // Write the replacement before removing the old backup, in case storage is full.
-      localStorage.setItem(KEY, json);
-      if (resetHistory) localStorage.removeItem(BAK);
+      localStorage.removeItem(BAK);
     } catch {
-      /* private mode or a full disk — the IndexedDB copy may still land */
+      // The new current save has already been written.
     }
   }
-  mirrorSave(json, revision, resetHistory);
   return true;
+}
+
+// Capture each request now, but use the session's last committed revision when
+// the request runs. This keeps overlapping saves from the same tab in order.
+let pendingWrites: Promise<unknown> = Promise.resolve();
+
+export function saveGame(state: GameState, resetHistory = false, baseState = state): Promise<SaveResult> {
+  const draft = snapshot(state);
+  const task = pendingWrites.then(async (): Promise<SaveResult> => {
+    const base = baseState.saveRevision ?? -1;
+    const save = async (): Promise<SaveResult> => {
+      const db = await openBooks();
+      const indexed = db && await writeIndexedBooks(db, draft, base, resetHistory);
+      if (indexed === "conflict") return indexed;
+      if (indexed) {
+        writeLocal(indexed, base, resetHistory);
+        state.saveRevision = indexed.revision;
+        return "saved";
+      }
+
+      const current = readLocalBooks();
+      if ((current?.revision ?? -1) > base) return "conflict";
+      const write = prepareWrite(draft, base, current);
+      if (!writeLocal(write, base, resetHistory)) return "unavailable";
+      state.saveRevision = write.revision;
+      return "saved";
+    };
+
+    // The Web Lock also covers localStorage fallback in browsers that support
+    // it. IndexedDB's read-write transaction serializes its own fallback check.
+    const locks = globalThis.navigator?.locks;
+    return locks ? locks.request(KEY, save) : save();
+  }).catch((): SaveResult => "unavailable");
+  pendingWrites = task;
+  return task;
 }
 
 function snapshot(state: GameState): GameState {
@@ -371,15 +412,14 @@ function snapshot(state: GameState): GameState {
     contract: { ...state.contract },
     log: state.log.slice(0, 5),
     claims: [...state.claims],
+    crews: state.crews.map((crew) => ({ ...crew })),
+    deck: [...state.deck],
     ops: JSON.parse(JSON.stringify({ ...state.ops, photo: false })),
   };
 }
 
-let memorySave: string | null = null;
-let memoryRevision = 0;
-
-export function currentSaveText() {
-  return memorySave;
+export function exportSave(state: GameState) {
+  return JSON.stringify(snapshot(state));
 }
 
 export function readSaveText(text: string): GameState | null {
@@ -394,82 +434,79 @@ const IDB_NAME = "ridge-ore";
 const IDB_STORE = "kv";
 
 function openBooks(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === "undefined") return Promise.resolve(null);
   return new Promise((resolve) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-  });
-}
-
-function mirrorSave(json: string, revision: number, resetHistory: boolean) {
-  void openBooks().then((db) => {
-    if (!db) return;
     try {
-      const tx = db.transaction(IDB_STORE, "readwrite");
-      const store = tx.objectStore(IDB_STORE);
-      const currentReq = store.get(KEY);
-      currentReq.onsuccess = () => {
-        const previous = typeof currentReq.result === "string" ? readRaw(currentReq.result) : null;
-        // Async IndexedDB writes can finish out of order: never overwrite a newer save.
-        if (previous && previous.revision > revision) return;
-        if (resetHistory || !previous) store.put(json, BEST);
-        else if (previous.raw !== json) store.put(previous.raw, BEST);
-        store.put(json, KEY);
+      const req = indexedDB.open(IDB_NAME, 1);
+      let blocked = false;
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
       };
-      tx.oncomplete = () => db.close();
-      tx.onerror = () => db.close();
+      req.onsuccess = () => {
+        if (blocked) req.result.close();
+        else resolve(req.result);
+      };
+      req.onblocked = () => {
+        blocked = true;
+        resolve(null);
+      };
+      req.onerror = () => resolve(null);
     } catch {
-      db.close();
+      resolve(null);
     }
   });
 }
 
-export function loadGameBackup(): Promise<GameState | null> {
-  return openBooks().then(
-    (db) =>
-      new Promise((resolve) => {
-        if (!db) {
-          resolve(null);
+function readIndexedBooks(store: IDBObjectStore, receive: (entry: SaveEntry | null) => void) {
+  const current = store.get(KEY);
+  const backup = store.get(BEST);
+  backup.onsuccess = () => receive(readRaw(current.result) ?? readRaw(backup.result));
+}
+
+function writeIndexedBooks(db: IDBDatabase, draft: GameState, base: number, resetHistory: boolean) {
+  return new Promise<SaveWrite | "conflict" | null>((resolve) => {
+    let result: SaveWrite | "conflict" | null = null;
+    function finish(value: typeof result) {
+      db.close();
+      resolve(value);
+    }
+    try {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const store = tx.objectStore(IDB_STORE);
+      tx.oncomplete = () => finish(result);
+      tx.onabort = () => finish(result === "conflict" ? result : null);
+      readIndexedBooks(store, (indexed) => {
+        const current = newer(readLocalBooks(), indexed);
+        if ((current?.revision ?? -1) > base) {
+          result = "conflict";
           return;
         }
-        try {
-          const tx = db.transaction(IDB_STORE, "readonly");
-          const store = tx.objectStore(IDB_STORE);
-          const current = store.get(KEY);
-          const best = store.get(BEST);
-          let currentRaw: string | null = null;
-          let bestRaw: string | null = null;
-          let pending = 2;
-          const finish = () => {
-            pending -= 1;
-            if (pending > 0) return;
-            db.close();
-            // The backup is recovery-only; it must not replace a valid, newer save.
-            const picked = readRaw(currentRaw) ?? readRaw(bestRaw);
-            if (picked && picked.revision > memoryRevision) {
-              memorySave = picked.raw;
-              memoryRevision = picked.revision;
-            }
-            resolve(picked ? picked.state : null);
-          };
-          current.onsuccess = () => {
-            currentRaw = typeof current.result === "string" ? current.result : null;
-            finish();
-          };
-          best.onsuccess = () => {
-            bestRaw = typeof best.result === "string" ? best.result : null;
-            finish();
-          };
-          current.onerror = () => finish();
-          best.onerror = () => finish();
-        } catch {
-          db.close();
-          resolve(null);
-        }
-      }),
-  );
+        const write = prepareWrite(draft, base, current);
+        store.put(write.raw, KEY);
+        store.put(!resetHistory && current ? current.raw : write.raw, BEST);
+        result = write;
+      });
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+export async function loadGameBackup(): Promise<GameState | null> {
+  const db = await openBooks();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    let state: GameState | null = null;
+    const finish = (value: GameState | null) => {
+      db.close();
+      resolve(value);
+    };
+    try {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      tx.oncomplete = () => finish(state);
+      tx.onabort = () => finish(null);
+      readIndexedBooks(tx.objectStore(IDB_STORE), (entry) => { state = entry?.state ?? null; });
+    } catch {
+      finish(null);
+    }
+  });
 }

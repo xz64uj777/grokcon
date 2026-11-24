@@ -4,7 +4,7 @@ import { BRIDGE, RIVER, X0, areaOf } from "@/game/river";
 import { PASS_SUMMIT_X, VALLEY_GATE_X, areaIn, onHaulRoad } from "@/game/lowboy";
 import { createWorld } from "@/game/render";
 import { createFrameRecorder } from "@/game/performance-metrics";
-import { currentSaveText, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
+import { exportSave, loadGame, loadGameBackup, readSaveText, saveGame } from "@/game/save";
 import { sticksToCommand, type Stick } from "@/game/controls";
 import {
   buildHud,
@@ -77,6 +77,8 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   let hadSave = loaded != null;
   // Check both storage backends before allowing a save to be continued or replaced.
   let booksReady = false;
+  let booksBusy = false;
+  let saveIssue: ViewModel["saveIssue"] = null;
   let state = loaded ?? freshGame("Ridge Ore Co.");
   let running = false;
   let panelOpen = false;
@@ -113,7 +115,36 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function push() {
     if (dead) return;
-    hooks.onHud({ ...buildHud(state, hadSave, parked), practice: practiceBack != null, mode: running ? "play" : "title", booksReady, excDrive: parked });
+    hooks.onHud({ ...buildHud(state, hadSave, parked), practice: practiceBack != null, mode: running ? "play" : "title", booksReady, booksBusy, saveIssue, excDrive: parked });
+  }
+
+  async function persistBooks() {
+    const current = books();
+    const result = await saveGame(current);
+    if (dead || books() !== current) return;
+    const issue = result === "saved" ? null : result;
+    if (saveIssue === issue) return;
+    saveIssue = issue;
+    push();
+  }
+
+  async function replaceBooks(next: GameState, resetHistory: boolean) {
+    booksBusy = true;
+    push();
+    const result = await saveGame(next, resetHistory, books());
+    if (dead) return result;
+    booksBusy = false;
+    saveIssue = result === "saved" ? null : result;
+    if (result === "saved") {
+      backupRestoreAllowed = false;
+      practiceBack = null;
+      state = next;
+      hadSave = true;
+      running = false;
+      world.snap();
+    }
+    push();
+    return result;
   }
 
   function held(code: string) {
@@ -147,33 +178,23 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   }
 
   const api: GameApi = {
-    start(mode, company) {
-      if (!booksReady) return;
+    async start(mode, company) {
+      if (!booksReady || booksBusy) return;
       backupRestoreAllowed = false;
-      if (practiceBack) {
-        state = practiceBack;
-        practiceBack = null;
-      }
+      audio.unlock();
       const name = company.trim().slice(0, 24) || "Ridge Ore Co.";
       if (mode === "fresh") {
-        state = freshGame(name);
-        hadSave = true;
-        saveGame(state, true);
-      } else if (!hadSave) {
-        state = freshGame(name);
-        if (!saveGame(books())) {
-          const kept = loadGame();
-          if (kept) state = kept;
-        }
-        hadSave = true;
+        if (await replaceBooks(freshGame(name), true) !== "saved" || dead) return;
       } else {
+        state = hadSave ? books() : freshGame(name);
+        practiceBack = null;
         state.company = name;
-        saveGame(books());
+        hadSave = true;
+        void persistBooks();
       }
       running = true;
       keys.clear();
       world.snap();
-      audio.unlock();
       push();
     },
     setPanel(open) {
@@ -186,23 +207,23 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         if (msg) state.log.unshift(msg);
       }
       else if (isVehicleId(id)) buyVehicle(state, id);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     buyGround(id) {
       const msg = buyClaim(state, id);
       if (msg) state.log.unshift(msg);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     upgrade(index, kind) {
       buyUpgrade(state, index, kind);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     crew(index) {
       toggleCrew(state, index);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     assignSource(index, source) {
@@ -234,7 +255,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         v.workClaim = claim;
         v.status = `Assigned to ${CLAIMS.find((c) => c.id === claim)?.name ?? "source"}`;
       }
-      saveGame(books());
+      void persistBooks();
       push();
     },
     assignCrew(index, crew) {
@@ -243,7 +264,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state.log.unshift(msg);
         if (state.log.length > 5) state.log.length = 5;
       }
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setCrewSource(crewId, sourceId) {
@@ -252,7 +273,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state.log.unshift(msg);
         if (state.log.length > 5) state.log.length = 5;
       }
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setCrewDest(crewId, destKind) {
@@ -261,7 +282,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state.log.unshift(msg);
         if (state.log.length > 5) state.log.length = 5;
       }
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setFeeder(index, pad) {
@@ -270,21 +291,21 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         state.log.unshift(msg);
         if (state.log.length > 5) state.log.length = 5;
       }
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setFeedLimit(limit) {
       state.feedLimit = limit;
       state.log.unshift(limit === "all" ? "Every free loader can feed a plant." : `${limit} ${limit === 1 ? "machine feeds" : "machines feed"} a plant. The rest stay on the dig.`);
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setHaulSluice(on) {
       state.preferSluice = on && state.sluice;
       state.log.unshift(on ? "Copper, gold, and overburden haul to the sluice." : "Crew may sell at the crusher or reclaim.");
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(books());
+      void persistBooks();
       push();
     },
     drive(index) {
@@ -297,7 +318,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const wasActive = index === state.active;
       sellVehicle(state, index);
       if (wasActive) world.snap();
-      saveGame(books());
+      void persistBooks();
       push();
     },
     setStick(steer, throttle) {
@@ -332,7 +353,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     setControlMode(mode) {
       setControlMode(state, mode);
       if (practiceBack) practiceBack.controlMode = mode;
-      saveGame(books());
+      void persistBooks();
       push();
     },
     toggleExcDrive() {
@@ -345,7 +366,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const msg = drillTestHole(state);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(books());
+      void persistBooks();
       push();
     },
     blast() {
@@ -363,22 +384,22 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const msg = opsAction(state, id);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
-      if (id !== "photo") saveGame(books());
+      if (id !== "photo") void persistBooks();
       push();
     },
     repair(index) {
       repairVehicle(state, index);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     overhaul(index) {
       overhaulVehicle(state, index);
-      saveGame(books());
+      void persistBooks();
       push();
     },
     practice(on) {
       if (on && !practiceBack) {
-        saveGame(state);
+        void persistBooks();
         practiceBack = state;
         state = practiceYard(state);
       } else if (!on && practiceBack) {
@@ -416,7 +437,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       const msg = seated?.defId === "lowboy" ? toggleDeck(state) : loadTruck(state);
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
-      saveGame(books());
+      void persistBooks();
       push();
     },
     toggleMute() {
@@ -429,14 +450,14 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (msg) state.log.unshift(msg);
       if (state.log.length > 5) state.log.length = 5;
       world.snap();
-      saveGame(books());
+      void persistBooks();
       push();
     },
     goOther() {
       const msg = goOtherArea(state);
       if (msg) state.log.unshift(msg);
       world.snap();
-      saveGame(books());
+      void persistBooks();
       push();
     },
     cycle(dir) {
@@ -457,10 +478,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       push();
     },
     downloadBooks() {
-      saveGame(books());
-      const text = currentSaveText();
-      if (!text) return;
-      const file = new Blob([text], { type: "application/json" });
+      const file = new Blob([exportSave(books())], { type: "application/json" });
       const url = URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
@@ -468,18 +486,13 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       link.click();
       URL.revokeObjectURL(url);
     },
-    importBooks(text) {
+    inspectBooks(text) {
+      return readSaveText(text)?.company ?? null;
+    },
+    async importBooks(text) {
+      if (!booksReady || booksBusy) return "unavailable";
       const next = readSaveText(text);
-      if (!next) return false;
-      backupRestoreAllowed = false;
-      practiceBack = null;
-      state = next;
-      hadSave = true;
-      running = false;
-      saveGame(books(), true);
-      world.snap();
-      push();
-      return true;
+      return next ? replaceBooks(next, false) : "invalid";
     },
   };
 
@@ -627,12 +640,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   function onHide() {
     if (document.hidden) {
       keys.clear();
-      if (running || hadSave) saveGame(books());
+      if (running) void persistBooks();
       audio.setMuted(true);
     } else if (!state.muted) audio.setMuted(false);
   }
   function onPageHide() {
-    if (running || hadSave) saveGame(books());
+    if (running) void persistBooks();
   }
 
   host.addEventListener("pointerdown", onCameraPointerDown, { passive: false });
@@ -651,7 +664,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       // Never roll back a started game for a more valuable but older backup.
       state = backup;
       hadSave = true;
-      saveGame(books());
+      world.snap();
     }
     booksReady = true;
     push();
@@ -821,7 +834,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
         audio.dig();
         digCool = 0.16;
       }
-      if (sold) saveGame(books());
+      if (sold) void persistBooks();
       digCool = Math.max(0, digCool - dt);
       const v = state.vehicles[state.active];
       const soundKind = (id: string | undefined) => id === "skid" || id === "loader" || id === "hloader" || id === "excavator" || id === "dozer" || id === "truck" || id === "heavy" ? (id === "heavy" ? "truck" : id === "hloader" ? "loader" : id) : "other";
@@ -829,7 +842,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       if (!panelOpen && !state.watching && input.cmd) audio.hydraulics(soundKind(v?.defId), input.cmd.axes.lift, input.cmd.axes.tilt);
       saveT += dt;
       if (saveT > 4) {
-        saveGame(books());
+        void persistBooks();
         saveT = 0;
       }
     }
@@ -863,7 +876,7 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
   return () => {
     dead = true;
     cancelAnimationFrame(raf);
-    if (running) saveGame(books());
+    if (running) void persistBooks();
     host.removeEventListener("pointerdown", onCameraPointerDown);
     host.removeEventListener("pointermove", onCameraPointerMove);
     host.removeEventListener("pointerup", onCameraPointerEnd);

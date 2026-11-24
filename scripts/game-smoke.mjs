@@ -82,6 +82,7 @@ try {
   console.log("COLD START", JSON.stringify(startup));
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
+  await page.waitForFunction(() => localStorage.getItem("ridge-ore.save") !== null);
   const first = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
   ensure(first && first.company === "Ridge QA Mobile", "Edited company name was not persisted after start");
   ensure(first.saveRevision > 0, "Save revision was not persisted");
@@ -107,6 +108,10 @@ try {
   await page.getByRole("button", { name: "Continue", exact: true }).waitFor({ timeout: 45000 });
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Office", exact: true }).waitFor({ timeout: 15000 });
+  await page.waitForFunction(
+    (revision) => JSON.parse(localStorage.getItem("ridge-ore.save") || "null")?.saveRevision > revision,
+    first.saveRevision,
+  );
   const resumed = await page.evaluate(() => JSON.parse(localStorage.getItem("ridge-ore.save") || "null"));
   ensure(resumed && resumed.company === first.company, "Company changed after reloading");
   ensure(resumed.saveRevision > first.saveRevision, "Resume did not make a newer save");

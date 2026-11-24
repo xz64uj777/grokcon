@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ROAD_CLEAR_BONUS, buyVehicle, ensureLowboy, freshGame, step, opsAction, lotButtons, buildHud, spawnRockslide, toggleCrew, overhaulVehicle } from "@/game/sim";
-import { saveGame, currentSaveText, readSaveText } from "@/game/save";
+import { exportSave, readSaveText } from "@/game/save";
 import * as C from "@/game/career";
 import { ops, saleMult } from "@/game/ops";
 
@@ -34,8 +34,7 @@ test("wear slows, burns more and can break; overhaul fixes and saves", () => {
   const v = s.vehicles[s.active];
   ops(s).wear[v.uid] = 0.8;
   ops(s).broke.push(v.uid);
-  saveGame(s);
-  const back = readSaveText(currentSaveText()!)!;
+  const back = readSaveText(exportSave(s))!;
   assert.equal(ops(back).wear[v.uid], 0.8);
   assert.ok(ops(back).broke.includes(v.uid));
   s.cash = 1e6;

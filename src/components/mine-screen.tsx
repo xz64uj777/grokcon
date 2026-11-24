@@ -17,6 +17,7 @@ export function MineScreen() {
   const [company, setCompany] = useState("Ridge Ore Co.");
   const [seeded, setSeeded] = useState(false);
   const [booksNote, setBooksNote] = useState("");
+  const [pendingImport, setPendingImport] = useState<{ company: string; text: string } | null>(null);
   const [wipe, setWipe] = useState(false);
   const twin = useRef({ left: { x: 0, y: 0 }, right: { x: 0, y: 0 } });
   const padRef = useRef<HTMLDivElement>(null);
@@ -104,6 +105,30 @@ export function MineScreen() {
     apiRef.current?.setPanel(panel !== null);
   }, [panel]);
 
+  async function loadBooks(file: { company: string; text: string }) {
+    setBooksNote("");
+    const result = await apiRef.current?.importBooks(file.text);
+    if (result === "saved") {
+      setPendingImport(null);
+      setCompany(file.company);
+      setWipe(false);
+      setBooksNote("Books loaded. Press continue.");
+    } else if (result === "invalid") {
+      setPendingImport(null);
+      setBooksNote("That file is not a complete Ridge Ore save.");
+    } else if (result === "conflict") {
+      setBooksNote("Reload to open the current career before importing this file.");
+    } else {
+      setBooksNote("Couldn't save the imported career. You can try again.");
+    }
+  }
+
+  const saveWarning = hud?.saveIssue === "conflict"
+    ? "Another tab saved newer progress. Download a copy of this session before reloading."
+    : hud?.saveIssue === "unavailable"
+      ? "This device couldn't save your progress. Download a copy before leaving."
+      : "";
+
   const playing = hud?.mode === "play";
 
   return (
@@ -157,10 +182,12 @@ export function MineScreen() {
             />
           </label>
           <p className="mt-3 text-sm text-cash">{hud ? hud.savedBlurb : "Opening the gate…"}</p>
+          {saveWarning && <p role="alert" className="mt-2 text-sm text-cash">{saveWarning}</p>}
           {hud?.booksReady ? (
             <button
               type="button"
               className="mt-4 h-12 w-full bg-primary font-display text-xl uppercase tracking-wide text-primary-fg"
+              disabled={hud.booksBusy || pendingImport !== null}
               onClick={(e) => {
                 e.currentTarget.blur();
                 apiRef.current?.start("continue", company);
@@ -189,22 +216,41 @@ export function MineScreen() {
               type="file"
               accept="application/json,.json"
               className="sr-only"
+              disabled={!hud?.booksReady || hud.booksBusy}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.currentTarget.value = "";
                 if (!file) return;
+                setBooksNote("");
+                setPendingImport(null);
                 void file.text().then((text) => {
-                  const ok = apiRef.current?.importBooks(text) ?? false;
-                  setBooksNote(ok ? "Books loaded. Press continue." : "That file is not a Ridge Ore save.");
-                });
+                  const company = apiRef.current?.inspectBooks(text);
+                  if (!company) {
+                    setBooksNote("That file is not a complete Ridge Ore save.");
+                    return;
+                  }
+                  const candidate = { company, text };
+                  if (hud?.hadSave) setPendingImport(candidate);
+                  else void loadBooks(candidate);
+                }).catch(() => setBooksNote("Couldn't read that file."));
               }}
             />
           </label>
+          {pendingImport && (
+            <div className="mt-2 space-y-2 border border-border p-2">
+              <p className="text-sm text-fg">Replace the saved career with {pendingImport.company}?</p>
+              <div className="flex flex-wrap gap-2">
+                <SmallBtn danger onClick={() => void loadBooks(pendingImport)} disabled={hud?.booksBusy}>Replace career</SmallBtn>
+                <SmallBtn onClick={() => setPendingImport(null)} disabled={hud?.booksBusy}>Cancel</SmallBtn>
+              </div>
+            </div>
+          )}
           {booksNote && <p className="mt-2 text-sm text-cash">{booksNote}</p>}
           {hud?.hadSave && (
             <button
               type="button"
               className="mt-2 h-11 w-full border border-border font-display text-lg uppercase tracking-wide text-fg"
+              disabled={hud.booksBusy || pendingImport !== null}
               onClick={(e) => {
                 e.currentTarget.blur();
                 if (!wipe) {
@@ -297,8 +343,14 @@ export function MineScreen() {
               </button>
             </div>
           </header>
-          {(hud.practice || hud.blastLabel || hud.bridgeClock || hud.bridgeLabel.endsWith("TOO HEAVY") || hud.groundLabel.startsWith("Bogged")) && (
+          {(saveWarning || hud.practice || hud.blastLabel || hud.bridgeClock || hud.bridgeLabel.endsWith("TOO HEAVY") || hud.groundLabel.startsWith("Bogged")) && (
             <div className="hud-banner pointer-events-none absolute inset-x-0 top-16 z-10 flex flex-col items-center gap-2 px-3 md:top-20">
+              {saveWarning && (
+                <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 border border-cash bg-surface px-3 py-2">
+                  <p role="alert" className="text-sm text-cash">{saveWarning}</p>
+                  <SmallBtn onClick={() => apiRef.current?.downloadBooks()}>Download books</SmallBtn>
+                </div>
+              )}
               {hud.practice && (
                 <p className="border border-primary bg-surface px-3 py-1 font-display text-base uppercase tracking-wide text-primary">Practice yard · nothing here counts or saves</p>
               )}
@@ -1033,11 +1085,12 @@ function Joystick({ onChange }: { onChange: (steer: number, throttle: number) =>
   );
 }
 
-function SmallBtn({ children, onClick, active = false, danger = false, label }: { children: React.ReactNode; onClick: () => void; active?: boolean; danger?: boolean; label?: string }) {
+function SmallBtn({ children, onClick, active = false, danger = false, label, disabled }: { children: React.ReactNode; onClick: () => void; active?: boolean; danger?: boolean; label?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
       aria-label={label}
+      disabled={disabled}
       className={`h-11 min-w-14 border px-3 font-display text-base uppercase tracking-wide ${active ? "border-primary bg-primary text-primary-fg" : danger ? "border-red-500 bg-red-950/90 text-red-100" : "border-border bg-surface text-fg"}`}
       onClick={onClick}
     >

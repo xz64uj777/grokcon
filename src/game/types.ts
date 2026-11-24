@@ -337,7 +337,7 @@ export type PriceRow = {
   spots: { pad: PadKind; name: string; price: string; trend: "up" | "down" | "flat"; pct: number }[];
 };
 
-export type ViewModel = HudModel & { mode: "title" | "play"; booksReady: boolean; excDrive: boolean };
+export type ViewModel = HudModel & { mode: "title" | "play"; booksReady: boolean; booksBusy: boolean; saveIssue: "conflict" | "unavailable" | null; excDrive: boolean };
 
 export type GameApi = {
   start: (mode: "continue" | "fresh", company: string) => void;
@@ -379,7 +379,8 @@ export type GameApi = {
   toggleMute: () => void;
   cycle: (dir: number) => void;
   downloadBooks: () => void;
-  importBooks: (text: string) => boolean;
+  inspectBooks: (text: string) => string | null;
+  importBooks: (text: string) => Promise<"saved" | "conflict" | "unavailable" | "invalid">;
   ops: (id: string) => void;
   /** Ripper shank depth from the drag control, 0..1. */
   setRipper: (depth: number) => void;

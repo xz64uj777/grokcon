@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { VehicleId } from "@/game/types";
 import { buyVehicle, freshGame, lotBuy, lotButtons, sellVehicle, step } from "@/game/sim";
-import { currentSaveText, readSaveText, saveGame } from "@/game/save";
+import { exportSave, readSaveText } from "@/game/save";
 import { ops } from "@/game/ops";
 import { addPile } from "@/game/sim/feed";
 import { acceptsJob, pileApproach, pileInReach } from "@/game/sim/jobs";
@@ -73,8 +73,7 @@ test("a plant pile that was already paid does not pay again after reload", () =>
   assert.ok(s.cash > 1000, `dump was not paid: ${s.cash}`);
   const pile = s.deposits.find((d) => d.id.startsWith("feed-") && d.ore === "gold");
   assert.ok(pile && (pile.paidTons ?? 0) > 1, "paid tons were not stored on the pile");
-  saveGame(s, true);
-  const back = readSaveText(currentSaveText()!)!;
+  const back = readSaveText(exportSave(s))!;
   ops(back).story = 99;
   const paid = back.deposits.find((d) => d.id.startsWith("feed-") && d.ore === "gold");
   assert.ok(paid && (paid.paidTons ?? 0) > 1, "paid tons did not survive the save");
