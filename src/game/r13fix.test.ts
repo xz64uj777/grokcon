@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshGame, step, addFeedPile, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice, vehicleStats, nearPileLabel, buildHud } from "@/game/sim";
+import { freshGame, step, addFeedPile, assignCrew, buyVehicle, buyClaim, toggleCrew, YARD_FEED_RATE, YARD_FEED_KEEP, FEED_RATES, plannedPad, basePrice, vehicleStats, nearPileLabel, buildHud, TRUCK_IDLE_SECONDS } from "@/game/sim";
 import { PADS } from "@/game/catalog";
 import { saveGame, currentSaveText, readSaveText } from "@/game/save";
 
@@ -570,6 +570,42 @@ test("dump trucks wait in line instead of crowding one loader", () => {
   assert.ok(sawLine, trucks.map((t) => t.status).join(" | "));
   assert.ok(queuedGap > 8, `queued on top of each other, gap ${queuedGap.toFixed(1)}`);
 });
+
+for (const ore of ["iron", "copper"] as const) {
+  test(`a queued copper truck responds to a stalled load from a loader holding ${ore}`, () => withSeededRandom(123, () => {
+    const s = freshGame("Partial queue");
+    s.cash = 1e6;
+    s.watching = true;
+    assert.equal(buyVehicle(s, "loader"), "");
+    assert.equal(buyVehicle(s, "truck"), "");
+    assert.equal(buyVehicle(s, "truck"), "");
+    const loader = s.vehicles.find((v) => v.defId === "loader")!;
+    const [lead, queued] = s.vehicles.filter((v) => v.defId === "truck");
+    Object.assign(loader, { x: -8, z: 8, cargo: 8, cargoOre: "copper" });
+    Object.assign(lead, { x: 14, z: 8 });
+    Object.assign(queued, { x: 18, z: 14, cargo: 8, cargoOre: "copper" });
+    for (const machine of [loader, lead, queued]) {
+      machine.hired = true;
+      machine.operator = true;
+      assert.equal(assignCrew(s, s.vehicles.indexOf(machine), machine === loader ? "new" : "1"), "");
+    }
+
+    step(s, idle, 1 / 60, true);
+    assert.equal(queued.status, "In line (2)");
+    loader.cargoOre = ore;
+    s.seconds += TRUCK_IDLE_SECONDS + 1;
+    step(s, idle, 1 / 60, true);
+
+    if (ore === "copper") {
+      assert.equal(queued.status, "In line (2)");
+      assert.equal(queued.cargo, 8);
+      return;
+    }
+    assert.match(queued.status, /Hauling to|Dumping at/);
+    for (let i = 0; i < 60 * 30 && queued.cargo > 0.04; i++) step(s, idle, 1 / 60, true);
+    assert.equal(queued.cargo, 0, `the truck never unloaded: ${queued.status}`);
+  }));
+}
 
 test("machines take turns at the wash plant without queuing off the bank", () => {
   const s = freshGame("Wash");
