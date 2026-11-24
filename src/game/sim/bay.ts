@@ -49,7 +49,7 @@ type LoadZone = {
 
 const diggerZone = new WeakMap<VehicleState, LoadZone>();
 
-export const truckSpot = new WeakMap<VehicleState, { gen: number; index: number }>();
+export const truckSpot = new WeakMap<VehicleState, { diggerUid: string; gen: number; index: number }>();
 
 
 const ZONE_HOLD = 20;
@@ -341,7 +341,7 @@ export function spotForTruck(state: GameState, v: VehicleState, digger: VehicleS
   for (const t of lineFor(state, digger)) {
     if (t === v) continue;
     const hold = truckSpot.get(t);
-    if (hold && hold.gen === zone.gen && hold.index < spots.length) used.add(hold.index);
+    if (hold && hold.diggerUid === digger.uid && hold.gen === zone.gen && hold.index < spots.length) used.add(hold.index);
   }
   // Another digger's truck parked on a spot holds it too.
   for (const t of state.vehicles) {
@@ -351,7 +351,7 @@ export function spotForTruck(state: GameState, v: VehicleState, digger: VehicleS
     });
   }
   const hold = truckSpot.get(v);
-  if (hold && hold.gen === zone.gen && hold.index < spots.length && !used.has(hold.index)) return spots[hold.index]!;
+  if (hold && hold.diggerUid === digger.uid && hold.gen === zone.gen && hold.index < spots.length && !used.has(hold.index)) return spots[hold.index]!;
   let bestI = 0;
   let bestS = Infinity;
   const scoreOf = (i: number) => {
@@ -419,7 +419,7 @@ export function spotForTruck(state: GameState, v: VehicleState, digger: VehicleS
       }
     }
   }
-  truckSpot.set(v, { gen: zone.gen, index: bestI });
+  truckSpot.set(v, { diggerUid: digger.uid, gen: zone.gen, index: bestI });
   return spots[bestI]!;
 }
 

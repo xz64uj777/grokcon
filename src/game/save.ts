@@ -57,6 +57,7 @@ function sanitize(raw: unknown): GameState | null {
   state.washPlant = o.washPlant === true;
   state.wet = num(o.wet, 0, 0, 1);
   state.muted = o.muted === true;
+  state.watching = o.watching === true;
   state.pileSeq = Math.round(num(o.pileSeq, 1, 1, 1e7));
   state.controlMode = o.controlMode === "simple" ? "simple" : "real";
   state.explosives = Math.round(num(o.explosives, 0, 0, 99));
@@ -214,7 +215,7 @@ function sanitize(raw: unknown): GameState | null {
         x: posX(s.x, 0),
         z: posZ(s.z, s.x, 0),
         regen: 0,
-        claim: homeClaim(areaOf(typeof s.x === "number" ? s.x : 0)),
+        claim: CLAIMS.find((claim) => claim.id === s.claim)?.id ?? homeClaim(areaOf(typeof s.x === "number" ? s.x : 0)),
         radius: 6,
         sign: s.id.startsWith("feed-") ? "FEED" : "PILE",
         purity: num(s.purity, 1, 0.3, 1),

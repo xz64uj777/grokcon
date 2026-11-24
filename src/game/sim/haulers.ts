@@ -359,9 +359,9 @@ export function lineFor(state: GameState, digger: VehicleState) {
 export function diggerForTruck(state: GameState, v: VehicleState) {
   const job = peekCrewJob(state, v);
   if (job?.role === "truck") {
-    const digger = state.vehicles.find(
-      (o) => job.partnerUids.includes(o.uid) && isPlanDigger(o.defId) && (o.operator || handsOn(state, o)) && heavyReaches(v, o),
-    );
+    const digger = job.partnerUids
+      .map((uid) => state.vehicles.find((o) => o.uid === uid))
+      .find((o) => o && isPlanDigger(o.defId) && (o.operator || handsOn(state, o)) && sameArea(v, o) && heavyReaches(v, o));
     if (digger) {
       truckPartner.set(v, digger.uid);
       if (!lineTicket.has(v)) lineTicket.set(v, nextLineTicket());
