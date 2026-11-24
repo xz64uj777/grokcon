@@ -300,8 +300,18 @@ export function aiControl(state: GameState, index: number): Control {
     }
   } else if (def.receives) {
     if (v.cargo < 0.15) dumpAnyway.delete(v);
-    // A part load goes in after a long idle, or when no digger can top it up.
-    const stale = cap > 0 && v.cargo > 0.4 && (dumpAnyway.has(v) || (idleFor(state, v) > TRUCK_IDLE_SECONDS && !/^In line/.test(v.status)));
+    // A truck can wait in line for a matching load. If the assigned loader
+    // has switched ores, let the truck sell the partial load after the timeout.
+    let stale = false;
+    if (cap > 0 && v.cargo > 0.4) {
+      stale = dumpAnyway.has(v);
+      if (!stale && idleFor(state, v) > TRUCK_IDLE_SECONDS) {
+        const partnerUid = truckPartner.get(v);
+        const partner = state.vehicles.find((candidate) => candidate.uid === partnerUid);
+        const canTopUp = !partner?.cargoOre || partner.cargoOre === v.cargoOre;
+        stale = !v.status.startsWith("In line") || !canTopUp;
+      }
+    }
     const leave = cap > 0 && (v.cargo >= cap * 0.9 || stale);
     if (leave && v.cargoOre) {
       lineTicket.delete(v);
