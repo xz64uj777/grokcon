@@ -74,7 +74,7 @@ function collectCrewJobs(state: GameState): PlanJob[] {
     if (d.kind === "pile" && d.id.startsWith("feed-")) continue;
     const crumb = d.kind === "pile" && d.tons >= CRUMB_TONS && d.tons < PILE_JOB_TONS;
     const pile = d.kind === "pile" && d.tons >= PILE_JOB_TONS;
-    const vein = d.kind === "vein" && d.tons >= 0.5;
+    const vein = d.kind === "vein";
     if (!crumb && !pile && !vein) continue;
     const pad = bestPad(state, d.ore, d.x, d.z);
     if (!pad) continue;
@@ -158,7 +158,7 @@ function manualsFromState(state: GameState): ManualCrew[] {
         else destName = pad.name;
       }
       let sourceId = c.sourceId;
-      if (sourceId && !state.deposits.some((d) => d.id === sourceId && d.tons >= 0.4 && ownsClaim(state, d.claim))) {
+      if (sourceId && !state.deposits.some((d) => d.id === sourceId && (d.kind === "vein" || d.tons >= 0.4) && ownsClaim(state, d.claim))) {
         sourceId = null;
       }
       return { id: c.id, memberUids, sourceId, destKind, destName };
@@ -258,7 +258,7 @@ export function teamSourceOptions(state: GameState, area: AreaId) {
   for (const d of state.deposits) {
     if (!ownsClaim(state, d.claim) || areaOf(d.x) !== area) continue;
     if (d.kind === "pile" && (d.id.startsWith("feed-") || d.tons < 0.4)) continue;
-    if (d.kind === "vein" && d.tons < 0.5) continue;
+    if (d.kind === "vein" && d.tons < 0.5 && !state.crews.some((crew) => crew.sourceId === d.id)) continue;
     const place = CLAIMS.find((c) => c.id === d.claim)?.name ?? prettySign(d.sign);
     const what = d.kind === "vein" ? prettySign(d.sign) : `${d.tons >= 1 ? d.tons.toFixed(0) : d.tons.toFixed(1)} t ${ORES[d.ore].name}`;
     options.push({ value: d.id, label: `${what} · ${place}` });
@@ -416,6 +416,7 @@ function sourcesGone(state: GameState, jobs: Map<string, CrewAssignment>) {
   for (const a of jobs.values()) {
     if (!a.sourceId) continue;
     const d = state.deposits.find((o) => o.id === a.sourceId);
+    if (d?.kind === "vein" && state.crews.some((crew) => crew.id === a.team && crew.sourceId === d.id)) continue;
     if (!jobStillValid(a.jobKind, d?.tons ?? null)) return true;
   }
   return false;
@@ -508,6 +509,10 @@ export function crewDisplayStatus(state: GameState, v: VehicleState) {
   }
   if (/Waiting for (a ready dump truck|the heavy haul|truck)/.test(status) && job.team) {
     return `Team ${job.team}: waiting for truck`;
+  }
+  if (job.jobKind === "vein" && state.crews.some((crew) => crew.id === job.team && crew.sourceId === job.sourceId)) {
+    const source = state.deposits.find((d) => d.id === job.sourceId);
+    if (source && source.tons < 0.5) return `Team ${job.team}: waiting at ${job.claimName} · face depleted`;
   }
   if (job.sourceId && job.label) return job.label;
   if (!job.sourceId && job.label && /^(Looking for work|Needs a payloader|Waiting for|Face is dug|No material|No face)/.test(status)) {

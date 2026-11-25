@@ -295,3 +295,30 @@ test("a river heavy keeps the payloader free to visit, without moving it onto th
   assert.ok(loaderJob.sourceId !== "east-bar", `payloader was permanently retargeted to ${loaderJob.sourceId}`);
   assert.equal(new Set(dumpTeams).size, 2, `both dump trucks went to one team: T1=${dumpTeams[0]} T2=${dumpTeams[1]}`);
 });
+
+test("an idle skid picks an unassigned small pile ahead of a new face", () => {
+  const machines = [machine("L1", "loader", -70, 22), machine("T1", "truck", -50, 22), machine("S1", "skid", 42, 48)];
+  const jobs = [
+    job("gold-stock", "pile", "gold", 400, -72, 20),
+    job("dirt-by-diesel", "pile", "dirt", 4, 44, 48),
+    job("dirt-by-bench", "pile", "dirt", 3.6, -35, 30),
+    job("gold-face", "vein", "gold", 170, -80, 16),
+  ];
+  const manuals = [{ id: 1, memberUids: ["L1", "T1"], sourceId: "gold-stock", destKind: null, destName: null }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("S1")?.sourceId, "dirt-by-diesel");
+  assert.equal(plan.get("S1")?.jobKind, "crumb");
+  assert.equal(plan.get("L1")?.sourceId, "gold-stock");
+});
+
+test("a team pinned to a temporarily depleted Gold Creek face does not switch to South yard", () => {
+  const machines = [machine("L1", "loader", 0, 0), machine("T1", "truck", 6, 0)];
+  const jobs = [
+    job("gold", "vein", "gold", 0, -80, 16, { claim: 3 }),
+    job("yard-gold", "pile", "gold", 40, 6, 0),
+  ];
+  const manuals = [{ id: 2, memberUids: ["L1", "T1"], sourceId: "gold", destKind: null, destName: null }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")?.sourceId, "gold");
+  assert.equal(plan.get("T1")?.sourceId, "gold");
+});

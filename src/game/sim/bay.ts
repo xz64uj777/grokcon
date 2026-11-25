@@ -61,7 +61,7 @@ const SPOT_GAP = 13;
 
 function workAnchor(state: GameState, digger: VehicleState) {
   const planned = plannedDeposit(state, digger);
-  if (planned && planned.tons > 0.2) {
+  if (planned && (planned.kind === "vein" || planned.tons > 0.2)) {
     if (planned.kind === "pile") {
       const spot = pileApproach(state, digger, planned);
       return { id: planned.id, standX: spot.x, standZ: spot.z, keepX: planned.x, keepZ: planned.z };
@@ -252,7 +252,8 @@ export function loadingZone(state: GameState, digger: VehicleState): LoadZone {
   const prev = diggerZone.get(digger);
   // DRAFT: a digger that has settled on another face out of pour reach takes its bay with it.
   const leftZone = !!prev && Math.abs(digger.speed) < 0.5 && distTo(digger.x, digger.z, prev.standX, prev.standZ) > pourReach(digger.defId);
-  if (prev && prev.spots.length > 0 && !leftZone) {
+  const changedPinnedSource = state.crews.some((crew) => crew.id === digger.crewId && crew.sourceId === a.id && crew.sourceId !== prev?.sourceId);
+  if (prev && prev.spots.length > 0 && !leftZone && !changedPinnedSource) {
     const drifted = Math.hypot(prev.ax - a.standX, prev.az - a.standZ);
     if (drifted < ZONE_HOLD) return prev;
     // The spots belong to this face while it still has ore. They move when

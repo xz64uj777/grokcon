@@ -13,6 +13,7 @@ import {
   buildHud,
   sellVehicle,
 } from "@/game/sim";
+import { loadingZone } from "@/game/sim/bay";
 import { readSaveText } from "@/game/save";
 
 const idle = { throttle: 0, steer: 0, action: false };
@@ -203,4 +204,22 @@ test("a second New team gets the next free number", () => {
   assert.equal(assignCrew(s, s.vehicles.indexOf(b), "new"), "");
   assert.equal(a.crewId, 1);
   assert.equal(b.crewId, 2);
+});
+
+test("changing the selected source sends the loading bay to Gold Creek even while the face replenishes", () => {
+  const s = freshGame("Pinned Gold Creek");
+  s.cash = 1_000_000;
+  s.watching = true;
+  s.claims = [1, 3];
+  const loader = hireAt(s, "loader", -12, 22);
+  const truck = hireAt(s, "truck", 10, 32);
+  assert.equal(assignCrew(s, s.vehicles.indexOf(loader), "new"), "");
+  assert.equal(assignCrew(s, s.vehicles.indexOf(truck), "1"), "");
+  assert.equal(setCrewSource(s, 1, "starter"), "");
+  assert.equal(loadingZone(s, loader).sourceId, "starter");
+
+  s.deposits.find((d) => d.id === "gold")!.tons = 0;
+  assert.equal(setCrewSource(s, 1, "gold"), "");
+  assert.equal(crewAssignment(s, truck)?.sourceId, "gold");
+  assert.equal(loadingZone(s, loader).sourceId, "gold");
 });

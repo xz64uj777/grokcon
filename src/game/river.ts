@@ -145,6 +145,13 @@ export function inRiver(x: number, z: number) {
   return Math.abs(x - RIVER.x) < RIVER.halfWidth && !onBridge(x, z) && !bridgeLane(x, z);
 }
 
+/** Put loose spills on the nearest bank, keeping the bridge deck unchanged. */
+export function loosePileX(x: number, z: number) {
+  if (!inRiver(x, z)) return x;
+  const bank = x < RIVER.x ? -1 : 1;
+  return RIVER.x + bank * (RIVER.halfWidth + 2);
+}
+
 /** Soft ground. Each zone is an ellipse; depth fades to 0 at the edge. */
 export type MudZone = { x: number; z: number; rx: number; rz: number; depth: number; flood?: boolean };
 
