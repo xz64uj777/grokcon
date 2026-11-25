@@ -9,6 +9,8 @@ import {
   assignCrew,
   setCrewSource,
   setCrewDest,
+  sourceOptions,
+  teamSourceOptions,
   crewAssignment,
   buildHud,
   sellVehicle,
@@ -222,4 +224,15 @@ test("changing the selected source sends the loading bay to Gold Creek even whil
   assert.equal(setCrewSource(s, 1, "gold"), "");
   assert.equal(crewAssignment(s, truck)?.sourceId, "gold");
   assert.equal(loadingZone(s, loader).sourceId, "gold");
+});
+
+test("leased work sources include Gold Gravel Face even if it is depleted", () => {
+  const state = freshGame("Ridge faces");
+  const gold = state.deposits.find((d) => d.id === "gold")!;
+  gold.tons = 0;
+  assert.ok(!sourceOptions(state, "ridge").some((option) => option.value === "face:gold"));
+  state.claims.push(3);
+  assert.ok(sourceOptions(state, "ridge").some((option) => option.value === "face:gold" && option.label.startsWith("Gold Gravel Face ·")));
+  assert.ok(teamSourceOptions(state, "ridge").some((option) => option.value === "gold" && option.label.startsWith("Gold Gravel Face ·")));
+  assert.ok(!sourceOptions(state, "river").some((option) => option.value === "face:gold"));
 });
