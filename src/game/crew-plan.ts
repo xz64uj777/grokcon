@@ -5,6 +5,8 @@ import { RIVER } from "@/game/river";
 export const PILE_JOB_TONS = 1.5;
 /** Small leftovers a skid steer should clear. */
 export const CRUMB_TONS = 0.4;
+
+const SKID_CLEANUP_LIMIT = 8;
 /** A face still worth a team until it is effectively dug out. */
 export const VEIN_JOB_TONS = 0.5;
 /** Max dump trucks (or heavies) on one digger. */
@@ -473,9 +475,17 @@ export function planCrewJobs(
         if (held && held.kind === "crumb" && jobStillValid(held.kind, held.tons) && allowedJob(s, held)) job = held;
       }
       if (!job) job = crumbs.find((j) => !takenCrumbs.has(j.id) && allowedJob(s, j));
+      if (!job) {
+        const smallPiles = areaJobs.filter((j) =>
+          j.kind === "pile" && j.tons < SKID_CLEANUP_LIMIT && !takenJobs.has(j.id) &&
+          !takenCrumbs.has(j.id) && allowedJob(s, j),
+        );
+        smallPiles.sort((a, b) => dist(s, a) - dist(s, b));
+        job = smallPiles[0];
+      }
       if (job) {
         takenCrumbs.add(job.id);
-        result.set(s.uid, assignment(0, "skid", job, [], s.uid));
+        result.set(s.uid, assignment(0, "skid", { ...job, kind: "crumb" }, [], s.uid));
         continue;
       }
       // No crumb to sweep: a skid can self-haul a leftover face, such as a river bar.

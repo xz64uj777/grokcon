@@ -1,7 +1,7 @@
 import { PRICES as OPS_PRICES, applyRipped, readOps } from "@/game/ops";
 import { CLAIMS, DEFS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
 import { onHaulRoad } from "@/game/lowboy";
-import { WASH_PLANT, areaOf } from "@/game/river";
+import { WASH_PLANT, areaOf, loosePileX } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
 import { MARKET_KEYS, ensureLowboy, freshGame, homeClaim } from "@/game/sim";
@@ -206,14 +206,16 @@ function sanitize(raw: unknown): GameState | null {
       if (state.deposits.some((d) => d.id === s.id)) continue;
       if (s.kind !== "pile") continue;
       if (typeof s.ore !== "string" || !isOreId(s.ore)) continue;
+      const x = posX(s.x, 0);
+      const z = posZ(s.z, s.x, 0);
       const pile: Deposit = {
         id: s.id.slice(0, 40),
         kind: "pile",
         ore: s.ore,
         tons: num(s.tons, 0, 0, 2000),
         max: num(s.max, 1, 0, 2000),
-        x: posX(s.x, 0),
-        z: posZ(s.z, s.x, 0),
+        x: s.id.startsWith("feed-") ? x : loosePileX(x, z),
+        z,
         regen: 0,
         claim: CLAIMS.find((claim) => claim.id === s.claim)?.id ?? homeClaim(areaOf(typeof s.x === "number" ? s.x : 0)),
         radius: 6,

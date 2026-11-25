@@ -16,7 +16,7 @@ import { TRUCK_IDLE_SECONDS, cargoInto, diggerAboutToFill, diggerForTruck, dropI
 import { BAY_YIELD_BUSY_SECONDS, BAY_YIELD_SECONDS, bayCommit, bayReady, enterBay, jobStand, loaderStand, loadingZone, parkInPour, safeWaitSpot, spotForTruck, truckSpot } from "./bay.ts";
 import { dumpAnyway, plantQueue, plantTicket, washQueuePlace } from "./plants.ts";
 import { benchBetween, fuelPoint, lowboyDrive, noseBlocked, seek, topped } from "./motion.ts";
-import { plannedDeposit, plannedPadFor, teamHasTruck } from "./crew.ts";
+import { peekCrewJob, plannedDeposit, plannedPadFor, teamHasTruck } from "./crew.ts";
 
 export const saleAcc = new WeakMap<VehicleState, number>();
 
@@ -219,7 +219,7 @@ export function aiControl(state: GameState, index: number): Control {
   } else if (def.dig > 0) {
     const aid = !full ? loaderToOrphanHeavy(state, v) : null;
     if (aid) return aid;
-    if (def.id === "skid" && full && v.cargoOre && loaderInArea(state, v)) {
+    if (def.id === "skid" && full && v.cargoOre && peekCrewJob(state, v)?.jobKind !== "crumb" && loaderInArea(state, v)) {
       const src = bestVein(state, v, v.cargoOre) ?? bestPile(state, v) ?? { x: v.x, z: v.z };
       const spot = stockSpot(v, src);
       if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
@@ -283,7 +283,8 @@ export function aiControl(state: GameState, index: number): Control {
       v.status = `Heading to ${job}`;
       return seek(v, cut.x, cut.z, 2.2);
     }
-    if (v.cargo > 0.25 && v.cargoOre) haulTarget();
+    const cleanupPile = def.id === "skid" && peekCrewJob(state, v)?.jobKind === "crumb" ? plannedDeposit(state, v) : null;
+    if (v.cargo > 0.25 && v.cargoOre && cleanupPile?.ore !== v.cargoOre) haulTarget();
     else {
       const pile = bestPile(state, v);
       if (pile) {
@@ -667,7 +668,7 @@ export function performAction(
       }
     }
     if (opts.phase === "dump") return null;
-    if (!player && v.defId === "skid" && v.cargoOre && st.capacity > 0 && v.cargo >= st.capacity * 0.85 && loaderInArea(state, v)) {
+    if (!player && v.defId === "skid" && v.cargoOre && st.capacity > 0 && v.cargo >= st.capacity * 0.85 && peekCrewJob(state, v)?.jobKind !== "crumb" && loaderInArea(state, v)) {
       const spot = stockLatch.get(v);
       if (spot && distTo(v.x, v.z, spot.x, spot.z) < 4.5) {
         addPile(state, v.cargoOre, v.cargo, spot.x, spot.z, v.workClaim ?? 1, v.cargoPurity ?? 1);

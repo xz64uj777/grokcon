@@ -2,7 +2,7 @@
 
 import * as Ops from "@/game/ops";
 import { CREW_KEEP, ORES, PADS, formatMoney } from "@/game/catalog";
-import { areaOf, otherBank } from "@/game/river";
+import { areaOf, loosePileX, otherBank } from "@/game/river";
 import { recordSale } from "@/game/market";
 import { mixPurity, purityFactor } from "@/game/mining";
 import type { Deposit, GameState, OreId, PadKind, VehicleId, VehicleState } from "@/game/types";
@@ -273,12 +273,13 @@ export function feedJob(state: GameState, v: VehicleState): Control | null {
 
 export function addPile(state: GameState, ore: OreId, tons: number, x: number, z: number, claim = 1, purity = 1) {
   if (tons <= 0) return;
+  x = loosePileX(x, z);
   let best: Deposit | null = null;
   let bestD = 16;
   for (const d of state.deposits) {
     if (d.kind !== "pile" || d.ore !== ore || d.id.startsWith("feed-") || d.id === "slide-gap") continue;
     // Only blend material dropped in the same claim; never drag a heap across the map.
-    if (d.claim !== claim || areaOf(d.x) !== areaOf(x)) continue;
+    if (d.claim !== claim || areaOf(d.x) !== areaOf(x) || otherBank(d.x, x)) continue;
     const dist = distTo(x, z, d.x, d.z);
     if (dist < bestD) {
       bestD = dist;
@@ -292,6 +293,7 @@ export function addPile(state: GameState, ore: OreId, tons: number, x: number, z
     best.purity = mixPurity(best.tons, best.purity ?? 1, tons, purity);
     best.x = (best.x * best.tons + x * tons) / t;
     best.z = (best.z * best.tons + z * tons) / t;
+    best.x = loosePileX(best.x, best.z);
     best.tons = t;
     best.max = Math.max(best.max, t);
     if (best.id !== "starter" && claim !== 1) best.claim = claim;

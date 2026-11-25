@@ -158,3 +158,22 @@ test("regression: manual Work button scoops a loose pile even without a curl ges
   assert.ok(v.cargo > 0, "holding Work did not scoop the iron pile");
   assert.equal(v.cargoOre, "iron");
 });
+
+test("new spills and old saved stockpiles in the river are reachable from the bank", () => {
+  const state = freshGame("River spill");
+  const x = 1000.8;
+  const z = 36;
+  addPile(state, "dirt", 6.2, x, z, 5);
+  const pile = state.deposits.at(-1)!;
+  assert.ok(pile.x >= 1007);
+  const draft = JSON.parse(exportSave(state));
+  Object.assign(draft.deposits.at(-1), { x, z });
+  const restored = readSaveText(JSON.stringify(draft))!;
+  const saved = restored.deposits.find((d) => d.id === pile.id)!;
+  assert.equal(saved.x, pile.x);
+  assert.equal(saved.tons, 6.2);
+  assert.equal(saved.claim, 5);
+  const loader = makeVehicle("loader", 0);
+  Object.assign(loader, { x: 1012, z });
+  assert.equal(pileInReach(restored, loader)?.id, saved.id);
+});
