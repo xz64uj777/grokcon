@@ -223,7 +223,7 @@ export function planCrewJobs(
       let job: PlanJob | null = null;
       if (crew.sourceId) {
         const wanted = jobById.get(crew.sourceId);
-        if (wanted && jobStillValid(wanted.kind, wanted.tons) && wanted.area === members[0].area) {
+        if (wanted && (wanted.kind === "vein" || jobStillValid(wanted.kind, wanted.tons)) && wanted.area === members[0].area) {
           job = withDest(wanted, crew);
         }
       }

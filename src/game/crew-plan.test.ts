@@ -310,3 +310,15 @@ test("an idle skid picks an unassigned small pile ahead of a new face", () => {
   assert.equal(plan.get("S1")?.jobKind, "crumb");
   assert.equal(plan.get("L1")?.sourceId, "gold-stock");
 });
+
+test("a team pinned to a temporarily depleted Gold Creek face does not switch to South yard", () => {
+  const machines = [machine("L1", "loader", 0, 0), machine("T1", "truck", 6, 0)];
+  const jobs = [
+    job("gold", "vein", "gold", 0, -80, 16, { claim: 3 }),
+    job("yard-gold", "pile", "gold", 40, 6, 0),
+  ];
+  const manuals = [{ id: 2, memberUids: ["L1", "T1"], sourceId: "gold", destKind: null, destName: null }];
+  const plan = planCrewJobs(machines, jobs, null, manuals);
+  assert.equal(plan.get("L1")?.sourceId, "gold");
+  assert.equal(plan.get("T1")?.sourceId, "gold");
+});
