@@ -258,7 +258,6 @@ export function teamSourceOptions(state: GameState, area: AreaId) {
   for (const d of state.deposits) {
     if (!ownsClaim(state, d.claim) || areaOf(d.x) !== area) continue;
     if (d.kind === "pile" && (d.id.startsWith("feed-") || d.tons < 0.4)) continue;
-    if (d.kind === "vein" && d.tons < 0.5 && !state.crews.some((crew) => crew.sourceId === d.id)) continue;
     const place = CLAIMS.find((c) => c.id === d.claim)?.name ?? prettySign(d.sign);
     const what = d.kind === "vein" ? prettySign(d.sign) : `${d.tons >= 1 ? d.tons.toFixed(0) : d.tons.toFixed(1)} t ${ORES[d.ore].name}`;
     options.push({ value: d.id, label: `${what} · ${place}` });

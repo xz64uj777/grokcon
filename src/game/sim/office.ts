@@ -313,11 +313,11 @@ export function sourceOptions(state: GameState, area: AreaId, defId?: string) {
     if (claimArea !== area && !(claimArea === "mountain" && mountainOpen(state))) continue;
     options.push({ value: String(c.id), label: `${c.name} · ${areaName(claimArea)}` });
   }
-  if (mountainOpen(state)) {
-    for (const d of state.deposits) {
-      if (d.kind !== "vein" || d.claim !== MOUNTAIN_CLAIM) continue;
-      options.push({ value: `face:${d.id}`, label: `${prettySign(d.sign)} · ${areaName(areaOf(d.x))}` });
-    }
+  for (const d of state.deposits) {
+    if (d.kind !== "vein" || !ownsClaim(state, d.claim)) continue;
+    const faceArea = areaOf(d.x);
+    if (faceArea !== area && !(d.claim === MOUNTAIN_CLAIM && mountainOpen(state))) continue;
+    options.push({ value: `face:${d.id}`, label: `${prettySign(d.sign)} · ${areaName(faceArea)}` });
   }
   return options;
 }
