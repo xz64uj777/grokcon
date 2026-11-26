@@ -245,8 +245,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
       } else if (source.startsWith("face:")) {
         const face = state.deposits.find((d) => d.id === source.slice(5));
         if (!face || !state.claims.includes(face.claim)) return;
+        if (face.kind === "pile") {
+          if (v.crewId != null) assignVehicleCrew(state, index, "auto");
+          v.feederPad = null;
+        }
         v.workFace = face.id;
-        v.workClaim = face.claim;
+        v.workClaim = face.kind === "vein" ? face.claim : null;
         v.status = `Assigned to ${face.sign}`;
       } else {
         const claim = Number(source);

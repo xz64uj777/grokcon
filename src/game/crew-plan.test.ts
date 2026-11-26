@@ -322,3 +322,15 @@ test("a team pinned to a temporarily depleted Gold Creek face does not switch to
   assert.equal(plan.get("L1")?.sourceId, "gold");
   assert.equal(plan.get("T1")?.sourceId, "gold");
 });
+
+test("a starter skid picks the gate iron pile before opening the dirt face", () => {
+  const machines = [machine("S", "skid", 5, 40)];
+  const jobs = [job("starter", "pile", "iron", 40, -2, 22), job("dirt", "vein", "dirt", 520, 16, 36)];
+  const plan = planCrewJobs(machines, jobs, null);
+  assert.equal(plan.get("S")?.sourceId, "starter");
+  assert.equal(plan.get("S")?.destKind, "crusher");
+
+  const loaderPlan = planCrewJobs([...machines, machine("L", "loader", 0, 24)], jobs, null);
+  assert.equal(loaderPlan.get("L")?.sourceId, "starter");
+  assert.equal(loaderPlan.get("S")?.sourceId, "dirt");
+});
