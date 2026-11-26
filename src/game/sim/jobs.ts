@@ -74,10 +74,18 @@ export function facePin(state: GameState, v: VehicleState): Deposit | null {
 }
 
 
+export function pilePin(state: GameState, v: VehicleState) {
+  if (!v.workFace) return undefined;
+  return state.deposits.find((d) => d.id === v.workFace && d.kind === "pile" && d.tons >= 0.4 &&
+    !d.id.startsWith("feed-") && sameArea(d, v) && ownsClaim(state, d.claim));
+}
+
 export function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
   // Crew work orders must never prevent a seated player working nearby material.
   // Ownership is still checked when taking material from a face or pile.
   if (handsOn(state, v)) return true;
+  const loose = pilePin(state, v);
+  if (loose) return d.id === loose.id;
   const pin = facePin(state, v);
   if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;

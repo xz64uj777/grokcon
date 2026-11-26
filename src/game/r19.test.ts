@@ -236,3 +236,28 @@ test("leased work sources include Gold Gravel Face even if it is depleted", () =
   assert.ok(teamSourceOptions(state, "ridge").some((option) => option.value === "gold" && option.label.startsWith("Gold Gravel Face ·")));
   assert.ok(!sourceOptions(state, "river").some((option) => option.value === "face:gold"));
 });
+
+test("numbered skids can be sent to different numbered piles after reload", async () => {
+  const { addPile } = await import("@/game/sim/feed");
+  const { exportSave } = await import("@/game/save");
+  const state = freshGame("Separate pile orders");
+  state.cash = 1_000_000;
+  state.watching = true;
+  const first = hireAt(state, "skid", 36, 42);
+  const second = hireAt(state, "skid", -35, 22);
+  addPile(state, "dirt", 4, 39, 42);
+  const dirt = state.deposits.at(-1)!;
+  first.workFace = dirt.id;
+  second.workFace = "starter";
+
+  const restored = readSaveText(exportSave(state))!;
+  const skids = restored.vehicles.filter((vehicle) => vehicle.defId === "skid");
+  const cards = buildHud(restored, true).crew.filter((card) => card.name.startsWith("Skid steer"));
+  assert.deepEqual(cards.map((card) => card.name), ["Skid steer #1", "Skid steer #2"]);
+  assert.ok(cards[0]?.sources.some((source) => source.value === `face:${dirt.id}` && source.label.startsWith("Pile #")));
+  assert.ok(cards[1]?.sources.some((source) => source.value === "face:starter" && source.label.startsWith("Iron Pile")));
+  assert.equal(crewAssignment(restored, skids[0])?.sourceId, dirt.id);
+  assert.equal(crewAssignment(restored, skids[1])?.sourceId, "starter");
+  restored.vehicles.splice(restored.vehicles.indexOf(skids[0]), 1);
+  assert.ok(buildHud(restored, true).crew.some((card) => card.name === "Skid steer #2"));
+});

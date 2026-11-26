@@ -13,7 +13,7 @@ import { BLAST_RADIUS, canBlastToday, DRILL_SECONDS, BORE_SECONDS, blastYield, r
 import type { AreaId } from "@/game/river";
 import type { ControlMode, Deposit, GameState, HudModel, OreId, UpgradeKind, VehicleId, VehicleState } from "@/game/types";
 import { basePrice, unitPrice } from "./economy.ts";
-import { areaName, claimAreaOf, clamp, closestDeposit, closestFace, currentArea, distTo, haulFee, haulTarget, log, mountainOpen, mountainUnlockable, nearestPad, owns, ownsClaim, padOpen, prettySign, sameArea, valleyOpen, vehicleStats } from "./world.ts";
+import { areaName, claimAreaOf, clamp, closestDeposit, closestFace, currentArea, distTo, haulFee, haulTarget, log, mountainOpen, mountainUnlockable, nearestPad, numberFleet, owns, ownsClaim, padOpen, pileName, prettySign, sameArea, valleyOpen, vehicleName, vehicleStats } from "./world.ts";
 import { dirtToSluice, faceNearPlayer, prefersSluice, prefersWash } from "./jobs.ts";
 import { nearestHauler, truckNear } from "./haulers.ts";
 import { crossingWeight, lowboyDest } from "./motion.ts";
@@ -203,7 +203,7 @@ export function nearPileLabel(state: GameState, v: VehicleState) {
     ? prepaid >= best.tons - 0.05
       ? `Plant inventory (paid, clears automatically) · ${tons} t`
       : `Plant feed (processing) · ${tons} t`
-    : `${prettySign(best.sign)} · ${tons} t`;
+    : `${pileName(best)} · ${tons} t`;
 }
 
 
@@ -250,6 +250,7 @@ function blastLabel(state: GameState) {
 
 
 export function buildHud(state: GameState, hadSave: boolean, excDrive = false): HudModel {
+  numberFleet(state);
   const v = state.vehicles[state.active];
   const info = tierInfo(state.lifetime);
   const st = v ? vehicleStats(v) : null;
@@ -302,9 +303,10 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       { kind: "body", label: def.bodyLabel },
       { kind: "hydro", label: "Hydraulics" },
     ];
+    const sources = sourceOptions(state, area, veh.defId);
     return {
       index,
-      name: def.name,
+      name: vehicleName(state, veh),
       area,
       where: onDeck ? "On the lowboy" : onHaulRoad(veh.x, veh.z) && !inDropYard(veh.x, veh.z) ? "On the north road" : "",
       status: index === state.active && !state.watching ? "In your seat" : veh.operator ? crewDisplayStatus(state, veh) : "Parked",
@@ -315,8 +317,9 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       workClaim: veh.workClaim ?? null,
       workSource: veh.defId === "lowboy"
         ? lowboyDest(veh) ? `map:${lowboyDest(veh)}` : "any"
-        : veh.workFace ? `face:${veh.workFace}` : veh.workClaim != null ? String(veh.workClaim) : "any",
-      sources: sourceOptions(state, area, veh.defId),
+        : veh.workFace && sources.some((option) => option.value === `face:${veh.workFace}`)
+          ? `face:${veh.workFace}` : veh.workClaim != null ? String(veh.workClaim) : "any",
+      sources,
       crewValue: veh.crewId != null ? String(veh.crewId) : "auto",
       crewOptions: crewSelectOptions(state, veh),
       feederValue: veh.feederPad && padOpen(state, veh.feederPad) ? veh.feederPad : "auto",
@@ -381,7 +384,7 @@ export function buildHud(state: GameState, hadSave: boolean, excDrive = false): 
       ? "You stepped out. On-duty operators keep working. Tap a machine to watch it, or Sit to drive."
       : realHint(state) ?? hint(state),
     objective: objective(state),
-    vehicleName: v ? DEFS[v.defId].name : "—",
+    vehicleName: v ? vehicleName(state, v) : "—",
     vehicleIndex: state.active,
     vehicleCount: state.vehicles.length,
     speedLabel: `${Math.round(Math.abs(v?.speed ?? 0) * 2.15)} mph`,

@@ -25,6 +25,7 @@ export type PlanMachine = {
   cargoOre: OreId | null;
   workClaim: number | null;
   workFace: string | null;
+  workPile?: string;
   crewId?: number | null;
 };
 
@@ -91,6 +92,7 @@ function dumpCount(team: Team) {
 function allowedJob(m: PlanMachine, j: PlanJob) {
   if (m.area !== j.area) return false;
   if (m.workClaim != null && j.claim !== m.workClaim) return false;
+  if (m.workPile && j.id !== m.workPile) return false;
   if (m.workFace && j.kind === "vein" && j.id !== m.workFace) return false;
   return true;
 }
@@ -469,8 +471,8 @@ export function planCrewJobs(
     for (const s of skids) {
       if (result.has(s.uid) || s.crewId) continue;
       const prevA = prev?.get(s.uid);
-      let job: PlanJob | undefined;
-      if (prevA?.role === "skid" && prevA.sourceId) {
+      let job = s.workPile ? jobById.get(s.workPile) : undefined;
+      if (!job && prevA?.role === "skid" && prevA.sourceId) {
         const held = jobById.get(prevA.sourceId);
         if (held && held.kind === "crumb" && jobStillValid(held.kind, held.tons) && allowedJob(s, held)) job = held;
       }
@@ -482,6 +484,11 @@ export function planCrewJobs(
         );
         smallPiles.sort((a, b) => dist(s, a) - dist(s, b));
         job = smallPiles[0];
+      }
+      if (!job && diggers.length === 0) {
+        const starter = jobById.get("starter");
+        if (starter && jobStillValid(starter.kind, starter.tons) && allowedJob(s, starter) &&
+            !takenJobs.has(starter.id) && !takenCrumbs.has(starter.id)) job = starter;
       }
       if (job) {
         takenCrumbs.add(job.id);

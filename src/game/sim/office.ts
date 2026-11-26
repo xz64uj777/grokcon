@@ -11,7 +11,7 @@ import { repairCost } from "@/game/mining";
 import type { AreaId } from "@/game/river";
 import type { ControlMode, GameState, UpgradeKind, VehicleId, VehicleState } from "@/game/types";
 import { repriceContract } from "./economy.ts";
-import { areaName, claimAreaOf, currentArea, distTo, haulFee, haulTarget, hypot, log, makeVehicle, mountainOpen, mountainUnlockable, ownsClaim, prettySign, valleyOpen, vehicleStats } from "./world.ts";
+import { areaName, claimAreaOf, currentArea, distTo, haulFee, haulTarget, hypot, log, makeVehicle, mountainOpen, mountainUnlockable, ownsClaim, pileName, prettySign, valleyOpen, vehicleStats } from "./world.ts";
 import { bindDeck, hitsBlock, pointBlocked, snapDeck } from "./motion.ts";
 import { pruneCrews } from "./crew.ts";
 import { addPile } from "./feed.ts";
@@ -314,7 +314,15 @@ export function sourceOptions(state: GameState, area: AreaId, defId?: string) {
     options.push({ value: String(c.id), label: `${c.name} · ${areaName(claimArea)}` });
   }
   for (const d of state.deposits) {
-    if (d.kind !== "vein" || !ownsClaim(state, d.claim)) continue;
+    if (!ownsClaim(state, d.claim)) continue;
+    if (d.kind === "pile") {
+      const minimum = defId === "skid" ? 0.4 : 1.5;
+      if ((defId === "skid" || defId === "loader" || defId === "hloader") &&
+          d.tons >= minimum && !d.id.startsWith("feed-") && areaOf(d.x) === area) {
+        options.push({ value: `face:${d.id}`, label: `${pileName(d)} · ${d.tons.toFixed(1)} t` });
+      }
+      continue;
+    }
     const faceArea = areaOf(d.x);
     if (faceArea !== area && !(d.claim === MOUNTAIN_CLAIM && mountainOpen(state))) continue;
     options.push({ value: `face:${d.id}`, label: `${prettySign(d.sign)} · ${areaName(faceArea)}` });

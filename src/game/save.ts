@@ -5,6 +5,7 @@ import { WASH_PLANT, areaOf, loosePileX } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
 import { DAY_SECONDS, freshMarket, type Market } from "@/game/market";
 import { MARKET_KEYS, ensureLowboy, freshGame, homeClaim } from "@/game/sim";
+import { numberFleet } from "@/game/sim/world";
 import type { Deposit, GameState, UpgradeKind, VehicleState } from "@/game/types";
 
 /** Current save format. Version 1 saves (before realistic controls) are upgraded on load. */
@@ -90,6 +91,7 @@ function sanitize(raw: unknown): GameState | null {
       vehicles.push({
         uid: typeof v.uid === "string" ? v.uid.slice(0, 40) : `${v.defId}-${vehicles.length}`,
         defId: v.defId,
+        unitNo: Number.isSafeInteger(v.unitNo) && Number(v.unitNo) > 0 ? Number(v.unitNo) : undefined,
         cargoPurity: num(v.cargoPurity, 1, 0.3, 1),
         damage: num(v.damage, 0, 0, 1),
         tool: readTool(v.tool, v.defId),
@@ -400,6 +402,7 @@ export function saveGame(state: GameState, resetHistory = false, baseState = sta
 }
 
 function snapshot(state: GameState): GameState {
+  numberFleet(state);
   return {
     ...state,
     version: SAVE_VERSION,

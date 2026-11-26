@@ -74,6 +74,37 @@ export function isRiverBar(d: Deposit) {
 /** A wheel loader may cut river bars, a claim or team face, or a face another digger is already on. */
 
 
+export function numberFleet(state: GameState) {
+  const used = new Map<VehicleId, Set<number>>();
+  for (const vehicle of state.vehicles) {
+    const numbers = used.get(vehicle.defId) ?? new Set<number>();
+    used.set(vehicle.defId, numbers);
+    const number = vehicle.unitNo;
+    if (number && !numbers.has(number)) numbers.add(number);
+    else vehicle.unitNo = undefined;
+  }
+  for (const vehicle of state.vehicles) {
+    if (vehicle.unitNo) continue;
+    const numbers = used.get(vehicle.defId)!;
+    let number = 1;
+    while (numbers.has(number)) number++;
+    numbers.add(number);
+    vehicle.unitNo = number;
+  }
+}
+
+export function vehicleName(state: GameState, vehicle: VehicleState) {
+  const base = DEFS[vehicle.defId].name;
+  const numbered = vehicle.unitNo && (vehicle.unitNo > 1 ||
+    state.vehicles.some((other) => other !== vehicle && other.defId === vehicle.defId));
+  return numbered ? `${base} #${vehicle.unitNo}` : base;
+}
+
+export function pileName(pile: Deposit) {
+  const number = pile.id.match(/^pile-(\d+)$/)?.[1];
+  return number ? `Pile #${number} · ${prettySign(pile.ore)}` : prettySign(pile.sign);
+}
+
 export function prettySign(sign: string) {
   return sign.toLowerCase().replace(/(^|[\s·])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
 }

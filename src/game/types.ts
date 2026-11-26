@@ -57,6 +57,7 @@ export type CrewSetup = {
 };
 
 export type VehicleState = {
+  unitNo?: number;
   uid: string;
   defId: VehicleId;
   x: number;
