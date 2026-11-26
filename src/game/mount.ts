@@ -642,11 +642,20 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
     sticks.right = { x: 0, y: 0 };
   }
   function onHide() {
+    onBlur();
+    last = performance.now();
+    acc = 0;
     if (document.hidden) {
-      keys.clear();
       if (running) void persistBooks();
       audio.setMuted(true);
-    } else if (!state.muted) audio.setMuted(false);
+    } else {
+      for (const v of state.vehicles) {
+        v.stuck = 0;
+        v.unstick = 0;
+        v.busy = false;
+      }
+      if (!state.muted) audio.setMuted(false);
+    }
   }
   function onPageHide() {
     if (running) void persistBooks();
@@ -805,6 +814,12 @@ export function mountGame(host: HTMLElement, hooks: Hooks) {
 
   function loop(now: number) {
     if (dead) return;
+    if (document.hidden) {
+      last = now;
+      acc = 0;
+      raf = requestAnimationFrame(loop);
+      return;
+    }
     const workStarted = frameRecorder ? performance.now() : 0;
     const frameMs = now - last;
     const dt = Math.min(0.05, frameMs / 1000);
