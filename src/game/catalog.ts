@@ -63,7 +63,7 @@ export const BLOCKS: Block[] = [
 export const PADS = [
   { id: "crusher", name: "Crusher", x: 32, z: 30, r: 15, kind: "crusher" as const },
   { id: "reclaim", name: "Reclaim", x: 44, z: 46, r: 8, kind: "reclaim" as const },
-  { id: "sluice", name: "Sluice", x: -80, z: 36, r: 8, kind: "sluice" as const },
+  { id: "sluice", name: "Sluice", x: -72, z: 50, r: 10, kind: "sluice" as const },
   { id: "loadout", name: "Rail loadout", x: X0 + 74, z: 30, r: 9, kind: "loadout" as const },
   { id: WEST_BARGE.id, name: WEST_BARGE.name, x: WEST_BARGE.x, z: WEST_BARGE.z, r: WEST_BARGE.r, kind: "barge" as const },
   { id: "mill", name: "Summit mill", x: MILL.x, z: MILL.z, r: MILL.r, kind: "mill" as const },
