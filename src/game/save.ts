@@ -1,5 +1,5 @@
 import { PRICES as OPS_PRICES, applyRipped, readOps } from "@/game/ops";
-import { CLAIMS, DEFS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
+import { CLAIMS, DEFS, PADS, SLUICE, boundsFor, isOreId, isVehicleId, upgradeCost } from "@/game/catalog";
 import { onHaulRoad } from "@/game/lowboy";
 import { WASH_PLANT, areaOf, loosePileX } from "@/game/river";
 import { homeTool, type ToolState } from "@/game/controls";
@@ -234,6 +234,16 @@ function sanitize(raw: unknown): GameState | null {
         paidTons: num(s.paidTons, 0, 0, 2000),
       };
       if (pile.tons >= 0.2) state.deposits.push(pile);
+    }
+    // Feed piles belong to their plant, including saves from before a plant moved.
+    for (const d of state.deposits) {
+      if (d.id === "feed-sluice" || d.id.startsWith("feed-sluice--")) {
+        const side = d.id !== "feed-sluice";
+        const pad = PADS.find((p) => p.id === "sluice");
+        if (!pad) continue;
+        d.x = pad.x + (side ? 8 : 0);
+        d.z = pad.z + (side ? 8 : 0);
+      }
     }
     // Each loose pile comes back on its own (no merging), so heaps keep their size and shape.
   }
