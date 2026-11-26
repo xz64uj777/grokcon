@@ -334,3 +334,29 @@ test("a starter skid picks the gate iron pile before opening the dirt face", () 
   assert.equal(loaderPlan.get("L")?.sourceId, "starter");
   assert.equal(loaderPlan.get("S")?.sourceId, "dirt");
 });
+
+test("a two-skid South Yard team chooses the loose iron before a dirt face", () => {
+  const machines = [machine("S1", "skid", 12, 36), machine("S2", "skid", 14, 36), machine("T1", "truck", 8, 26)];
+  const starter = job("starter", "pile", "iron", 40, -2, 22);
+  const dirt = job("dirt", "vein", "dirt", 500, 14, 36, { score: 20000 });
+  const crews = [{ id: 1, memberUids: ["S1", "S2", "T1"], sourceId: null, destKind: null, destName: null }];
+  const planned = planCrewJobs(machines, [dirt, starter], null, crews);
+  for (const machine of machines) assert.equal(planned.get(machine.uid)?.sourceId, "starter");
+});
+
+test("Auto cleans the starter iron before repeating a reclaim dirt job", () => {
+  const skid = machine("S", "skid", 10, 30);
+  const jobs = [job("starter", "pile", "iron", 40, -2, 22), job("dirt-crumb", "crumb", "dirt", 1, 16, 36)];
+  assert.equal(planCrewJobs([skid], jobs, null).get(skid.uid)?.sourceId, "starter");
+});
+
+test("Auto takes an available ore face before opening more overburden or reclaim dirt", () => {
+  const skid = machine("S", "skid", 16, 36);
+  const jobs = [
+    job("overburden", "vein", "dirt", 400, 16, 36),
+    job("dirt-crumb", "crumb", "dirt", 1, 17, 36),
+    job("iron-face", "vein", "iron", 30, 30, 38),
+  ];
+  assert.equal(planCrewJobs([skid], jobs, null).get(skid.uid)?.sourceId, "iron-face");
+  assert.equal(planCrewJobs([skid], jobs.slice(0, 2), null).get(skid.uid)?.sourceId, "dirt-crumb");
+});

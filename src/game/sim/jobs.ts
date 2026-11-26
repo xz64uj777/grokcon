@@ -89,7 +89,6 @@ export function acceptsJob(state: GameState, v: VehicleState, d: Deposit) {
   const pin = facePin(state, v);
   if (pin && d.kind === "vein" && d.id !== pin.id) return false;
   if (assignedClaim(v) != null && d.claim !== assignedClaim(v)) return false;
-  if (d.id === "starter" && assignedClaim(v) != null) return false;
   const planned = peekCrewJob(state, v);
   if (planned?.sourceId) return d.id === planned.sourceId;
   // Sluice work comes first, but only while a washable pile is actually waiting.
@@ -283,12 +282,16 @@ export function slotOf(v: VehicleState) {
 export const approachLatch = new WeakMap<VehicleState, { id: string; x: number; z: number }>();
 
 
-function approachBusy(state: GameState, v: VehicleState, x: number, z: number) {
+function approachBusy(state: GameState, v: VehicleState, x: number, z: number, pileId?: string) {
   for (const o of state.vehicles) {
     if (o === v || !o.operator) continue;
     const od = DEFS[o.defId];
     if (od.dig <= 0 && od.scoop <= 0 && !od.receives) continue;
-    if (distTo(o.x, o.z, x, z) < vehicleStats(v).radius + vehicleStats(o).radius + 2.8) return true;
+    const clearance = vehicleStats(v).radius + vehicleStats(o).radius;
+    if (distTo(o.x, o.z, x, z) < clearance + 2.8) return true;
+    const reserved = pileId && approachLatch.get(o);
+    if (reserved && reserved.id === pileId && distTo(o.x, o.z, reserved.x, reserved.z) < 32 &&
+        distTo(reserved.x, reserved.z, x, z) < clearance + 0.5) return true;
   }
   return false;
 }
@@ -300,7 +303,7 @@ export function pileApproach(state: GameState, v: VehicleState, pile: Deposit) {
     prev &&
     prev.id === pile.id &&
     distTo(v.x, v.z, pile.x, pile.z) < 22 &&
-    !approachBusy(state, v, prev.x, prev.z)
+    !approachBusy(state, v, prev.x, prev.z, v.defId === "skid" ? pile.id : undefined)
   ) {
     return { x: prev.x, z: prev.z };
   }
@@ -311,9 +314,25 @@ export function pileApproach(state: GameState, v: VehicleState, pile: Deposit) {
     const dx = v.x - pile.x;
     const dz = v.z - pile.z;
     const ang = Math.atan2(dz, dx) + ((slotOf(v) % 5) - 2) * 0.38;
-    const spot = { id: pile.id, x: pile.x + Math.cos(ang) * (foot.rx + standOff), z: pile.z + Math.sin(ang) * (foot.rz + standOff) };
-    approachLatch.set(v, spot);
-    return spot;
+    if (v.defId !== "skid") {
+      const spot = { id: pile.id, x: pile.x + Math.cos(ang) * (foot.rx + standOff), z: pile.z + Math.sin(ang) * (foot.rz + standOff) };
+      approachLatch.set(v, spot);
+      return spot;
+    }
+    for (let i = 0; i < 24; i++) {
+      const offset = Math.ceil(i / 2) * (i % 2 ? 1 : -1) * Math.PI / 12;
+      const x = pile.x + Math.cos(ang + offset) * (foot.rx + standOff);
+      const z = pile.z + Math.sin(ang + offset) * (foot.rz + standOff);
+      if (pointBlocked(x, z, vehicleStats(v).radius) || otherBank(x, pile.x)) continue;
+      const spot = { id: pile.id, x, z };
+      if (!approachBusy(state, v, x, z, pile.id)) {
+        approachLatch.set(v, spot);
+        return spot;
+      }
+    }
+    // Keep waiting off the pile if every valid scoop position is occupied.
+    approachLatch.delete(v);
+    return { x: v.x, z: v.z };
   }
   // On the open side of the heap, still close enough to scoop, with room for a truck outside it.
   const bank = areaOf(pile.x) === "river" ? Math.sign(pile.x - RIVER.x) || 1 : 0;
@@ -400,7 +419,7 @@ export function bestPile(state: GameState, v: VehicleState) {
     if (!acceptsJob(state, v, d)) continue;
     if (v.cargo > 0.15 && v.cargoOre && v.cargoOre !== d.ore) continue;
     if (!sameArea(d, v) || offHeavyBank(state, v, d.x) || cannotCrossTo(state, v, d.x)) continue;
-    if (v.defId === "skid" && !crumb && loaderInArea(state, v) && d.tons < 8) continue;
+    if (v.defId === "skid" && planned?.sourceId !== d.id && loaderInArea(state, v) && d.tons < 8) continue;
     const unit = prefersSluice(state, d.ore) || dirtToSluice(state, d.ore, d.x) ? ORES[d.ore].sluice : ORES[d.ore].crusher;
     const d0 = distTo(v.x, v.z, d.x, d.z);
     const s = (unit * Math.min(d.tons, 30)) / (d0 + 8) + (d0 < 36 ? 1000 : 0) + washScore(state, d.ore) - crewNear(state, v, d.x, d.z, 14) * 2200;
@@ -465,6 +484,34 @@ export function driveFace(vein: Deposit) {
     x = Math.min(x, X0 + 82);
   }
   return { x, z, reach: cut.reach };
+}
+
+
+export function crewDigPosition(state: GameState, v: VehicleState, vein: Deposit) {
+  const cut = driveFace(vein);
+  if (v.defId !== "skid" || !state.vehicles.some((other) =>
+    other !== v && other.hired && other.operator && other.defId === "skid" &&
+    plannedDeposit(state, other)?.id === vein.id,
+  )) return cut;
+
+  const work = faceOf(vein);
+  const spotIsClear = (x: number, z: number) =>
+    distTo(x, z, work.x, work.z) < work.reach - 1 &&
+    !pointBlocked(x, z, vehicleStats(v).radius) && !otherBank(x, vein.x) &&
+    !approachBusy(state, v, x, z, vein.id);
+  const prev = approachLatch.get(v);
+  if (prev?.id === vein.id && spotIsClear(prev.x, prev.z)) return { ...prev, reach: 1 };
+  const radius = Math.min(5, work.reach - 1.5);
+  for (let i = 0; i < 12; i++) {
+    const angle = (slotOf(v) + i) * Math.PI / 6;
+    const x = cut.x + Math.cos(angle) * radius;
+    const z = cut.z + Math.sin(angle) * radius;
+    if (!spotIsClear(x, z)) continue;
+    approachLatch.set(v, { id: vein.id, x, z });
+    return { x, z, reach: 1 };
+  }
+  approachLatch.delete(v);
+  return null;
 }
 
 
