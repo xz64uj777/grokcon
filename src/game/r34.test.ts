@@ -5,9 +5,11 @@ import { buyVehicle, freshGame, lotBuy, lotButtons, sellVehicle, step } from "@/
 import { exportSave, readSaveText } from "@/game/save";
 import { ops } from "@/game/ops";
 import { addPile } from "@/game/sim/feed";
-import { acceptsJob, pileApproach, pileInReach } from "@/game/sim/jobs";
+import { pointBlocked } from "@/game/sim/motion";
+import { assignCrew, crewAssignment, setCrewSource } from "@/game/sim/crew";
+import { acceptsJob, crewDigPosition, pileApproach, pileInReach } from "@/game/sim/jobs";
 import { idleFor, holdForTruck } from "@/game/sim/haulers";
-import { makeVehicle, vehicleStats } from "@/game/sim/world";
+import { makeVehicle, nearestPad, vehicleStats } from "@/game/sim/world";
 import { pileFootprint } from "@/game/piles";
 import { sticksToCommand } from "@/game/controls";
 
@@ -176,4 +178,80 @@ test("new spills and old saved stockpiles in the river are reachable from the ba
   const loader = makeVehicle("loader", 0);
   Object.assign(loader, { x: 1012, z });
   assert.equal(pileInReach(restored, loader)?.id, saved.id);
+});
+
+test("a South Yard claim order allows a hired skid to scoop the starter pile", () => {
+  const state = freshGame("South Yard iron");
+  state.watching = true;
+  const skid = makeVehicle("skid", 3);
+  skid.hired = skid.operator = true;
+  skid.workClaim = 1;
+  state.vehicles.push(skid);
+  assert.equal(acceptsJob(state, skid, state.deposits.find((d) => d.id === "starter")!), true);
+});
+
+test("two skids reserve separate clear spots on the same loose iron pile", () => {
+  const state = freshGame("Shared iron approach");
+  const pile = state.deposits.find((d) => d.id === "starter")!;
+  const a = makeVehicle("skid", 2);
+  const b = { ...a, uid: "S" };
+  for (const skid of [a, b]) {
+    Object.assign(skid, { x: pile.x + 12, z: pile.z, hired: true, operator: true });
+    state.vehicles.push(skid);
+  }
+  const first = pileApproach(state, a, pile);
+  const second = pileApproach(state, b, pile);
+  assert.ok(Math.hypot(first.x - second.x, first.z - second.z) >= vehicleStats(a).radius + vehicleStats(b).radius);
+});
+
+test("a reloaded two-skid South Yard crew scoops iron and sells it at the crusher", () => {
+  const state = freshGame("South Yard reload");
+  state.watching = true;
+  const pile = state.deposits.find((d) => d.id === "starter")!;
+  const skids = [makeVehicle("skid", 3), makeVehicle("skid", 4)];
+  const truck = makeVehicle("truck", 5);
+  for (const [i, machine] of [...skids, truck].entries()) {
+    Object.assign(machine, { x: pile.x + 10 + 3 * i, z: pile.z + 4, hired: true, operator: true, workClaim: 1 });
+    state.vehicles.push(machine);
+    assert.equal(assignCrew(state, state.vehicles.indexOf(machine), i === 0 ? "new" : "1"), "");
+  }
+  assert.equal(setCrewSource(state, 1, "starter"), "");
+  const restored = readSaveText(exportSave(state))!;
+  assert.equal(restored.watching, true);
+  for (const machine of restored.vehicles.slice(-3)) {
+    const job = crewAssignment(restored, machine);
+    assert.equal(job?.sourceId, "starter");
+    assert.equal(job?.ore, "iron");
+    assert.equal(job?.destKind, "crusher");
+  }
+  const restoredSkids = restored.vehicles.slice(-3, -1);
+  const scooped = new Set<string>();
+  const sales: string[] = [];
+  for (let i = 0; i < 30 * 85 && (scooped.size < 2 || sales.length < 2); i++) {
+    const fx = step(restored, { throttle: 0, steer: 0, action: false }, 1 / 30, false);
+    for (const skid of restoredSkids) if (skid.cargoOre === "iron") scooped.add(skid.uid);
+    sales.push(...fx.sales.map((sale) => `${nearestPad(restored, sale.x, sale.z)?.kind}: ${sale.text}`));
+  }
+  assert.equal(scooped.size, 2, JSON.stringify(restoredSkids.map(({ x, z, status, cargo }) => ({ x, z, status, cargo }))));
+  assert.ok(sales.length >= 2, JSON.stringify(sales));
+  assert.ok(sales.every((sale) => /^crusher: .*iron/i.test(sale)), JSON.stringify(sales));
+});
+
+test("two skids on the same South Yard face have separate clear digging positions", () => {
+  const state = freshGame("Shared South Yard face");
+  state.watching = true;
+  const skids = [makeVehicle("skid", 3), makeVehicle("skid", 4)];
+  const face = state.deposits.find((d) => d.kind === "vein" && d.ore === "dirt" && d.claim === 1)!;
+  for (const [i, skid] of skids.entries()) {
+    Object.assign(skid, { x: face.x + 16, z: face.z + 8, hired: true, operator: true });
+    state.vehicles.push(skid);
+    assert.equal(assignCrew(state, state.vehicles.indexOf(skid), i === 0 ? "new" : "1"), "");
+  }
+  assert.equal(setCrewSource(state, 1, face.id), "");
+  const first = crewDigPosition(state, skids[0], face);
+  const second = crewDigPosition(state, skids[1], face);
+  assert.ok(first && second);
+  assert.equal(pointBlocked(first.x, first.z, vehicleStats(skids[0]).radius), false);
+  assert.equal(pointBlocked(second.x, second.z, vehicleStats(skids[1]).radius), false);
+  assert.ok(Math.hypot(first.x - second.x, first.z - second.z) >= vehicleStats(skids[0]).radius + vehicleStats(skids[1]).radius);
 });

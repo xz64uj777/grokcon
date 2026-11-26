@@ -11,12 +11,12 @@ import { ZERO } from "./types.ts";
 import { fillContract, unitPrice } from "./economy.ts";
 import { clamp, closestFace, distTo, faceOf, handsOn, haulTarget, hypot, livePads, log, nearestPad, ownsClaim, prettySign, sameArea, vehicleStats } from "./world.ts";
 import { addFeedPile, addPile, dumpsToFeed, feedId, feedJob, markFeedPaid, sideFeedId } from "./feed.ts";
-import { SHORT_CARRY_RANGE, acceptsJob, assignedClaim, bestPad, bestPile, bestVein, canReach, cannotCrossTo, commitVein, crewNear, dirtToSluice, driveFace, faceOutput, facePin, loaderFillVein, loaderMayCut, pileApproach, pileInReach, prefersSluice, prefersWash, takeBite, washScore, workHere } from "./jobs.ts";
+import { SHORT_CARRY_RANGE, acceptsJob, approachLatch, assignedClaim, bestPad, bestPile, bestVein, canReach, cannotCrossTo, commitVein, crewDigPosition, crewNear, dirtToSluice, driveFace, faceOutput, facePin, loaderFillVein, loaderMayCut, pileApproach, pileInReach, prefersSluice, prefersWash, takeBite, washScore, workHere } from "./jobs.ts";
 import { TRUCK_IDLE_SECONDS, cargoInto, diggerAboutToFill, diggerForTruck, dropInFront, emptyCargo, fillsHaulers, hasPile, holdForReadyHauler, holdForTruck, idleFor, lineFor, lineTicket, nextLineTicket, loadTruck, loaderInArea, loaderToOrphanHeavy, nearestHauler, offHeavyBank, stockLatch, stockSpot, truckLeaving, truckNear, truckPartner, wheelLoader } from "./haulers.ts";
 import { BAY_YIELD_BUSY_SECONDS, BAY_YIELD_SECONDS, bayCommit, bayReady, enterBay, jobStand, loaderStand, loadingZone, parkInPour, safeWaitSpot, spotForTruck, truckSpot } from "./bay.ts";
 import { dumpAnyway, plantQueue, plantTicket, washQueuePlace } from "./plants.ts";
 import { benchBetween, fuelPoint, lowboyDrive, noseBlocked, seek, topped } from "./motion.ts";
-import { peekCrewJob, plannedDeposit, plannedPadFor, teamHasTruck } from "./crew.ts";
+import { plannedDeposit, plannedPadFor, teamHasTruck } from "./crew.ts";
 
 export const saleAcc = new WeakMap<VehicleState, number>();
 
@@ -217,9 +217,10 @@ export function aiControl(state: GameState, index: number): Control {
       }
     } else label = "No face in reach";
   } else if (def.dig > 0) {
+    const plannedSource = plannedDeposit(state, v);
     const aid = !full ? loaderToOrphanHeavy(state, v) : null;
     if (aid) return aid;
-    if (def.id === "skid" && full && v.cargoOre && peekCrewJob(state, v)?.jobKind !== "crumb" && loaderInArea(state, v)) {
+    if (def.id === "skid" && full && v.cargoOre && plannedSource?.kind !== "pile" && loaderInArea(state, v)) {
       const src = bestVein(state, v, v.cargoOre) ?? bestPile(state, v) ?? { x: v.x, z: v.z };
       const spot = stockSpot(v, src);
       if (distTo(v.x, v.z, spot.x, spot.z) < 3.2) {
@@ -239,8 +240,7 @@ export function aiControl(state: GameState, index: number): Control {
       return seek(v, digHaul.x, digHaul.z, arrive);
     }
     const pinned = facePin(state, v);
-    const plannedVein = plannedDeposit(state, v);
-    let vein: Deposit | null = pinned ?? (plannedVein?.kind === "vein" && !cannotCrossTo(state, v, plannedVein.x) ? plannedVein : null);
+    let vein: Deposit | null = pinned ?? (plannedSource?.kind === "vein" && !cannotCrossTo(state, v, plannedSource.x) ? plannedSource : null);
     if (!vein) {
       let veinS = -Infinity;
       for (const d of state.deposits) {
@@ -272,7 +272,11 @@ export function aiControl(state: GameState, index: number): Control {
         }
         if (fillsHaulers(def.id)) return holdForTruck(state, v);
       }
-      const cut = driveFace(vein);
+      const cut = crewDigPosition(state, v, vein);
+      if (!cut) {
+        v.status = "Making room at the face";
+        return { ...ZERO, brake: 1 };
+      }
       const wait = holdForReadyHauler(state, v, faceOutput(vein, "auto"));
       if (wait) return wait;
       const held = workHere(v, cut.x, cut.z, cut.reach);
@@ -281,14 +285,18 @@ export function aiControl(state: GameState, index: number): Control {
         return held;
       }
       v.status = `Heading to ${job}`;
-      return seek(v, cut.x, cut.z, 2.2);
+      return seek(v, cut.x, cut.z, Math.min(2.2, cut.reach));
     }
-    const cleanupPile = def.id === "skid" && peekCrewJob(state, v)?.jobKind === "crumb" ? plannedDeposit(state, v) : null;
+    const cleanupPile = def.id === "skid" && plannedSource?.kind === "pile" ? plannedSource : null;
     if (v.cargo > 0.25 && v.cargoOre && cleanupPile?.ore !== v.cargoOre) haulTarget();
     else {
       const pile = bestPile(state, v);
       if (pile) {
         const spot = pileApproach(state, v, pile);
+        if (def.id === "skid" && !approachLatch.has(v)) {
+          v.status = "Making room at the pile";
+          return { ...ZERO, brake: 1 };
+        }
         if (distTo(v.x, v.z, spot.x, spot.z) < 2.4 && Math.abs(v.speed) < 1.1 && pileInReach(state, v)) {
           v.status = `Scooping ${ORES[pile.ore].name}`;
           return { throttle: 0, steer: 0, action: true, brake: 1 };
@@ -440,6 +448,7 @@ export function aiControl(state: GameState, index: number): Control {
   if (has && v.cargoOre && full && !keepBucketAtPad(state, v, cap, "auto")) {
     const pad = nearestPad(state, v.x, v.z);
     const wrongPlant =
+      (pad?.kind === "reclaim" && v.cargoOre !== "dirt" && bestPad(state, v.cargoOre, v.x, v.z, v)?.kind !== "reclaim") ||
       (prefersSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
       (dirtToSluice(state, v.cargoOre, v.x) && pad?.kind !== "sluice") ||
       (prefersWash(state, v.cargoOre, v.x) && pad?.kind !== "wash" && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
@@ -538,6 +547,8 @@ export function performAction(
   const fx = -Math.sin(v.yaw);
   const fz = -Math.cos(v.yaw);
   const player = !state.watching && index === state.active;
+  const plannedSource = player ? null : plannedDeposit(state, v);
+  const scoopingAssignedPile = plannedSource?.kind === "pile";
   const manual = opts.phase !== "auto";
   const kind = machineKind(v.defId);
 
@@ -557,7 +568,7 @@ export function performAction(
         (prefersWash(state, v.cargoOre, v.x) && pad.kind !== "wash" && !player && canReach(v, livePads(state).find((p) => p.kind === "wash")?.x ?? v.x)) ||
         unitPrice(v.cargoOre, pad.kind, state.sluice, state.market) <= 0);
     const crewShort = !player && !onPlan && st.capacity > 0 && v.cargo < st.capacity * 0.9 && !dumpAnyway.has(v);
-    const reclaimWaste = precious && pad?.kind === "reclaim";
+    const reclaimWaste = pad?.kind === "reclaim" && (precious || (!player && v.cargoOre !== "dirt" && planned?.kind !== "reclaim"));
     // A hand-worked excavator dumps where the bucket is, not where the tracks are.
     const excavatorHand = manual && kind === "excavator";
     // Movement and unloading share the queue even if both trucks reach the pad.
@@ -668,7 +679,7 @@ export function performAction(
       }
     }
     if (opts.phase === "dump") return null;
-    if (!player && v.defId === "skid" && v.cargoOre && st.capacity > 0 && v.cargo >= st.capacity * 0.85 && peekCrewJob(state, v)?.jobKind !== "crumb" && loaderInArea(state, v)) {
+    if (!player && v.defId === "skid" && v.cargoOre && st.capacity > 0 && v.cargo >= st.capacity * 0.85 && plannedSource?.kind !== "pile" && loaderInArea(state, v)) {
       const spot = stockLatch.get(v);
       if (spot && distTo(v.x, v.z, spot.x, spot.z) < 4.5) {
         addPile(state, v.cargoOre, v.cargo, spot.x, spot.z, v.workClaim ?? 1, v.cargoPurity ?? 1);
@@ -679,7 +690,7 @@ export function performAction(
     }
   }
 
-  if (def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
+  if (!scoopingAssignedPile && def.dig > 0 && st.capacity > 0 && v.cargo < st.capacity - 0.03) {
     const tip = manual && kind === "excavator" ? bucketPoint(v.x, v.z, v.yaw, v.tool) : { x: v.x, z: v.z };
     const vein = closestFace(state, tip.x, tip.z, v);
     if (vein) {
@@ -762,7 +773,7 @@ export function performAction(
       const cut = faceOf(spot);
       faceNear = distTo(v.x, v.z, cut.x, cut.z) <= cut.reach;
     }
-    const source = faceNear && spot ? spot : pile && pile.tons > 0.05 ? pile : null;
+    const source = !scoopingAssignedPile && faceNear && spot ? spot : pile && pile.tons > 0.05 ? pile : null;
     if (source) {
       if (!ownsClaim(state, source.claim)) return null;
       const output = source.kind === "vein" ? faceOutput(source, opts.cut) : source.ore;

@@ -188,7 +188,7 @@ export function crewWatchdog(state: GameState, v: VehicleState) {
   if (/^Waiting for (truck|a job|a loader)|Looking for crumbs/.test(v.status)) return;
   if (fillsHaulers(v.defId) && teamHasTruck(state, v) && /Waiting for/.test(v.status)) return;
   // Lining up is a turn-and-roll, not a short heading. Give it the default window.
-  const limit = PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing)/.test(v.status) ? 15 : 30;
+  const limit = v.defId === "skid" && /^(Scooping|Making room|Heading to)/.test(v.status) ? 12 : PATIENT.test(v.status) && !/^(Scooping|Pushing|Working|In line)/.test(v.status) ? 90 : /^(Heading|Making|Backing)/.test(v.status) ? 15 : 30;
   if (now - e.t < limit) return;
   e.t = now;
   truckSpot.delete(v);

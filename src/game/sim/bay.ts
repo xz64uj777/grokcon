@@ -252,8 +252,9 @@ export function loadingZone(state: GameState, digger: VehicleState): LoadZone {
   const prev = diggerZone.get(digger);
   // DRAFT: a digger that has settled on another face out of pour reach takes its bay with it.
   const leftZone = !!prev && Math.abs(digger.speed) < 0.5 && distTo(digger.x, digger.z, prev.standX, prev.standZ) > pourReach(digger.defId);
-  const changedPinnedSource = state.crews.some((crew) => crew.id === digger.crewId && crew.sourceId === a.id && crew.sourceId !== prev?.sourceId);
-  if (prev && prev.spots.length > 0 && !leftZone && !changedPinnedSource) {
+  const changedCrewSource = digger.crewId != null && a.id !== prev?.sourceId &&
+    plannedDeposit(state, digger)?.id === a.id;
+  if (prev && prev.spots.length > 0 && !leftZone && !changedCrewSource) {
     const drifted = Math.hypot(prev.ax - a.standX, prev.az - a.standZ);
     if (drifted < ZONE_HOLD) return prev;
     // The spots belong to this face while it still has ore. They move when

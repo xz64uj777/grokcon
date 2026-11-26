@@ -235,13 +235,14 @@ export function planCrewJobs(
         let bestS = -Infinity;
         for (const d of workers) {
           for (const j of workJobs) {
-            if (takenJobs.has(j.id)) continue;
+            if (takenJobs.has(j.id) || !allowedJob(d, j)) continue;
             if (d.defId === "excavator" && j.kind !== "vein") continue;
             if (isPlanDigger(d.defId) && d.defId !== "excavator") {
               const pilesOpen = workJobs.some((p) => p.kind === "pile" && !takenJobs.has(p.id));
               if (pilesOpen ? j.kind !== "pile" : j.kind !== "vein") continue;
             }
-            const s = jobScore(d, j);
+            if (!ds.length && best?.id === "starter") continue;
+            const s = !ds.length && j.id === "starter" ? Infinity : jobScore(d, j);
             if (s > bestS) {
               bestS = s;
               best = j;
@@ -472,11 +473,16 @@ export function planCrewJobs(
       if (result.has(s.uid) || s.crewId) continue;
       const prevA = prev?.get(s.uid);
       let job = s.workPile ? jobById.get(s.workPile) : undefined;
+      if (!job && (s.cargo <= 0.15 || s.cargoOre === "iron")) {
+        const starter = jobById.get("starter");
+        if (starter && jobStillValid(starter.kind, starter.tons) && allowedJob(s, starter) &&
+            !takenJobs.has(starter.id) && !takenCrumbs.has(starter.id)) job = starter;
+      }
       if (!job && prevA?.role === "skid" && prevA.sourceId) {
         const held = jobById.get(prevA.sourceId);
         if (held && held.kind === "crumb" && jobStillValid(held.kind, held.tons) && allowedJob(s, held)) job = held;
       }
-      if (!job) job = crumbs.find((j) => !takenCrumbs.has(j.id) && allowedJob(s, j));
+      if (!job) job = crumbs.find((j) => j.ore !== "dirt" && !takenCrumbs.has(j.id) && allowedJob(s, j));
       if (!job) {
         const smallPiles = areaJobs.filter((j) =>
           j.kind === "pile" && j.tons < SKID_CLEANUP_LIMIT && !takenJobs.has(j.id) &&
@@ -485,27 +491,31 @@ export function planCrewJobs(
         smallPiles.sort((a, b) => dist(s, a) - dist(s, b));
         job = smallPiles[0];
       }
-      if (!job && diggers.length === 0) {
-        const starter = jobById.get("starter");
-        if (starter && jobStillValid(starter.kind, starter.tons) && allowedJob(s, starter) &&
-            !takenJobs.has(starter.id) && !takenCrumbs.has(starter.id)) job = starter;
-      }
       if (job) {
         takenCrumbs.add(job.id);
         result.set(s.uid, assignment(0, "skid", { ...job, kind: "crumb" }, [], s.uid));
         continue;
       }
-      // No crumb to sweep: a skid can self-haul a leftover face, such as a river bar.
+      // Prefer ore faces to very small dirt spills or opening more overburden.
       const veins = areaJobs
         .filter((j) => j.kind === "vein" && jobStillValid(j.kind, j.tons) && allowedJob(s, j))
         .sort((a, b) => {
+          const material = Number(a.ore === "dirt") - Number(b.ore === "dirt");
+          if (material) return material;
           const da = dist(s, a);
           const db = dist(s, b);
           if (da < 16 !== db < 16) return da < 16 ? -1 : 1;
           return Number(takenJobs.has(a.id)) - Number(takenJobs.has(b.id)) || b.score - a.score;
         });
       const vein = veins[0];
-      if (vein) {
+      const dirtPile = (!vein || vein.ore === "dirt") && areaJobs.find((j) =>
+        j.ore === "dirt" && j.kind === "crumb" &&
+        !takenCrumbs.has(j.id) && !takenJobs.has(j.id) && allowedJob(s, j),
+      );
+      if (dirtPile) {
+        takenCrumbs.add(dirtPile.id);
+        result.set(s.uid, assignment(0, "skid", { ...dirtPile, kind: "crumb" }, [], s.uid));
+      } else if (vein) {
         result.set(s.uid, assignment(0, "skid", vein, [], s.uid));
       } else {
         result.set(s.uid, assignment(0, "skid", null, [], s.uid));
