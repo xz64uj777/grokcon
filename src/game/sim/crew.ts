@@ -58,7 +58,7 @@ const crewPlans = new WeakMap<GameState, { at: number; jobs: Map<string, CrewAss
 
 function crewKey(state: GameState) {
   const roster = state.vehicles
-    .filter((v) => v.hired && v.operator && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
+    .filter((v) => v.hired && v.operator && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid" || (v.defId === "pickup" && v.crewId != null)))
     .map((v) => `${v.uid}:${v.crewId ?? "auto"}:${v.workFace ?? ""}:${v.workClaim ?? ""}`)
     .sort()
     .join(",");
@@ -170,7 +170,7 @@ function manualsFromState(state: GameState): ManualCrew[] {
 export function assignCrew(state: GameState, index: number, crew: string) {
   const v = state.vehicles[index];
   if (!v) return "No machine.";
-  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid") {
+  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid" && v.defId !== "pickup") {
     return "That machine does not join a haul crew.";
   }
   if (crew === "auto" || crew == null || crew === "") {
@@ -283,7 +283,7 @@ function teamMemberLine(state: GameState, id: number) {
 
 
 export function crewSelectOptions(state: GameState, v: VehicleState) {
-  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid") return [];
+  if (!isPlanDigger(v.defId) && !isPlanTruck(v.defId) && v.defId !== "skid" && v.defId !== "pickup") return [];
   pruneCrews(state);
   const options = [{ value: "auto", label: "Auto" }, ...state.crews.map((c) => ({ value: String(c.id), label: `Team ${c.id}` }))];
   options.push({ value: "new", label: "New team" });
@@ -395,7 +395,7 @@ export function buildHudTeams(state: GameState): import("@/game/types").HudModel
 
 function collectCrewMachines(state: GameState) {
   return state.vehicles
-    .filter((v) => v.hired && v.operator && !aboard(v) && !v.feederPad && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid"))
+    .filter((v) => v.hired && v.operator && !aboard(v) && !v.feederPad && (isPlanDigger(v.defId) || isPlanTruck(v.defId) || v.defId === "skid" || (v.defId === "pickup" && v.crewId != null)))
     .map((v) => ({
       uid: v.uid,
       defId: v.defId,
