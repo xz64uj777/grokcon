@@ -280,6 +280,14 @@ export function planCrewJobs(
         result.set(t.uid, assignment(crew.id, "truck", job, orderedPartners, t.uid));
       }
       for (const s of ss) result.set(s.uid, assignment(crew.id, "skid", job, partners, s.uid));
+      // Claim trucks scoop loose stock themselves; never reserve a loader bay.
+      for (const pickup of members.filter((m) => m.defId === "pickup")) {
+        const pile = job && job.kind !== "vein" && allowedJob(pickup, job) ? job :
+          areaJobs.filter((j) => j.kind === "pile" && allowedJob(pickup, j) &&
+            (!job || (j.claim === job.claim && j.ore === job.ore)))
+            .sort((a, b) => jobScore(pickup, b) - jobScore(pickup, a))[0] ?? null;
+        result.set(pickup.uid, assignment(crew.id, "skid", pile ? withDest(pile, crew) : null, partners, pickup.uid));
+      }
     }
 
     const sticky = new Map<number, { digger?: PlanMachine; trucks: PlanMachine[]; job?: PlanJob }>();
